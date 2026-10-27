@@ -3,7 +3,7 @@ source: crates/lp-tui/src/ui.rs
 expression: "draw(&with_modal(Action::OpenAccounts), 80, 24)"
 ---
 " LearnPuppy  1 Classroom  2 Graph  3 Digest   accounts 1/3                      "
-"┌Sessions────────────┐┌Classroom───────────────────┐┌Plan──────────────────────┐"
+"┌Sessions────────────┐┌Classroom [PROBE]───────────┐┌Plan──────────────────────┐"
 "│ ┌Accounts and model slots──────────────────────────────────────────────────┐ │"
 "│ │Accounts                                                                  │ │"
 "│ │● claude:a@example.com     Healthy              12 turns 48000 tok        │ │"

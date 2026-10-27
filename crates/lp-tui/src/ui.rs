@@ -8,6 +8,7 @@ use ratatui::Frame;
 
 use crate::app::{palette_matches, App, Health, Modal, View, ViewSnapshot};
 use crate::views::graph;
+use crate::views::classroom;
 
 pub fn render(f: &mut Frame, app: &App, snap: &ViewSnapshot) {
     let [top, body, bottom] = Layout::vertical([
@@ -36,11 +37,13 @@ pub fn render(f: &mut Frame, app: &App, snap: &ViewSnapshot) {
     let main = areas.next().unwrap_or_default();
     if app.view == View::Graph {
         graph::render(f, main, &app.graph, &snap.graph);
+    } else if app.view == View::Classroom {
+        classroom::render(f, main, &snap.classroom, &app.dock);
     } else {
         f.render_widget(pane(app.view.title()), main);
     }
     if plan {
-        f.render_widget(pane("Plan"), areas.next().unwrap_or_default());
+        classroom::render_plan(f, areas.next().unwrap_or_default(), &snap.classroom);
     }
 
     f.render_widget(

@@ -15,6 +15,7 @@ use tokio::sync::mpsc;
 
 use crate::ui;
 use crate::views::graph::{self, GraphData, GraphUi};
+use crate::views::classroom::{Answer, Classroom, Dock, DockKey};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Health {
@@ -43,6 +44,7 @@ pub struct ViewSnapshot {
     pub accounts: Vec<AccountRow>,
     pub slots: Vec<SlotPin>,
     pub graph: GraphData,
+    pub classroom: Classroom,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -51,6 +53,7 @@ pub enum Command {
     Refresh,
     Practice { chains: Vec<String> },
     DeleteNodes { nodes: Vec<String> },
+    Answer(Answer),
 }
 
 pub trait DataSource: Send + Sync {
@@ -107,6 +110,7 @@ pub enum Action {
     Up,
     Down,
     Enter,
+    Dock(DockKey),
 }
 
 /// Commands offered by the `Ctrl+K` palette.
@@ -143,6 +147,7 @@ pub struct App {
     pub plan_pane: bool,
     pub modal: Option<Modal>,
     pub graph: GraphUi,
+    pub dock: Dock,
     pub quit: bool,
 }
 
@@ -154,6 +159,7 @@ impl Default for App {
             plan_pane: true,
             modal: None,
             graph: GraphUi::default(),
+            dock: Dock::default(),
             quit: false,
         }
     }
@@ -161,6 +167,11 @@ impl Default for App {
 
 impl App {
     pub fn map_key(&self, key: KeyEvent) -> Option<Action> {
+        if self.modal.is_none() && self.view == View::Classroom {
+            if let Some(a) = self.dock.map_key(key) {
+                return Some(a);
+            }
+        }
         let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
         if ctrl {
             return match key.code {
@@ -198,6 +209,13 @@ impl App {
 
     /// Applies an action; returns a worker command when the action changes data.
     pub fn update(&mut self, action: Action, snap: &ViewSnapshot) -> Option<Command> {
+        let dock_action = matches!(
+            action,
+            Action::Char(_) | Action::Backspace | Action::Enter | Action::Dock(_)
+        );
+        if dock_action && self.modal.is_none() && self.view == View::Classroom {
+            return self.dock.update(action, &snap.classroom);
+        }
         match (&mut self.modal, action) {
             (_, Action::Quit) => self.quit = true,
             (_, Action::OpenPalette) => {
@@ -291,6 +309,7 @@ async fn event_loop(
     while !app.quit {
         tick.tick().await;
         let snap = shared.load_full();
+        app.dock.sync(&snap.classroom);
         while event::poll(Duration::ZERO)? {
             if let Event::Key(key) = event::read()? {
                 if key.kind != KeyEventKind::Press {
@@ -323,6 +342,7 @@ pub(crate) fn sample_snapshot() -> ViewSnapshot {
         tokens: 48_000,
     };
     ViewSnapshot {
+        classroom: Default::default(),
         accounts: vec![
             acct("claude:a@example.com", Health::Healthy),
             acct("claude:b@example.com", Health::Cooldown { secs_left: 840 }),
@@ -421,6 +441,7 @@ mod tests {
             fn snapshot(&self) -> ViewSnapshot {
                 let n = *self.0.lock().unwrap();
                 ViewSnapshot {
+                    classroom: Default::default(),
                     accounts: vec![],
                     slots: vec![SlotPin {
                         role: "r".into(),
