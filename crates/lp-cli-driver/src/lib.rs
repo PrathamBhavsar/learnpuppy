@@ -1,5 +1,7 @@
 //! LLM and local CLI adapters for LearnPuppy.
 
+pub mod engine;
+
 #[cfg(test)]
 mod tests {
     #[test]
