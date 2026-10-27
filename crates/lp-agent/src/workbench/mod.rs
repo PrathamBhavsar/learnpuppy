@@ -44,8 +44,14 @@ pub enum PumpError {
     Turn(#[from] TurnError),
 }
 
+/// Steer prefix of a finished visual job; the Classroom view shows these as transcript items.
+pub const VISUAL_STEER: &str = "Background Visual job ";
+
+/// The roles a workbench routes jobs to; `teacher` serves the continuation turns.
+const ROLES: [&str; 5] = ["teacher", "research", "visual", "demo", "pdf"];
+
 pub struct Workbench<E, J> {
-    engine: Arc<E>,
+    engines: HashMap<&'static str, Arc<E>>,
     jobs: Arc<J>,
     web: Arc<dyn Web>,
     pdf: Arc<dyn Pdf>,
@@ -55,6 +61,7 @@ pub struct Workbench<E, J> {
 }
 
 impl<E: LlmEngine + 'static, J: JobStore + 'static> Workbench<E, J> {
+    /// One engine serves every role.
     pub fn new(
         engine: Arc<E>,
         jobs: Arc<J>,
@@ -62,8 +69,19 @@ impl<E: LlmEngine + 'static, J: JobStore + 'static> Workbench<E, J> {
         pdf: Arc<dyn Pdf>,
         artifacts: impl Into<PathBuf>,
     ) -> Arc<Self> {
+        Self::routed(move |_| engine.clone(), jobs, web, pdf, artifacts)
+    }
+
+    /// `engine_for(role)` is asked once for each of teacher, research, visual, demo and pdf.
+    pub fn routed(
+        engine_for: impl Fn(&str) -> Arc<E>,
+        jobs: Arc<J>,
+        web: Arc<dyn Web>,
+        pdf: Arc<dyn Pdf>,
+        artifacts: impl Into<PathBuf>,
+    ) -> Arc<Self> {
         Arc::new(Self {
-            engine,
+            engines: ROLES.into_iter().map(|r| (r, engine_for(r))).collect(),
             jobs,
             web,
             pdf,
@@ -107,8 +125,14 @@ impl<E: LlmEngine + 'static, J: JobStore + 'static> Workbench<E, J> {
     }
 
     async fn run(&self, mut rec: JobRecord, args: Value, cancel: CancellationToken) {
+        let role = match rec.kind {
+            JobKind::Research => "research",
+            JobKind::Pdf => "pdf",
+            JobKind::Visual => "visual",
+            JobKind::Demo => "demo",
+        };
         let run = Run {
-            engine: self.engine.as_ref(),
+            engine: self.engines[role].as_ref(),
             bg_llm: &self.bg_llm,
             cancel: &cancel,
         };
@@ -191,7 +215,7 @@ impl<E: LlmEngine + 'static, J: JobStore + 'static> Workbench<E, J> {
         if !self.deliver(s)? {
             return Ok(None);
         }
-        let out = run_turn(self.engine.as_ref(), root, s, events, cancel).await?;
+        let out = run_turn(self.engines["teacher"].as_ref(), root, s, events, cancel).await?;
         self.launch(s)?;
         Ok(Some(out))
     }
@@ -199,6 +223,10 @@ impl<E: LlmEngine + 'static, J: JobStore + 'static> Workbench<E, J> {
 
 fn steer_text(job: &JobRecord) -> String {
     let result = job.result.clone().unwrap_or(Value::Null);
+    if let (JobKind::Visual, Some(ascii)) = (job.kind, result["ascii_fallback"].as_str()) {
+        let notes = result["notes"].as_str().unwrap_or_default();
+        return format!("{VISUAL_STEER}{} finished:\n{ascii}\n\n{notes}", job.id);
+    }
     format!(
         "Background {:?} job {} finished: {result}",
         job.kind, job.id

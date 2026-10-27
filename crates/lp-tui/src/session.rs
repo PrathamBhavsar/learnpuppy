@@ -118,6 +118,10 @@ pub fn classroom_view(s: &Session, streaming: &str) -> Classroom {
             Msg::Assistant { text, .. } => Some(text.clone()),
             Msg::Answer { text, .. } => Some(format!("**You answered:** {text}")),
             Msg::Compaction(t) => Some(format!("_Earlier:_ {t}")),
+            Msg::Steer { text, .. } if text.starts_with(lp_agent::workbench::VISUAL_STEER) => {
+                let (_, body) = text.split_once('\n')?;
+                Some(format!("**Diagram:**\n```\n{body}\n```"))
+            }
             Msg::ToolResult { .. } | Msg::Steer { .. } => None,
         })
         .filter(|t| !t.trim().is_empty())
@@ -157,6 +161,25 @@ mod tests {
             "correctAnswer": "a",
             "explanation": "One owner."
         })
+    }
+
+    #[test]
+    fn finished_visual_job_shows_its_diagram_in_the_transcript() {
+        let mut s = Session::new("c1", Kind::Teach);
+        s.messages.push(Msg::Steer {
+            id: "steer_j1".into(),
+            text: format!(
+                "{}j1 finished:\n[a]-[b]\n\nread left to right",
+                lp_agent::workbench::VISUAL_STEER
+            ),
+        });
+        s.messages.push(Msg::Steer {
+            id: "steer_j2".into(),
+            text: "Background Research job j2 finished: {}".into(),
+        });
+        let t = classroom_view(&s, "").transcript;
+        assert_eq!(t.len(), 1);
+        assert!(t[0].contains("[a]-[b]") && t[0].contains("```"));
     }
 
     #[tokio::test]

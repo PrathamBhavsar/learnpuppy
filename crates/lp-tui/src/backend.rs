@@ -147,8 +147,8 @@ impl<E: LlmEngine + 'static> Backend<E> {
             session: latest,
             ..Live::default()
         };
-        let wb = Workbench::new(
-            engine_for("teacher", DEFAULT_PIN),
+        let wb = Workbench::routed(
+            |role| engine_for(role, DEFAULT_PIN),
             stores.jobs.clone(),
             Arc::new(HttpWeb::default()),
             Arc::new(PdftotextPdf),

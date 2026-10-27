@@ -93,7 +93,8 @@ struct ResearchSubmit {
     sources: Vec<Source>,
 }
 
-struct WebTools<'a>(&'a dyn Web);
+/// Search and fetch, remembering which pages were actually fetched.
+struct WebTools<'a>(&'a dyn Web, Mutex<Vec<String>>);
 
 #[async_trait]
 impl Tools for WebTools<'_> {
@@ -110,11 +111,10 @@ impl Tools for WebTools<'_> {
                 Err(e) => Err(e),
             },
             "fetch" => match str_arg(args, "url") {
-                Ok(u) => self
-                    .0
-                    .fetch(u)
-                    .await
-                    .map(|h| cap(&readable(&h), MAX_FETCH_CHARS)),
+                Ok(u) => self.0.fetch(u).await.map(|h| {
+                    self.1.lock().push(u.to_owned());
+                    cap(&readable(&h), MAX_FETCH_CHARS)
+                }),
                 Err(e) => Err(e),
             },
             _ => return None,
@@ -133,7 +133,8 @@ pub async fn research<E: LlmEngine>(
          Tools: search {{query}} lists results as `title | url | snippet`; fetch {{url}} returns page text.\n\
          submit {{brief, sources:[{{title,url}}]}} with a concise brief and the sources it rests on."
     );
-    let sub: ResearchSubmit = run_submit_agent(run, &task, &WebTools(web), |v| {
+    let tools = WebTools(web, Mutex::default());
+    let sub: ResearchSubmit = run_submit_agent(run, &task, &tools, |v| {
         let s: ResearchSubmit = parse(v)?;
         non_empty("brief", &s.brief)?;
         if s.sources.is_empty() || s.sources.iter().any(|x| x.url.trim().is_empty()) {
@@ -147,8 +148,13 @@ pub async fn research<E: LlmEngine>(
     for s in &sub.sources {
         md.push_str(&format!("- [{}]({})\n", s.title, s.url));
     }
+    let fetched = tools.1.into_inner();
+    md.push_str("\n## Fetched\n\n");
+    for u in &fetched {
+        md.push_str(&format!("- {u}\n"));
+    }
     Ok(Done {
-        result: json!({ "brief": sub.brief, "sources": sub.sources }),
+        result: json!({ "brief": sub.brief, "sources": sub.sources, "fetched": fetched }),
         artifact: ("md", md),
     })
 }
