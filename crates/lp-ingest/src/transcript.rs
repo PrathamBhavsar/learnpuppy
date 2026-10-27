@@ -1,4 +1,5 @@
 //! Claude and Codex JSONL transcript parsing into `CodingSession`s.
+use super::redact::redact;
 use chrono::DateTime;
 use lp_core::ports::CodingSession;
 use serde_json::Value;
@@ -62,7 +63,7 @@ struct Lines {
 
 impl Lines {
     fn add(&mut self, ts: Option<i64>, kind: char, raw: &str, cap: usize) {
-        let text = strip_reminders(raw)
+        let text = redact(&strip_reminders(raw))
             .split_whitespace()
             .collect::<Vec<_>>()
             .join(" ");

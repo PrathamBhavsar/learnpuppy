@@ -1,4 +1,5 @@
 //! Git commits inside a session's time window, for allowlisted repos.
+use super::redact::redact;
 use lp_core::ports::CodingSession;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -70,10 +71,10 @@ pub fn commits_for_session(
             );
             GitCommit {
                 sha: sha.into(),
-                subject: subject.trim().into(),
-                body: body.trim().into(),
+                subject: redact(subject.trim()),
+                body: redact(body.trim()),
                 files: files.lines().map(Into::into).collect(),
-                diff: diff.chars().take(DIFF_CAP).collect(),
+                diff: redact(&diff).chars().take(DIFF_CAP).collect(),
             }
         })
         .collect()

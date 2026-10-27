@@ -255,3 +255,60 @@ fn commits_match_session_time_window() {
     assert!(commits[0].diff.contains("+x"));
     assert!(commits_for_session(&session, T0_MS, &[PathBuf::from("/nope")]).is_empty());
 }
+
+#[test]
+fn secrets_never_reach_the_store() {
+    let e = env();
+    let cwd = e.repo.to_str().unwrap();
+    let line = |kind: &str, text: &str| {
+        format!(
+            r#"{{"type":"{kind}","cwd":"{cwd}","timestamp":"{T0}","message":{{"content":"{text}"}}}}"#
+        )
+    };
+    write(
+        &e.home.path().join(".claude/projects/p/leaky.jsonl"),
+        &format!(
+            "{}\n{}\n",
+            line("user", "use OPENAI_API_KEY=sk-live-abc12345 please"),
+            line("user", "header was Authorization: Bearer tok_abcdef123456")
+        ),
+    );
+    let store = Mem::default();
+    ingest(
+        &store,
+        &Roots::from_home(e.home.path()),
+        std::slice::from_ref(&e.repo),
+        0,
+    );
+    let ss = store.sessions.lock().unwrap();
+    let s = ss.iter().find(|s| s.id == "claude:leaky").unwrap();
+    assert_eq!(
+        s.transcript,
+        "U: use OPENAI_API_KEY=[REDACTED] please\nU: header was Authorization: Bearer [REDACTED]\n"
+    );
+}
+
+#[test]
+fn commit_diffs_are_redacted() {
+    let repo = tempfile::tempdir().unwrap();
+    let r = repo.path();
+    git(r, "2026-05-01T10:00:00Z", &["init", "-q"]);
+    write(&r.join(".env"), "API_TOKEN=abc123secret\n");
+    git(r, "2026-05-01T10:20:00Z", &["add", "."]);
+    git(
+        r,
+        "2026-05-01T10:20:00Z",
+        &["commit", "-q", "-m", "add env"],
+    );
+    let session = CodingSession {
+        id: "claude:s".into(),
+        source: "claude".into(),
+        cwd: r.to_string_lossy().into_owned(),
+        git_branch: None,
+        started_at: T0_MS,
+        transcript: String::new(),
+    };
+    let commits = commits_for_session(&session, T0_MS, &[r.to_path_buf()]);
+    assert!(commits[0].diff.contains("API_TOKEN=[REDACTED]"));
+    assert!(!commits[0].diff.contains("abc123secret"));
+}
