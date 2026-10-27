@@ -25,6 +25,9 @@ crossterm.workspace = true
 arc-swap.workspace = true
 tokio.workspace = true
 chrono.workspace = true
+tracing.workspace = true
+tracing-appender.workspace = true
+tracing-subscriber.workspace = true
 
 [dev-dependencies]
 insta.workspace = true

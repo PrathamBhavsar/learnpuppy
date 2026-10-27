@@ -9,6 +9,7 @@ publish.workspace = true
 lp-core = { path = "../lp-core" }
 async-trait.workspace = true
 parking_lot.workspace = true
+reqwest.workspace = true
 schemars.workspace = true
 serde.workspace = true
 serde_json.workspace = true

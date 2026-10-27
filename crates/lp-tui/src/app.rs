@@ -115,8 +115,17 @@ impl View {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Modal {
-    Palette { query: String, selected: usize },
-    Accounts { selected: usize },
+    Palette {
+        query: String,
+        selected: usize,
+    },
+    Accounts {
+        selected: usize,
+    },
+    /// Topic prompt for a new Teach session.
+    Teach {
+        topic: String,
+    },
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -128,6 +137,7 @@ pub enum Action {
     TogglePlan,
     OpenPalette,
     OpenAccounts,
+    OpenTeach,
     CloseModal,
     Char(char),
     Backspace,
@@ -138,13 +148,14 @@ pub enum Action {
 }
 
 /// Commands offered by the `Ctrl+K` palette.
-pub const PALETTE: [(&str, Action); 7] = [
+pub const PALETTE: [(&str, Action); 8] = [
     ("Go to Classroom", Action::SwitchView(View::Classroom)),
     ("Go to Graph", Action::SwitchView(View::Graph)),
     ("Go to Digest", Action::SwitchView(View::Digest)),
     ("Toggle sidebar", Action::ToggleSidebar),
     ("Toggle plan pane", Action::TogglePlan),
     ("Open accounts and model slots", Action::OpenAccounts),
+    ("Start teaching a topic", Action::OpenTeach),
     ("Quit", Action::Quit),
 ];
 
@@ -220,7 +231,12 @@ impl App {
             KeyCode::Down => Some(Action::Down),
             KeyCode::Enter => Some(Action::Enter),
             KeyCode::Backspace => Some(Action::Backspace),
-            KeyCode::Char(c) if matches!(self.modal, Some(Modal::Palette { .. })) => {
+            KeyCode::Char(c)
+                if matches!(
+                    self.modal,
+                    Some(Modal::Palette { .. } | Modal::Teach { .. })
+                ) =>
+            {
                 Some(Action::Char(c))
             }
             KeyCode::Char(c)
@@ -256,6 +272,24 @@ impl App {
                 });
             }
             (_, Action::OpenAccounts) => self.modal = Some(Modal::Accounts { selected: 0 }),
+            (_, Action::OpenTeach) => {
+                self.modal = Some(Modal::Teach {
+                    topic: String::new(),
+                });
+            }
+            (Some(Modal::Teach { topic }), Action::Char(c)) => topic.push(c),
+            (Some(Modal::Teach { topic }), Action::Backspace) => {
+                topic.pop();
+            }
+            (Some(Modal::Teach { topic }), Action::Enter) => {
+                let topic = topic.trim().to_owned();
+                if topic.is_empty() {
+                    return None;
+                }
+                self.modal = None;
+                self.view = View::Classroom;
+                return Some(Command::StartTeach { topic });
+            }
             (Some(_), Action::CloseModal) => self.modal = None,
             (None, Action::CloseModal) => return Some(Command::Cancel),
             (Some(Modal::Palette { query, selected }), Action::Char(c)) => {
@@ -446,6 +480,33 @@ mod tests {
         }
         assert_eq!(app.update(Action::Enter, &s), None);
         assert_eq!((app.view, app.modal.clone()), (View::Graph, None));
+    }
+
+    #[test]
+    fn palette_teach_prompts_for_a_topic_and_starts_a_teach_session() {
+        let s = sample_snapshot();
+        let mut app = App::default();
+        app.update(Action::OpenPalette, &s);
+        for c in "teach".chars() {
+            app.update(Action::Char(c), &s);
+        }
+        assert_eq!(app.update(Action::Enter, &s), None);
+        assert!(matches!(app.modal, Some(Modal::Teach { .. })));
+        assert_eq!(
+            app.update(Action::Enter, &s),
+            None,
+            "empty topic is ignored"
+        );
+        for c in "monads".chars() {
+            app.update(Action::Char(c), &s);
+        }
+        assert_eq!(
+            app.update(Action::Enter, &s),
+            Some(Command::StartTeach {
+                topic: "monads".into()
+            })
+        );
+        assert_eq!(app.modal, None);
     }
 
     #[test]

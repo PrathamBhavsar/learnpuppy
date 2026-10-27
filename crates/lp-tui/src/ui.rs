@@ -58,6 +58,10 @@ pub fn render(f: &mut Frame, app: &App, snap: &ViewSnapshot) {
     match &app.modal {
         Some(Modal::Palette { query, selected }) => palette(f, query, *selected),
         Some(Modal::Accounts { selected }) => accounts(f, snap, *selected),
+        Some(Modal::Teach { topic }) => {
+            let inner = popup(f, "Teach a topic", 50, 5);
+            f.render_widget(Paragraph::new(format!("> {topic}_")), inner);
+        }
         None => {}
     }
 }

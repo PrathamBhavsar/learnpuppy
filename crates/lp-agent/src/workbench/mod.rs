@@ -1,6 +1,7 @@
 //! Async workbench sub-agents: "ack now, steer later". A tool call only queues a request; `launch`
 //! starts it as a background job, and the wake pump delivers its result as a steer.
 
+mod adapters;
 mod agent;
 mod jobs;
 mod tools;
@@ -24,6 +25,7 @@ use tokio_util::sync::CancellationToken;
 
 use crate::loops::{run_turn, Session, TurnError, TurnOutcome};
 
+pub use adapters::{HttpWeb, PdftotextPdf};
 pub use agent::{run_submit_agent, AgentError, NoTools, Run, Tools};
 pub use jobs::{readable, Hit, Pdf, Slider, TuiDemoSpec, Web};
 pub use tools::{
