@@ -8,6 +8,8 @@ use super::{AccountId, DiscoveredAccount, ProviderKind};
 
 const BASE_COOLDOWN: Duration = Duration::from_secs(60);
 const MAX_COOLDOWN: Duration = Duration::from_secs(3600);
+/// Upper bound for a cooldown parsed from CLI output (a hostile message can claim anything).
+const MAX_PARSED_COOLDOWN: Duration = Duration::from_secs(24 * 3600);
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum AccountHealth {
@@ -127,14 +129,22 @@ impl AccountPool {
         });
         a.strikes += 1;
         a.health = AccountHealth::Cooldown {
-            until: now + cooldown,
+            until: now.checked_add(cooldown).unwrap_or(now),
             reason: message.trim().chars().take(200).collect(),
         };
         cooldown
     }
 
     pub fn report_auth_expired(&self, id: &AccountId) {
-        self.set_health(id, AccountHealth::AuthExpired);
+        // A runtime auth failure may be a false positive, so retry after MAX_COOLDOWN
+        // instead of dropping the account until restart.
+        self.set_health(
+            id,
+            AccountHealth::Cooldown {
+                until: Instant::now() + MAX_COOLDOWN,
+                reason: "auth expired".into(),
+            },
+        );
     }
 
     pub fn report_success(&self, id: &AccountId, input_tokens: u64, output_tokens: u64) {
@@ -167,7 +177,7 @@ pub fn parse_cooldown(message: &str, now_epoch_secs: u64) -> Option<Duration> {
             .take_while(char::is_ascii_digit)
             .collect();
         if let Ok(at) = digits.parse::<u64>() {
-            return Some(Duration::from_secs(at.saturating_sub(now_epoch_secs)));
+            return Some(capped(at.saturating_sub(now_epoch_secs)));
         }
     }
     let lower = message.to_ascii_lowercase();
@@ -186,15 +196,19 @@ pub fn parse_cooldown(message: &str, now_epoch_secs: u64) -> Option<Duration> {
         };
         let secs = match unit {
             "s" | "sec" | "secs" | "second" | "seconds" => n,
-            "m" | "min" | "mins" | "minute" | "minutes" => n * 60,
-            "h" | "hr" | "hrs" | "hour" | "hours" => n * 3600,
+            "m" | "min" | "mins" | "minute" | "minutes" => n.saturating_mul(60),
+            "h" | "hr" | "hrs" | "hour" | "hours" => n.saturating_mul(3600),
             // `retry after 30` / `retry-after: 30` is seconds.
             _ if i > 0 && tokens[i - 1] == "after" => n,
             _ => continue,
         };
-        return Some(Duration::from_secs(secs));
+        return Some(capped(secs));
     }
     None
+}
+
+fn capped(secs: u64) -> Duration {
+    Duration::from_secs(secs).min(MAX_PARSED_COOLDOWN)
 }
 
 #[cfg(test)]
@@ -409,5 +423,38 @@ mod tests {
             Some(Duration::from_secs(45))
         );
         assert_eq!(parse_cooldown("HTTP 429", 0), None);
+    }
+
+    #[test]
+    fn huge_cooldowns_are_capped_not_panicking() {
+        assert_eq!(
+            parse_cooldown("limit reached|99999999999999999", 0),
+            Some(MAX_PARSED_COOLDOWN)
+        );
+        assert_eq!(
+            parse_cooldown("try again in 99999999999999999999 hours", 0),
+            None
+        );
+        assert_eq!(
+            parse_cooldown("try again in 18446744073709551615 hours", 0),
+            Some(MAX_PARSED_COOLDOWN)
+        );
+        let home = fixture();
+        let pool = AccountPool::new(discover(&roots(home.path())), Strategy::Priority);
+        let a = AccountId("claude:a@x.com".into());
+        let cd = pool.report_rate_limit(&a, "limit reached|99999999999999999", Instant::now(), 0);
+        assert_eq!(cd, MAX_PARSED_COOLDOWN);
+    }
+
+    #[test]
+    fn runtime_auth_expiry_recovers_after_cooldown() {
+        let home = fixture();
+        let pool = AccountPool::new(discover(&roots(home.path())), Strategy::Priority);
+        pool.report_auth_expired(&AccountId("claude:a@x.com".into()));
+        let later = Instant::now() + MAX_COOLDOWN + Duration::from_secs(1);
+        assert_eq!(
+            pool.acquire(&[ProviderKind::ClaudeCli], later).unwrap().0,
+            "claude:a@x.com"
+        );
     }
 }
