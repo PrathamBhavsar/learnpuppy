@@ -1,6 +1,7 @@
 //! Transcript and repository ingestion for LearnPuppy.
 mod agy;
 mod git;
+mod redact;
 mod scan;
 mod transcript;
 

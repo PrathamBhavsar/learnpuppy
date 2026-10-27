@@ -1,5 +1,5 @@
 //! Antigravity: read `conversation_summaries` from a temp snapshot, never the live WAL-mode db.
-use super::transcript::clip;
+use super::{redact::redact, transcript::clip};
 use chrono::DateTime;
 use lp_core::ports::CodingSession;
 use std::path::Path;
@@ -62,7 +62,7 @@ pub(crate) fn parse_agy(root: &Path) -> Result<Vec<CodingSession>, String> {
             cwd,
             git_branch: None,
             started_at: ts.timestamp_millis(),
-            transcript,
+            transcript: redact(&transcript),
         });
     }
     Ok(out)

@@ -720,6 +720,7 @@ dependencies = [
  "lp-cli-driver",
  "lp-core",
  "lp-store",
+ "regex",
  "rusqlite",
  "serde_json",
  "tempfile",

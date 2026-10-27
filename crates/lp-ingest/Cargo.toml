@@ -10,6 +10,7 @@ lp-store = { path = "../lp-store" }
 lp-cli-driver = { path = "../lp-cli-driver" }
 lp-agent = { path = "../lp-agent" }
 chrono.workspace = true
+regex.workspace = true
 rusqlite.workspace = true
 serde_json.workspace = true
 tempfile.workspace = true
