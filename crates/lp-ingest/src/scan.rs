@@ -36,6 +36,8 @@ impl Roots {
 pub struct IngestReport {
     pub files: usize,
     pub sessions: usize,
+    /// The sessions stored by this run, for distilling.
+    pub stored: Vec<CodingSession>,
     pub errors: Vec<String>,
 }
 
@@ -75,6 +77,7 @@ pub fn ingest(
         }) {
             store.upsert_session(s).map_err(|e| e.to_string())?;
             rep.sessions += 1;
+            rep.stored.push(s.clone());
         }
         Ok(())
     };

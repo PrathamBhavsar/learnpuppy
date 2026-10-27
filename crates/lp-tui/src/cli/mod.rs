@@ -58,6 +58,8 @@ pub async fn run(cli: Cli) -> anyhow::Result<()> {
         .unwrap_or_else(|| home.join(".learnpuppy"));
     let stores = Stores::open(&root)?;
     let mut settings = Settings::load(&root)?;
+    let device = settings.ensure_device(&root)?.to_owned();
+    crate::review::sync(&stores.tracker, &device)?;
     let pool = pool(&home, &settings);
     let mut out = std::io::stdout();
     let engine_for = {
@@ -96,17 +98,26 @@ pub async fn run(cli: Cli) -> anyhow::Result<()> {
         }
         Some(Cmd::Ingest(args)) => {
             ingest::run(
-                stores.tracker.as_ref(),
+                &stores,
+                engine_for("distiller"),
                 &root,
                 &home,
                 &mut settings,
                 args,
                 &mut out,
-            )?;
+            )
+            .await?;
+            crate::review::export_cards(stores.tracker.as_ref(), &device)?;
         }
         Some(Cmd::Review(args)) => {
             let stdin = std::io::stdin();
-            review::run(stores.tracker.as_ref(), args, &mut stdin.lock(), &mut out)?;
+            review::run(
+                stores.tracker.as_ref(),
+                &device,
+                args,
+                &mut stdin.lock(),
+                &mut out,
+            )?;
         }
     }
     out.flush()?;
