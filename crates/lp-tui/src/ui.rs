@@ -7,8 +7,9 @@ use ratatui::widgets::{Block, Borders, Clear, Paragraph};
 use ratatui::Frame;
 
 use crate::app::{palette_matches, App, Health, Modal, View, ViewSnapshot};
-use crate::views::graph;
 use crate::views::classroom;
+use crate::views::graph;
+use crate::views::quiz;
 
 pub fn render(f: &mut Frame, app: &App, snap: &ViewSnapshot) {
     let [top, body, bottom] = Layout::vertical([
@@ -40,7 +41,7 @@ pub fn render(f: &mut Frame, app: &App, snap: &ViewSnapshot) {
     } else if app.view == View::Classroom {
         classroom::render(f, main, &snap.classroom, &app.dock);
     } else {
-        f.render_widget(pane(app.view.title()), main);
+        quiz::render(f, main, &app.digest, &snap.digest);
     }
     if plan {
         classroom::render_plan(f, areas.next().unwrap_or_default(), &snap.classroom);
