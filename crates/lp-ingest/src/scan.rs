@@ -13,11 +13,22 @@ pub struct Roots {
 
 impl Roots {
     pub fn from_home(home: &Path) -> Self {
-        let mut claude = vec![home.join(".claude/projects"), home.join(".claude-work/projects")];
-        for e in std::fs::read_dir(home.join(".claude-accounts")).into_iter().flatten().flatten() {
+        let mut claude = vec![
+            home.join(".claude/projects"),
+            home.join(".claude-work/projects"),
+        ];
+        for e in std::fs::read_dir(home.join(".claude-accounts"))
+            .into_iter()
+            .flatten()
+            .flatten()
+        {
             claude.push(e.path().join("projects"));
         }
-        Self { claude, codex: home.join(".codex/sessions"), agy: home.join(".gemini/antigravity-cli") }
+        Self {
+            claude,
+            codex: home.join(".codex/sessions"),
+            agy: home.join(".gemini/antigravity-cli"),
+        }
     }
 }
 
@@ -31,21 +42,37 @@ pub struct IngestReport {
 fn stamp(paths: &[PathBuf], key: String) -> Option<IngestCursor> {
     let (mut mtime_ms, mut size_bytes) = (0, 0);
     for m in paths.iter().filter_map(|p| p.metadata().ok()) {
-        let t = m.modified().ok()?.duration_since(UNIX_EPOCH).ok()?.as_millis() as i64;
+        let t = m
+            .modified()
+            .ok()?
+            .duration_since(UNIX_EPOCH)
+            .ok()?
+            .as_millis() as i64;
         mtime_ms = mtime_ms.max(t);
         size_bytes += m.len();
     }
-    Some(IngestCursor { source_key: key, mtime_ms, size_bytes })
+    Some(IngestCursor {
+        source_key: key,
+        mtime_ms,
+        size_bytes,
+    })
 }
 
 type Parser = fn(&Path) -> std::io::Result<Option<CodingSession>>;
 
 /// Ingests sessions started at/after `since_ms` whose `cwd` is inside an `allow`listed repo.
 /// A failing source is reported and does not stop the others; its cursor is left unset so it retries.
-pub fn ingest(store: &dyn TrackerStore, roots: &Roots, allow: &[PathBuf], since_ms: i64) -> IngestReport {
+pub fn ingest(
+    store: &dyn TrackerStore,
+    roots: &Roots,
+    allow: &[PathBuf],
+    since_ms: i64,
+) -> IngestReport {
     let mut rep = IngestReport::default();
     let save = |rep: &mut IngestReport, sessions: Vec<CodingSession>| -> Result<(), String> {
-        for s in sessions.iter().filter(|s| s.started_at >= since_ms && allow.iter().any(|a| Path::new(&s.cwd).starts_with(a))) {
+        for s in sessions.iter().filter(|s| {
+            s.started_at >= since_ms && allow.iter().any(|a| Path::new(&s.cwd).starts_with(a))
+        }) {
             store.upsert_session(s).map_err(|e| e.to_string())?;
             rep.sessions += 1;
         }
@@ -53,15 +80,30 @@ pub fn ingest(store: &dyn TrackerStore, roots: &Roots, allow: &[PathBuf], since_
     };
     let mut jsonl: Vec<(&str, PathBuf, Parser)> = vec![];
     for dir in &roots.claude {
-        jsonl.extend(transcript::jsonl_files(dir).into_iter().map(|p| ("claude", p, transcript::parse_claude as _)));
+        jsonl.extend(
+            transcript::jsonl_files(dir)
+                .into_iter()
+                .map(|p| ("claude", p, transcript::parse_claude as _)),
+        );
     }
-    jsonl.extend(transcript::jsonl_files(&roots.codex).into_iter().map(|p| ("codex", p, transcript::parse_codex as _)));
+    jsonl.extend(
+        transcript::jsonl_files(&roots.codex)
+            .into_iter()
+            .map(|p| ("codex", p, transcript::parse_codex as _)),
+    );
     for (source, path, parse) in jsonl {
-        let Some(cur) = stamp(std::slice::from_ref(&path), format!("{source}:{}", path.display())) else { continue };
+        let Some(cur) = stamp(
+            std::slice::from_ref(&path),
+            format!("{source}:{}", path.display()),
+        ) else {
+            continue;
+        };
         if matches!(store.cursor(&cur.source_key), Ok(Some(prev)) if prev == cur) {
             continue;
         }
-        let res = parse(&path).map_err(|e| e.to_string()).and_then(|s| save(&mut rep, s.into_iter().collect()));
+        let res = parse(&path)
+            .map_err(|e| e.to_string())
+            .and_then(|s| save(&mut rep, s.into_iter().collect()));
         finish(store, &mut rep, &path, cur, res);
     }
     let db = roots.agy.join("conversation_summaries.db");
@@ -77,7 +119,13 @@ pub fn ingest(store: &dyn TrackerStore, roots: &Roots, allow: &[PathBuf], since_
     rep
 }
 
-fn finish(store: &dyn TrackerStore, rep: &mut IngestReport, path: &Path, cur: IngestCursor, res: Result<(), String>) {
+fn finish(
+    store: &dyn TrackerStore,
+    rep: &mut IngestReport,
+    path: &Path,
+    cur: IngestCursor,
+    res: Result<(), String>,
+) {
     match res.and_then(|()| store.set_cursor(&cur).map_err(|e| e.to_string())) {
         Ok(()) => rep.files += 1,
         Err(e) => rep.errors.push(format!("{}: {e}", path.display())),

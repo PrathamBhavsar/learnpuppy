@@ -37,7 +37,8 @@ pub struct SqliteTrackerStore {
 fn json_rows<T: DeserializeOwned>(db: &Connection, sql: &str) -> StoreResult<Vec<T>> {
     let mut stmt = db.prepare(sql).map_err(be)?;
     let rows = stmt.query_map([], |r| r.get::<_, String>(0)).map_err(be)?;
-    rows.map(|j| serde_json::from_str(&j.map_err(be)?).map_err(be)).collect()
+    rows.map(|j| serde_json::from_str(&j.map_err(be)?).map_err(be))
+        .collect()
 }
 
 impl SqliteTrackerStore {
@@ -46,17 +47,24 @@ impl SqliteTrackerStore {
         let dir = dir.into();
         std::fs::create_dir_all(&dir).map_err(be)?;
         let db = db::open(&dir.join("tracker.db"), MIGRATIONS)?;
-        Ok(Self { dir, db: Mutex::new(db) })
+        Ok(Self {
+            dir,
+            db: Mutex::new(db),
+        })
     }
 
     /// BM25-ranked prefix search over transcripts; returns session ids.
     pub fn search_transcripts(&self, query: &str, limit: usize) -> StoreResult<Vec<SmolStr>> {
-        let Some(q) = fts_query(query) else { return Ok(vec![]) };
+        let Some(q) = fts_query(query) else {
+            return Ok(vec![]);
+        };
         let db = self.db.lock().map_err(be)?;
         let mut stmt = db
             .prepare("SELECT session_id FROM transcripts_fts WHERE transcripts_fts MATCH ?1 ORDER BY bm25(transcripts_fts) LIMIT ?2")
             .map_err(be)?;
-        let rows = stmt.query_map(params![q, limit as i64], |r| r.get::<_, String>(0)).map_err(be)?;
+        let rows = stmt
+            .query_map(params![q, limit as i64], |r| r.get::<_, String>(0))
+            .map_err(be)?;
         rows.map(|s| s.map(SmolStr::from).map_err(be)).collect()
     }
 
@@ -67,7 +75,10 @@ impl SqliteTrackerStore {
         let own = format!("sync-{own_device}.jsonl");
         for entry in std::fs::read_dir(&self.dir).map_err(be)? {
             let path = entry.map_err(be)?.path();
-            let name = path.file_name().and_then(|n| n.to_str()).unwrap_or_default();
+            let name = path
+                .file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or_default();
             if !name.starts_with("sync-") || !name.ends_with(".jsonl") || name == own {
                 continue;
             }
@@ -77,7 +88,11 @@ impl SqliteTrackerStore {
                     SyncLine::Card(c) => {
                         let json = serde_json::to_string(&c).map_err(be)?;
                         let db = self.db.lock().map_err(be)?;
-                        db.execute("INSERT OR IGNORE INTO cards(id, json) VALUES (?1, ?2)", params![c.id.as_str(), json]).map_err(be)?;
+                        db.execute(
+                            "INSERT OR IGNORE INTO cards(id, json) VALUES (?1, ?2)",
+                            params![c.id.as_str(), json],
+                        )
+                        .map_err(be)?;
                     }
                 }
             }
@@ -89,9 +104,17 @@ impl SqliteTrackerStore {
 impl TrackerStore for SqliteTrackerStore {
     fn cursor(&self, source_key: &str) -> StoreResult<Option<IngestCursor>> {
         let db = self.db.lock().map_err(be)?;
-        db.query_row("SELECT mtime_ms, size_bytes FROM ingest_cursors WHERE source_key = ?1", [source_key], |r| {
-            Ok(IngestCursor { source_key: source_key.into(), mtime_ms: r.get(0)?, size_bytes: r.get(1)? })
-        })
+        db.query_row(
+            "SELECT mtime_ms, size_bytes FROM ingest_cursors WHERE source_key = ?1",
+            [source_key],
+            |r| {
+                Ok(IngestCursor {
+                    source_key: source_key.into(),
+                    mtime_ms: r.get(0)?,
+                    size_bytes: r.get(1)?,
+                })
+            },
+        )
         .optional()
         .map_err(be)
     }
@@ -110,11 +133,26 @@ impl TrackerStore for SqliteTrackerStore {
         tx.execute(
             "INSERT INTO sessions VALUES (?1, ?2, ?3, ?4, ?5, ?6) ON CONFLICT(id) DO UPDATE SET
              source = ?2, cwd = ?3, git_branch = ?4, started_at = ?5, transcript = ?6",
-            params![s.id.as_str(), s.source.as_str(), s.cwd, s.git_branch, s.started_at, s.transcript],
+            params![
+                s.id.as_str(),
+                s.source.as_str(),
+                s.cwd,
+                s.git_branch,
+                s.started_at,
+                s.transcript
+            ],
         )
         .map_err(be)?;
-        tx.execute("DELETE FROM transcripts_fts WHERE session_id = ?1", [s.id.as_str()]).map_err(be)?;
-        tx.execute("INSERT INTO transcripts_fts VALUES (?1, ?2)", params![s.id.as_str(), s.transcript]).map_err(be)?;
+        tx.execute(
+            "DELETE FROM transcripts_fts WHERE session_id = ?1",
+            [s.id.as_str()],
+        )
+        .map_err(be)?;
+        tx.execute(
+            "INSERT INTO transcripts_fts VALUES (?1, ?2)",
+            params![s.id.as_str(), s.transcript],
+        )
+        .map_err(be)?;
         tx.commit().map_err(be)
     }
     fn upsert_decision(&self, d: &DecisionRecord) -> StoreResult<()> {
@@ -156,21 +194,42 @@ impl TrackerStore for SqliteTrackerStore {
         let db = self.db.lock().map_err(be)?;
         db.execute(
             "INSERT OR IGNORE INTO fsrs_reviews VALUES (?1, ?2, ?3, ?4)",
-            params![r.card_id.as_str(), r.ts, r.rating as i64, r.device_id.as_str()],
+            params![
+                r.card_id.as_str(),
+                r.ts,
+                r.rating as i64,
+                r.device_id.as_str()
+            ],
         )
         .map_err(be)?;
         Ok(())
     }
     fn reviews(&self) -> StoreResult<Vec<FsrsReviewLog>> {
         let db = self.db.lock().map_err(be)?;
-        let mut stmt = db.prepare("SELECT card_id, ts, rating, device_id FROM fsrs_reviews ORDER BY ts, device_id").map_err(be)?;
+        let mut stmt = db
+            .prepare(
+                "SELECT card_id, ts, rating, device_id FROM fsrs_reviews ORDER BY ts, device_id",
+            )
+            .map_err(be)?;
         let rows = stmt
-            .query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?, r.get::<_, i64>(2)?, r.get::<_, String>(3)?)))
+            .query_map([], |r| {
+                Ok((
+                    r.get::<_, String>(0)?,
+                    r.get::<_, i64>(1)?,
+                    r.get::<_, i64>(2)?,
+                    r.get::<_, String>(3)?,
+                ))
+            })
             .map_err(be)?;
         rows.map(|row| {
             let (card_id, ts, rating, device_id) = row.map_err(be)?;
             let rating = rating_from(rating)?;
-            Ok(FsrsReviewLog { card_id: card_id.into(), ts, rating, device_id: device_id.into() })
+            Ok(FsrsReviewLog {
+                card_id: card_id.into(),
+                ts,
+                rating,
+                device_id: device_id.into(),
+            })
         })
         .collect()
     }

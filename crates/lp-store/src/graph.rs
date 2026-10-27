@@ -22,7 +22,10 @@ impl FsGraphStore {
         std::fs::create_dir_all(&dir).map_err(be)?;
         let db = db::open(&dir.join("graph.db"), MIGRATIONS)?;
         db.execute("DELETE FROM propositions_fts", []).map_err(be)?;
-        let store = Self { dir, db: Mutex::new(db) };
+        let store = Self {
+            dir,
+            db: Mutex::new(db),
+        };
         for node in store.nodes()? {
             store.index(&node)?;
         }
@@ -31,7 +34,11 @@ impl FsGraphStore {
 
     fn index(&self, node: &GraphNode) -> StoreResult<()> {
         let db = self.db.lock().map_err(be)?;
-        db.execute("DELETE FROM propositions_fts WHERE id = ?1", [node.id.as_str()]).map_err(be)?;
+        db.execute(
+            "DELETE FROM propositions_fts WHERE id = ?1",
+            [node.id.as_str()],
+        )
+        .map_err(be)?;
         db.execute(
             "INSERT INTO propositions_fts(id, name, statement, aliases, json) VALUES (?1, ?2, ?3, ?4, ?5)",
             params![node.id.as_str(), node.name, node.statement, node.aliases.join(" "), serde_json::to_string(node).map_err(be)?],
@@ -75,12 +82,17 @@ impl GraphStore for FsGraphStore {
         read_all(&self.path("sessions.jsonl"))
     }
     fn search_propositions(&self, query: &str, limit: usize) -> StoreResult<Vec<GraphNode>> {
-        let Some(q) = fts_query(query) else { return Ok(vec![]) };
+        let Some(q) = fts_query(query) else {
+            return Ok(vec![]);
+        };
         let db = self.db.lock().map_err(be)?;
         let mut stmt = db
             .prepare("SELECT json FROM propositions_fts WHERE propositions_fts MATCH ?1 ORDER BY bm25(propositions_fts) LIMIT ?2")
             .map_err(be)?;
-        let rows = stmt.query_map(params![q, limit as i64], |r| r.get::<_, String>(0)).map_err(be)?;
-        rows.map(|j| serde_json::from_str(&j.map_err(be)?).map_err(be)).collect()
+        let rows = stmt
+            .query_map(params![q, limit as i64], |r| r.get::<_, String>(0))
+            .map_err(be)?;
+        rows.map(|j| serde_json::from_str(&j.map_err(be)?).map_err(be))
+            .collect()
     }
 }

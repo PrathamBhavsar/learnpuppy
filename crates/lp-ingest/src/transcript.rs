@@ -40,7 +40,12 @@ fn text_of(content: &Value) -> String {
         Value::String(s) => s.clone(),
         Value::Array(blocks) => blocks
             .iter()
-            .filter(|b| matches!(b["type"].as_str(), Some("text" | "input_text" | "output_text")))
+            .filter(|b| {
+                matches!(
+                    b["type"].as_str(),
+                    Some("text" | "input_text" | "output_text")
+                )
+            })
             .filter_map(|b| b["text"].as_str())
             .collect::<Vec<_>>()
             .join("\n"),
@@ -57,19 +62,25 @@ struct Lines {
 
 impl Lines {
     fn add(&mut self, ts: Option<i64>, kind: char, raw: &str, cap: usize) {
-        let text = strip_reminders(raw).split_whitespace().collect::<Vec<_>>().join(" ");
+        let text = strip_reminders(raw)
+            .split_whitespace()
+            .collect::<Vec<_>>()
+            .join(" ");
         if text.is_empty() || JUNK.iter().any(|j| text.to_lowercase().starts_with(j)) {
             return;
         }
         if self.first_ts.is_none() {
             self.first_ts = ts;
         }
-        self.out.push_str(&format!("{kind}: {}\n", clip(&text, cap)));
+        self.out
+            .push_str(&format!("{kind}: {}\n", clip(&text, cap)));
     }
 }
 
 fn ts_ms(v: &Value) -> Option<i64> {
-    DateTime::parse_from_rfc3339(v.as_str()?).ok().map(|d| d.timestamp_millis())
+    DateTime::parse_from_rfc3339(v.as_str()?)
+        .ok()
+        .map(|d| d.timestamp_millis())
 }
 
 fn for_each_line(path: &Path, mut f: impl FnMut(Value)) -> std::io::Result<()> {
@@ -86,7 +97,13 @@ fn for_each_line(path: &Path, mut f: impl FnMut(Value)) -> std::io::Result<()> {
     }
 }
 
-fn finish(source: &str, id: String, cwd: String, branch: Option<String>, lines: Lines) -> Option<CodingSession> {
+fn finish(
+    source: &str,
+    id: String,
+    cwd: String,
+    branch: Option<String>,
+    lines: Lines,
+) -> Option<CodingSession> {
     Some(CodingSession {
         id: format!("{source}:{id}").into(),
         source: source.into(),
@@ -98,7 +115,9 @@ fn finish(source: &str, id: String, cwd: String, branch: Option<String>, lines: 
 }
 
 fn stem(path: &Path) -> String {
-    path.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default()
+    path.file_stem()
+        .map(|s| s.to_string_lossy().into_owned())
+        .unwrap_or_default()
 }
 
 pub(crate) fn parse_claude(path: &Path) -> std::io::Result<Option<CodingSession>> {
@@ -124,9 +143,11 @@ pub(crate) fn parse_claude(path: &Path) -> std::io::Result<Option<CodingSession>
                 Some("tool_use") => {
                     let name = b["name"].as_str().unwrap_or("");
                     // Only a command's first word is kept: arguments may carry secrets.
-                    let target = b["input"]["file_path"]
-                        .as_str()
-                        .or_else(|| b["input"]["command"].as_str().and_then(|c| c.split_whitespace().next()));
+                    let target = b["input"]["file_path"].as_str().or_else(|| {
+                        b["input"]["command"]
+                            .as_str()
+                            .and_then(|c| c.split_whitespace().next())
+                    });
                     if let Some(t) = target {
                         lines.add(ts, 'T', &format!("[tool: {name} {t}]"), 200);
                     }
@@ -139,7 +160,8 @@ pub(crate) fn parse_claude(path: &Path) -> std::io::Result<Option<CodingSession>
 }
 
 pub(crate) fn parse_codex(path: &Path) -> std::io::Result<Option<CodingSession>> {
-    let (mut id, mut cwd, mut branch, mut lines) = (stem(path), String::new(), None, Lines::default());
+    let (mut id, mut cwd, mut branch, mut lines) =
+        (stem(path), String::new(), None, Lines::default());
     for_each_line(path, |d| {
         let p = &d["payload"];
         let ts = ts_ms(&d["timestamp"]);

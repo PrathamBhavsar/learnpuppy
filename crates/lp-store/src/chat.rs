@@ -15,7 +15,10 @@ impl FsChatStore {
     pub fn open(dir: impl Into<PathBuf>) -> StoreResult<Self> {
         let dir = dir.into();
         std::fs::create_dir_all(&dir).map_err(be)?;
-        Ok(Self { dir, lock: Mutex::new(()) })
+        Ok(Self {
+            dir,
+            lock: Mutex::new(()),
+        })
     }
 
     fn path(&self, id: &str) -> StoreResult<PathBuf> {
@@ -51,10 +54,18 @@ impl ChatStore for FsChatStore {
             let path = entry.map_err(be)?.path();
             if path.extension().is_some_and(|e| e == "json") {
                 let c: ChatRecord = read_json(&path, "")?;
-                out.push(ChatSummary { id: c.id, title: c.title, updated_at: c.updated_at });
+                out.push(ChatSummary {
+                    id: c.id,
+                    title: c.title,
+                    updated_at: c.updated_at,
+                });
             }
         }
-        out.sort_by(|a, b| b.updated_at.cmp(&a.updated_at).then_with(|| a.id.cmp(&b.id)));
+        out.sort_by(|a, b| {
+            b.updated_at
+                .cmp(&a.updated_at)
+                .then_with(|| a.id.cmp(&b.id))
+        });
         Ok(out)
     }
 }

@@ -223,7 +223,11 @@ mod tests {
     impl ChatStore for Mem {
         fn load_chat(&self, id: &str) -> StoreResult<ChatRecord> {
             let chats = self.chats.lock().unwrap();
-            chats.iter().find(|c| c.id == id).cloned().ok_or_else(|| StoreError::NotFound(id.into()))
+            chats
+                .iter()
+                .find(|c| c.id == id)
+                .cloned()
+                .ok_or_else(|| StoreError::NotFound(id.into()))
         }
         fn save_chat(&self, chat: &ChatRecord) -> StoreResult<()> {
             let mut chats = self.chats.lock().unwrap();
@@ -233,13 +237,19 @@ mod tests {
         }
         fn append_turn_usage(&self, id: &str, usage: TurnUsage) -> StoreResult<()> {
             let mut chats = self.chats.lock().unwrap();
-            let c = chats.iter_mut().find(|c| c.id == id).ok_or_else(|| StoreError::NotFound(id.into()))?;
+            let c = chats
+                .iter_mut()
+                .find(|c| c.id == id)
+                .ok_or_else(|| StoreError::NotFound(id.into()))?;
             c.turns.push(usage);
             Ok(())
         }
         fn append_extraction_usage(&self, id: &str, usage: TurnUsage) -> StoreResult<()> {
             let mut chats = self.chats.lock().unwrap();
-            let c = chats.iter_mut().find(|c| c.id == id).ok_or_else(|| StoreError::NotFound(id.into()))?;
+            let c = chats
+                .iter_mut()
+                .find(|c| c.id == id)
+                .ok_or_else(|| StoreError::NotFound(id.into()))?;
             c.extractions.push(usage);
             Ok(())
         }
@@ -247,28 +257,48 @@ mod tests {
             let chats = self.chats.lock().unwrap();
             Ok(chats
                 .iter()
-                .map(|c| ChatSummary { id: c.id.clone(), title: c.title.clone(), updated_at: c.updated_at })
+                .map(|c| ChatSummary {
+                    id: c.id.clone(),
+                    title: c.title.clone(),
+                    updated_at: c.updated_at,
+                })
                 .collect())
         }
     }
 
     impl GraphStore for Mem {
-        fn append_node(&self, _: &GraphNode) -> StoreResult<()> { Ok(()) }
-        fn nodes(&self) -> StoreResult<Vec<GraphNode>> { Ok(vec![]) }
+        fn append_node(&self, _: &GraphNode) -> StoreResult<()> {
+            Ok(())
+        }
+        fn nodes(&self) -> StoreResult<Vec<GraphNode>> {
+            Ok(vec![])
+        }
         fn append_chain(&self, chain: &GraphChain) -> StoreResult<()> {
             self.chains.lock().unwrap().push(chain.clone());
             Ok(())
         }
-        fn chains(&self) -> StoreResult<Vec<GraphChain>> { Ok(self.chains.lock().unwrap().clone()) }
+        fn chains(&self) -> StoreResult<Vec<GraphChain>> {
+            Ok(self.chains.lock().unwrap().clone())
+        }
         fn rewrite_chains(&self, chains: &[GraphChain]) -> StoreResult<()> {
             *self.chains.lock().unwrap() = chains.to_vec();
             Ok(())
         }
-        fn append_coverage(&self, _: &CoverageEntry) -> StoreResult<()> { Ok(()) }
-        fn coverage(&self) -> StoreResult<Vec<CoverageEntry>> { Ok(vec![]) }
-        fn append_checkpoint(&self, _: &SessionCheckpoint) -> StoreResult<()> { Ok(()) }
-        fn checkpoints(&self) -> StoreResult<Vec<SessionCheckpoint>> { Ok(vec![]) }
-        fn search_propositions(&self, _: &str, _: usize) -> StoreResult<Vec<GraphNode>> { Ok(vec![]) }
+        fn append_coverage(&self, _: &CoverageEntry) -> StoreResult<()> {
+            Ok(())
+        }
+        fn coverage(&self) -> StoreResult<Vec<CoverageEntry>> {
+            Ok(vec![])
+        }
+        fn append_checkpoint(&self, _: &SessionCheckpoint) -> StoreResult<()> {
+            Ok(())
+        }
+        fn checkpoints(&self) -> StoreResult<Vec<SessionCheckpoint>> {
+            Ok(vec![])
+        }
+        fn search_propositions(&self, _: &str, _: usize) -> StoreResult<Vec<GraphNode>> {
+            Ok(vec![])
+        }
     }
 
     impl JobStore for Mem {
@@ -278,7 +308,10 @@ mod tests {
         }
         fn update_job(&self, job: &JobRecord) -> StoreResult<()> {
             let mut jobs = self.jobs.lock().unwrap();
-            let j = jobs.iter_mut().find(|j| j.id == job.id).ok_or_else(|| StoreError::NotFound(job.id.to_string()))?;
+            let j = jobs
+                .iter_mut()
+                .find(|j| j.id == job.id)
+                .ok_or_else(|| StoreError::NotFound(job.id.to_string()))?;
             *j = job.clone();
             Ok(())
         }
@@ -286,7 +319,9 @@ mod tests {
             let mut jobs = self.jobs.lock().unwrap();
             let mut out = vec![];
             for j in jobs.iter_mut().filter(|j| {
-                j.chat_id == chat_id && j.status == JobStatus::Done && j.delivery == DeliveryStatus::Pending
+                j.chat_id == chat_id
+                    && j.status == JobStatus::Done
+                    && j.delivery == DeliveryStatus::Pending
             }) {
                 j.delivery = DeliveryStatus::Claimed;
                 out.push(j.clone());
@@ -295,13 +330,23 @@ mod tests {
         }
         fn interrupted_jobs(&self) -> StoreResult<Vec<JobRecord>> {
             let jobs = self.jobs.lock().unwrap();
-            Ok(jobs.iter().filter(|j| j.status == JobStatus::Running).cloned().collect())
+            Ok(jobs
+                .iter()
+                .filter(|j| j.status == JobStatus::Running)
+                .cloned()
+                .collect())
         }
     }
 
     impl TrackerStore for Mem {
         fn cursor(&self, key: &str) -> StoreResult<Option<IngestCursor>> {
-            Ok(self.cursors.lock().unwrap().iter().find(|c| c.source_key == key).cloned())
+            Ok(self
+                .cursors
+                .lock()
+                .unwrap()
+                .iter()
+                .find(|c| c.source_key == key)
+                .cloned())
         }
         fn set_cursor(&self, cursor: &IngestCursor) -> StoreResult<()> {
             let mut cs = self.cursors.lock().unwrap();
@@ -309,15 +354,33 @@ mod tests {
             cs.push(cursor.clone());
             Ok(())
         }
-        fn upsert_session(&self, _: &CodingSession) -> StoreResult<()> { Ok(()) }
-        fn upsert_decision(&self, _: &DecisionRecord) -> StoreResult<()> { Ok(()) }
-        fn decisions(&self) -> StoreResult<Vec<DecisionRecord>> { Ok(vec![]) }
-        fn upsert_book_chunk(&self, _: &BookChunk) -> StoreResult<()> { Ok(()) }
-        fn upsert_card(&self, _: &FlashCard) -> StoreResult<()> { Ok(()) }
-        fn cards(&self) -> StoreResult<Vec<FlashCard>> { Ok(vec![]) }
-        fn append_review(&self, _: &FsrsReviewLog) -> StoreResult<()> { Ok(()) }
-        fn reviews(&self) -> StoreResult<Vec<FsrsReviewLog>> { Ok(vec![]) }
-        fn append_sync(&self, _: &str, _: &serde_json::Value) -> StoreResult<()> { Ok(()) }
+        fn upsert_session(&self, _: &CodingSession) -> StoreResult<()> {
+            Ok(())
+        }
+        fn upsert_decision(&self, _: &DecisionRecord) -> StoreResult<()> {
+            Ok(())
+        }
+        fn decisions(&self) -> StoreResult<Vec<DecisionRecord>> {
+            Ok(vec![])
+        }
+        fn upsert_book_chunk(&self, _: &BookChunk) -> StoreResult<()> {
+            Ok(())
+        }
+        fn upsert_card(&self, _: &FlashCard) -> StoreResult<()> {
+            Ok(())
+        }
+        fn cards(&self) -> StoreResult<Vec<FlashCard>> {
+            Ok(vec![])
+        }
+        fn append_review(&self, _: &FsrsReviewLog) -> StoreResult<()> {
+            Ok(())
+        }
+        fn reviews(&self) -> StoreResult<Vec<FsrsReviewLog>> {
+            Ok(vec![])
+        }
+        fn append_sync(&self, _: &str, _: &serde_json::Value) -> StoreResult<()> {
+            Ok(())
+        }
     }
 
     fn chat(id: &str) -> ChatRecord {
@@ -336,7 +399,14 @@ mod tests {
     fn chat_store_appends_usage() {
         let s = Mem::default();
         s.save_chat(&chat("c1")).unwrap();
-        s.append_turn_usage("c1", TurnUsage { input_tokens: 5, ..Default::default() }).unwrap();
+        s.append_turn_usage(
+            "c1",
+            TurnUsage {
+                input_tokens: 5,
+                ..Default::default()
+            },
+        )
+        .unwrap();
         assert_eq!(s.load_chat("c1").unwrap().turns[0].input_tokens, 5);
         assert_eq!(s.list_chats().unwrap().len(), 1);
         assert!(matches!(s.load_chat("x"), Err(StoreError::NotFound(_))));
@@ -373,7 +443,11 @@ mod tests {
         };
         s.create_job(&job).unwrap();
         assert_eq!(s.interrupted_jobs().unwrap().len(), 1);
-        s.update_job(&JobRecord { status: JobStatus::Done, ..job }).unwrap();
+        s.update_job(&JobRecord {
+            status: JobStatus::Done,
+            ..job
+        })
+        .unwrap();
         assert_eq!(s.claim_steers("c1").unwrap().len(), 1);
         assert!(s.claim_steers("c1").unwrap().is_empty());
     }
@@ -382,7 +456,11 @@ mod tests {
     fn tracker_store_cursor_roundtrip() {
         let s = Mem::default();
         assert_eq!(s.cursor("claude:/a").unwrap(), None);
-        let cur = IngestCursor { source_key: "claude:/a".into(), mtime_ms: 1, size_bytes: 2 };
+        let cur = IngestCursor {
+            source_key: "claude:/a".into(),
+            mtime_ms: 1,
+            size_bytes: 2,
+        };
         s.set_cursor(&cur).unwrap();
         assert_eq!(s.cursor("claude:/a").unwrap(), Some(cur));
     }

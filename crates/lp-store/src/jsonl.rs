@@ -43,7 +43,9 @@ fn decode_line(line: &[u8]) -> Option<&str> {
 fn valid_prefix(data: &[u8]) -> (Vec<&str>, usize) {
     let (mut lines, mut len) = (vec![], 0);
     for raw in data.split_inclusive(|&b| b == b'\n') {
-        let Some(line) = raw.strip_suffix(b"\n").and_then(decode_line) else { break };
+        let Some(line) = raw.strip_suffix(b"\n").and_then(decode_line) else {
+            break;
+        };
         lines.push(line);
         len += raw.len();
     }
@@ -60,14 +62,23 @@ fn read_bytes(path: &Path) -> StoreResult<Vec<u8>> {
 
 pub(crate) fn read_all<T: DeserializeOwned>(path: &Path) -> StoreResult<Vec<T>> {
     let data = read_bytes(path)?;
-    valid_prefix(&data).0.into_iter().map(|l| serde_json::from_str(l).map_err(be)).collect()
+    valid_prefix(&data)
+        .0
+        .into_iter()
+        .map(|l| serde_json::from_str(l).map_err(be))
+        .collect()
 }
 
 /// Append one line, first truncating any corrupt tail left by a crash.
 pub(crate) fn append(path: &Path, value: &impl Serialize) -> StoreResult<()> {
     let line = encode(value)?;
     let valid = valid_prefix(&read_bytes(path)?).1 as u64;
-    let mut f = OpenOptions::new().create(true).truncate(false).write(true).open(path).map_err(be)?;
+    let mut f = OpenOptions::new()
+        .create(true)
+        .truncate(false)
+        .write(true)
+        .open(path)
+        .map_err(be)?;
     f.set_len(valid).map_err(be)?;
     f.seek(SeekFrom::Start(valid)).map_err(be)?;
     f.write_all(&line).map_err(be)?;
@@ -77,7 +88,10 @@ pub(crate) fn append(path: &Path, value: &impl Serialize) -> StoreResult<()> {
 /// Replace the whole file atomically: temp file in the same dir, fsync, rename, fsync dir.
 pub(crate) fn write_atomic(path: &Path, bytes: &[u8]) -> StoreResult<()> {
     let dir = path.parent().ok_or_else(|| be("path has no parent"))?;
-    let name = path.file_name().and_then(|n| n.to_str()).ok_or_else(|| be("bad file name"))?;
+    let name = path
+        .file_name()
+        .and_then(|n| n.to_str())
+        .ok_or_else(|| be("bad file name"))?;
     let tmp = dir.join(format!(".{name}.tmp"));
     let mut f = File::create(&tmp).map_err(be)?;
     f.write_all(bytes).map_err(be)?;

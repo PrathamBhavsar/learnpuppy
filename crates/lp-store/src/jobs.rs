@@ -14,7 +14,10 @@ impl FsJobStore {
     pub fn open(dir: impl Into<PathBuf>) -> StoreResult<Self> {
         let dir = dir.into();
         std::fs::create_dir_all(&dir).map_err(be)?;
-        Ok(Self { dir, lock: Mutex::new(()) })
+        Ok(Self {
+            dir,
+            lock: Mutex::new(()),
+        })
     }
 
     fn path(&self, id: &str) -> StoreResult<PathBuf> {
@@ -30,7 +33,11 @@ impl FsJobStore {
                 jobs.push(read_json(&path, "")?);
             }
         }
-        jobs.sort_by(|a: &JobRecord, b| a.created_at.cmp(&b.created_at).then_with(|| a.id.cmp(&b.id)));
+        jobs.sort_by(|a: &JobRecord, b| {
+            a.created_at
+                .cmp(&b.created_at)
+                .then_with(|| a.id.cmp(&b.id))
+        });
         Ok(jobs)
     }
 }
@@ -52,7 +59,10 @@ impl JobStore for FsJobStore {
         let _guard = self.lock.lock().map_err(be)?;
         let mut claimed = vec![];
         for mut job in self.all()? {
-            if job.chat_id == chat_id && job.status == JobStatus::Done && job.delivery == DeliveryStatus::Pending {
+            if job.chat_id == chat_id
+                && job.status == JobStatus::Done
+                && job.delivery == DeliveryStatus::Pending
+            {
                 job.delivery = DeliveryStatus::Claimed;
                 write_json(&self.path(&job.id)?, &job)?;
                 claimed.push(job);
@@ -61,6 +71,10 @@ impl JobStore for FsJobStore {
         Ok(claimed)
     }
     fn interrupted_jobs(&self) -> StoreResult<Vec<JobRecord>> {
-        Ok(self.all()?.into_iter().filter(|j| j.status == JobStatus::Running).collect())
+        Ok(self
+            .all()?
+            .into_iter()
+            .filter(|j| j.status == JobStatus::Running)
+            .collect())
     }
 }

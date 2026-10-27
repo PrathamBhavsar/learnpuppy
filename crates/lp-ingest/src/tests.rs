@@ -12,7 +12,13 @@ struct Mem {
 
 impl TrackerStore for Mem {
     fn cursor(&self, key: &str) -> StoreResult<Option<IngestCursor>> {
-        Ok(self.cursors.lock().unwrap().iter().find(|c| c.source_key == key).cloned())
+        Ok(self
+            .cursors
+            .lock()
+            .unwrap()
+            .iter()
+            .find(|c| c.source_key == key)
+            .cloned())
     }
     fn set_cursor(&self, cursor: &IngestCursor) -> StoreResult<()> {
         let mut cs = self.cursors.lock().unwrap();
@@ -26,14 +32,30 @@ impl TrackerStore for Mem {
         ss.push(s.clone());
         Ok(())
     }
-    fn upsert_decision(&self, _: &DecisionRecord) -> StoreResult<()> { Ok(()) }
-    fn decisions(&self) -> StoreResult<Vec<DecisionRecord>> { Ok(vec![]) }
-    fn upsert_book_chunk(&self, _: &BookChunk) -> StoreResult<()> { Ok(()) }
-    fn upsert_card(&self, _: &FlashCard) -> StoreResult<()> { Ok(()) }
-    fn cards(&self) -> StoreResult<Vec<FlashCard>> { Ok(vec![]) }
-    fn append_review(&self, _: &FsrsReviewLog) -> StoreResult<()> { Ok(()) }
-    fn reviews(&self) -> StoreResult<Vec<FsrsReviewLog>> { Ok(vec![]) }
-    fn append_sync(&self, _: &str, _: &serde_json::Value) -> StoreResult<()> { Ok(()) }
+    fn upsert_decision(&self, _: &DecisionRecord) -> StoreResult<()> {
+        Ok(())
+    }
+    fn decisions(&self) -> StoreResult<Vec<DecisionRecord>> {
+        Ok(vec![])
+    }
+    fn upsert_book_chunk(&self, _: &BookChunk) -> StoreResult<()> {
+        Ok(())
+    }
+    fn upsert_card(&self, _: &FlashCard) -> StoreResult<()> {
+        Ok(())
+    }
+    fn cards(&self) -> StoreResult<Vec<FlashCard>> {
+        Ok(vec![])
+    }
+    fn append_review(&self, _: &FsrsReviewLog) -> StoreResult<()> {
+        Ok(())
+    }
+    fn reviews(&self) -> StoreResult<Vec<FsrsReviewLog>> {
+        Ok(vec![])
+    }
+    fn append_sync(&self, _: &str, _: &serde_json::Value) -> StoreResult<()> {
+        Ok(())
+    }
 }
 
 fn write(path: &Path, text: &str) {
@@ -89,11 +111,28 @@ fn env() -> Env {
     let repo = home.path().join("code/tracker");
     std::fs::create_dir_all(&repo).unwrap();
     let cwd = repo.to_str().unwrap();
-    write(&home.path().join(".claude/projects/p/s1.jsonl"), &claude_fixture(cwd));
-    write(&home.path().join(".claude-accounts/work2/projects/p/s2.jsonl"), &claude_fixture(cwd));
-    write(&home.path().join(".claude/projects/p/subagents/s3.jsonl"), &claude_fixture(cwd));
-    write(&home.path().join(".claude/projects/p/outside.jsonl"), &claude_fixture("/elsewhere"));
-    write(&home.path().join(".codex/sessions/2026/05/01/rollout.jsonl"), &codex_fixture(cwd));
+    write(
+        &home.path().join(".claude/projects/p/s1.jsonl"),
+        &claude_fixture(cwd),
+    );
+    write(
+        &home
+            .path()
+            .join(".claude-accounts/work2/projects/p/s2.jsonl"),
+        &claude_fixture(cwd),
+    );
+    write(
+        &home.path().join(".claude/projects/p/subagents/s3.jsonl"),
+        &claude_fixture(cwd),
+    );
+    write(
+        &home.path().join(".claude/projects/p/outside.jsonl"),
+        &claude_fixture("/elsewhere"),
+    );
+    write(
+        &home.path().join(".codex/sessions/2026/05/01/rollout.jsonl"),
+        &codex_fixture(cwd),
+    );
     agy_fixture(&home.path().join(".gemini/antigravity-cli"), cwd);
     Env { home, repo }
 }
@@ -102,9 +141,20 @@ fn env() -> Env {
 fn ingests_claude_multi_account_codex_and_agy() {
     let e = env();
     let store = Mem::default();
-    let rep = ingest(&store, &Roots::from_home(e.home.path()), std::slice::from_ref(&e.repo), 0);
+    let rep = ingest(
+        &store,
+        &Roots::from_home(e.home.path()),
+        std::slice::from_ref(&e.repo),
+        0,
+    );
     assert_eq!(rep.errors, Vec::<String>::new());
-    let mut ids: Vec<_> = store.sessions.lock().unwrap().iter().map(|s| s.id.to_string()).collect();
+    let mut ids: Vec<_> = store
+        .sessions
+        .lock()
+        .unwrap()
+        .iter()
+        .map(|s| s.id.to_string())
+        .collect();
     ids.sort();
     // subagents/ and out-of-allowlist cwd are skipped
     assert_eq!(ids, ["agy:c1", "claude:s1", "claude:s2", "codex:cx1"]);
@@ -113,12 +163,18 @@ fn ingests_claude_multi_account_codex_and_agy() {
     let claude = ss.iter().find(|s| s.id == "claude:s1").unwrap();
     assert_eq!(claude.git_branch.as_deref(), Some("main"));
     assert_eq!(claude.started_at, T0_MS);
-    assert_eq!(claude.transcript, "U: add a cursor store\nA: Done.\nT: [tool: Edit src/main.rs]\nT: [tool: Bash curl]\n");
+    assert_eq!(
+        claude.transcript,
+        "U: add a cursor store\nA: Done.\nT: [tool: Edit src/main.rs]\nT: [tool: Bash curl]\n"
+    );
     let codex = ss.iter().find(|s| s.source == "codex").unwrap();
     assert_eq!(codex.git_branch.as_deref(), Some("dev"));
     assert_eq!(codex.transcript, "U: explain fsrs\nA: it schedules\n");
     let agy = ss.iter().find(|s| s.source == "agy").unwrap();
-    assert_eq!(agy.transcript, "U: copy the wal\nA: plan.md: # plan\nsnapshot first\n");
+    assert_eq!(
+        agy.transcript,
+        "U: copy the wal\nA: plan.md: # plan\nsnapshot first\n"
+    );
 }
 
 #[test]
@@ -131,7 +187,10 @@ fn unchanged_files_are_skipped_and_changed_ones_reingested() {
     let again = ingest(&store, &roots, &allow, 0);
     assert_eq!((again.files, again.sessions), (0, 0));
 
-    let p = e.home.path().join(".codex/sessions/2026/05/01/rollout.jsonl");
+    let p = e
+        .home
+        .path()
+        .join(".codex/sessions/2026/05/01/rollout.jsonl");
     let grown = format!("{}{}", codex_fixture(e.repo.to_str().unwrap()), "\n");
     write(&p, &grown);
     assert_eq!(ingest(&store, &roots, &allow, 0).files, 1);
@@ -141,7 +200,12 @@ fn unchanged_files_are_skipped_and_changed_ones_reingested() {
 fn since_filters_old_sessions() {
     let e = env();
     let store = Mem::default();
-    let rep = ingest(&store, &Roots::from_home(e.home.path()), std::slice::from_ref(&e.repo), T0_MS + 1);
+    let rep = ingest(
+        &store,
+        &Roots::from_home(e.home.path()),
+        std::slice::from_ref(&e.repo),
+        T0_MS + 1,
+    );
     assert_eq!(rep.sessions, 0);
 }
 
