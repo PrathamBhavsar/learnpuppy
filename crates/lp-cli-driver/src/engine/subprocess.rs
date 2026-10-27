@@ -1,5 +1,6 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Stdio;
+use std::sync::Arc;
 use std::time::Duration;
 
 use async_trait::async_trait;
@@ -35,23 +36,28 @@ pub struct SubprocessEngine {
     pub timeout: Duration,
     /// Claude only: `CLAUDE_CONFIG_DIR` selecting which account to use.
     pub config_dir: Option<PathBuf>,
-    sandbox: PathBuf,
+    /// Private (0700, random name) working directory, removed when the last clone drops.
+    sandbox: Arc<tempfile::TempDir>,
 }
 
 impl SubprocessEngine {
-    pub fn new(kind: CliKind) -> Self {
+    pub fn new(kind: CliKind) -> Result<Self, DriverError> {
         let program = match kind {
             CliKind::Claude => "claude",
             CliKind::Codex => "codex",
             CliKind::Agy => "agy",
         };
-        Self {
+        Ok(Self {
             kind,
             program: program.into(),
             timeout: Duration::from_secs(600),
             config_dir: None,
-            sandbox: std::env::temp_dir().join("lp-empty-sandbox"),
-        }
+            sandbox: Arc::new(tempfile::Builder::new().prefix("lp-sandbox-").tempdir()?),
+        })
+    }
+
+    fn sandbox(&self) -> &Path {
+        self.sandbox.path()
     }
 
     fn spawn(
@@ -60,10 +66,9 @@ impl SubprocessEngine {
         stdin: Option<String>,
         cancel: CancellationToken,
     ) -> Result<Proc, DriverError> {
-        std::fs::create_dir_all(&self.sandbox)?;
         let mut cmd = Command::new(&self.program);
         // env_clear strips nested-session vars (CLAUDECODE, CLAUDE_*, ...).
-        cmd.args(args).env_clear().current_dir(&self.sandbox);
+        cmd.args(args).env_clear().current_dir(self.sandbox());
         for key in ["HOME", "PATH"] {
             if let Some(v) = std::env::var_os(key) {
                 cmd.env(key, v);
@@ -118,7 +123,7 @@ impl SubprocessEngine {
             }
             CliKind::Codex => {
                 a.extend(["exec", "--json", "--skip-git-repo-check", "-C"].map(String::from));
-                a.push(self.sandbox.display().to_string());
+                a.push(self.sandbox().display().to_string());
             }
             CliKind::Agy => a.extend(["--output-format", "json", "--sandbox"].map(String::from)),
         }
@@ -320,13 +325,12 @@ impl LlmEngine for SubprocessEngine {
                 a.push(schema);
             }
             CliKind::Codex => {
-                std::fs::create_dir_all(&self.sandbox)?;
                 let mut f = tempfile::Builder::new()
                     .suffix(".json")
-                    .tempfile_in(&self.sandbox)?;
+                    .tempfile_in(self.sandbox())?;
                 std::io::Write::write_all(&mut f, schema.as_bytes())?;
                 a.extend(["exec", "--json", "--skip-git-repo-check", "-C"].map(String::from));
-                a.push(self.sandbox.display().to_string());
+                a.push(self.sandbox().display().to_string());
                 a.extend(["--output-schema".into(), f.path().display().to_string()]);
                 schema_file = Some(f);
             }
@@ -364,7 +368,7 @@ mod tests {
         let path = dir.path().join("mock-cli");
         std::fs::write(&path, format!("#!/bin/sh\n{script}\n")).unwrap();
         std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
-        let mut e = SubprocessEngine::new(kind);
+        let mut e = SubprocessEngine::new(kind).unwrap();
         e.program = path;
         (dir, e)
     }
@@ -478,7 +482,7 @@ echo '{"type":"item.completed","item":{"type":"agent_message","text":"{\"n\":4}"
             .await
             .unwrap();
         assert!(resp.text.starts_with("[unset]"), "{}", resp.text);
-        assert!(resp.text.contains("lp-empty-sandbox"), "{}", resp.text);
+        assert!(resp.text.contains("lp-sandbox-"), "{}", resp.text);
     }
 
     /// The mock records its pid then blocks; the child must be dead after the error.
