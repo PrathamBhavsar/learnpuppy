@@ -10,10 +10,18 @@ lp-store = { path = "../lp-store" }
 lp-cli-driver = { path = "../lp-cli-driver" }
 lp-agent = { path = "../lp-agent" }
 chrono.workspace = true
+hex.workspace = true
 regex.workspace = true
+schemars.workspace = true
+serde.workspace = true
 rusqlite.workspace = true
 serde_json.workspace = true
+sha2.workspace = true
+smol_str.workspace = true
+thiserror.workspace = true
 tempfile.workspace = true
+tokio.workspace = true
+tokio-util.workspace = true
 
 [lints]
 workspace = true

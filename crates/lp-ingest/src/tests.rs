@@ -277,7 +277,7 @@ fn secrets_never_reach_the_store() {
     ingest(
         &store,
         &Roots::from_home(e.home.path()),
-        &[e.repo.clone()],
+        std::slice::from_ref(&e.repo),
         0,
     );
     let ss = store.sessions.lock().unwrap();

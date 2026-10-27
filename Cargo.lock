@@ -716,14 +716,22 @@ name = "lp-ingest"
 version = "0.1.0"
 dependencies = [
  "chrono",
+ "hex",
  "lp-agent",
  "lp-cli-driver",
  "lp-core",
  "lp-store",
  "regex",
  "rusqlite",
+ "schemars",
+ "serde",
  "serde_json",
+ "sha2",
+ "smol_str",
  "tempfile",
+ "thiserror",
+ "tokio",
+ "tokio-util",
 ]
 
 [[package]]
