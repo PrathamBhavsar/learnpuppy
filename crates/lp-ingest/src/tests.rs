@@ -47,7 +47,7 @@ const T0_MS: i64 = 1_777_629_600_000;
 fn claude_fixture(cwd: &str) -> String {
     format!(
         r#"{{"type":"user","cwd":"{cwd}","gitBranch":"main","timestamp":"{T0}","message":{{"content":"add a cursor store <system-reminder>secret ctx</system-reminder>"}}}}
-{{"type":"assistant","timestamp":"{T0}","message":{{"content":[{{"type":"text","text":"Done."}},{{"type":"tool_use","name":"Edit","input":{{"file_path":"src/main.rs"}}}}]}}}}
+{{"type":"assistant","timestamp":"{T0}","message":{{"content":[{{"type":"text","text":"Done."}},{{"type":"tool_use","name":"Edit","input":{{"file_path":"src/main.rs"}}}},{{"type":"tool_use","name":"Bash","input":{{"command":"curl -H 'Authorization: Bearer sk-secret' x"}}}}]}}}}
 {{"type":"user","timestamp":"{T0}","message":{{"content":[{{"type":"tool_result","content":"ok"}}]}}}}
 not json
 "#
@@ -113,7 +113,7 @@ fn ingests_claude_multi_account_codex_and_agy() {
     let claude = ss.iter().find(|s| s.id == "claude:s1").unwrap();
     assert_eq!(claude.git_branch.as_deref(), Some("main"));
     assert_eq!(claude.started_at, T0_MS);
-    assert_eq!(claude.transcript, "U: add a cursor store\nA: Done.\nT: [tool: Edit src/main.rs]\n");
+    assert_eq!(claude.transcript, "U: add a cursor store\nA: Done.\nT: [tool: Edit src/main.rs]\nT: [tool: Bash curl]\n");
     let codex = ss.iter().find(|s| s.source == "codex").unwrap();
     assert_eq!(codex.git_branch.as_deref(), Some("dev"));
     assert_eq!(codex.transcript, "U: explain fsrs\nA: it schedules\n");

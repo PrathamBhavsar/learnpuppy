@@ -123,7 +123,10 @@ pub(crate) fn parse_claude(path: &Path) -> std::io::Result<Option<CodingSession>
                 Some("text") => lines.add(ts, 'A', b["text"].as_str().unwrap_or(""), 420),
                 Some("tool_use") => {
                     let name = b["name"].as_str().unwrap_or("");
-                    let target = b["input"]["file_path"].as_str().or_else(|| b["input"]["command"].as_str());
+                    // Only a command's first word is kept: arguments may carry secrets.
+                    let target = b["input"]["file_path"]
+                        .as_str()
+                        .or_else(|| b["input"]["command"].as_str().and_then(|c| c.split_whitespace().next()));
                     if let Some(t) = target {
                         lines.add(ts, 'T', &format!("[tool: {name} {t}]"), 200);
                     }
