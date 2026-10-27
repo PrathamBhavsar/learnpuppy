@@ -23,6 +23,10 @@ impl GraphStore for MemGraph {
     fn nodes(&self) -> StoreResult<Vec<GraphNode>> {
         Ok(self.nodes.lock().clone())
     }
+    fn delete_nodes(&self, ids: &[smol_str::SmolStr]) -> StoreResult<()> {
+        self.nodes.lock().retain(|n| !ids.contains(&n.id));
+        Ok(())
+    }
     fn append_chain(&self, c: &GraphChain) -> StoreResult<()> {
         self.chains.lock().push(c.clone());
         Ok(())

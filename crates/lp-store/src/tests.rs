@@ -203,6 +203,19 @@ fn fts_ranks_prefix_and_survives_reindex() {
     assert_eq!(s.nodes().unwrap().len(), 4);
 }
 
+#[test]
+fn delete_nodes_rewrites_ledger_and_search_index() {
+    let dir = tempfile::tempdir().unwrap();
+    let s = FsGraphStore::open(dir.path()).unwrap();
+    s.append_node(&node("n_a", "Nap", "naps help")).unwrap();
+    s.append_node(&node("n_b", "Sleep", "sleep helps")).unwrap();
+    s.delete_nodes(&["n_a".into()]).unwrap();
+    let ids: Vec<_> = s.nodes().unwrap().into_iter().map(|n| n.id).collect();
+    assert_eq!(ids, ["n_b"]);
+    assert!(s.search_propositions("nap", 10).unwrap().is_empty());
+    assert_eq!(s.search_propositions("sleep", 10).unwrap().len(), 1);
+}
+
 fn session(id: &str, transcript: &str) -> CodingSession {
     CodingSession {
         id: id.into(),
@@ -229,6 +242,15 @@ fn transcript_fts_ranks_by_bm25() {
     assert_eq!(s.search_transcripts("pars", 5).unwrap(), ["s1", "s2"]);
     s.upsert_session(&session("s1", "rewritten")).unwrap();
     assert_eq!(s.search_transcripts("parser", 5).unwrap(), ["s2"]);
+}
+
+#[test]
+fn session_lookup_returns_the_stored_session() {
+    let dir = tempfile::tempdir().unwrap();
+    let s = SqliteTrackerStore::open(dir.path()).unwrap();
+    s.upsert_session(&session("s1", "t")).unwrap();
+    assert_eq!(s.session("s1").unwrap(), Some(session("s1", "t")));
+    assert_eq!(s.session("nope").unwrap(), None);
 }
 
 #[test]

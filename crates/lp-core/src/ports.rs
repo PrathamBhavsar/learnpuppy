@@ -61,6 +61,8 @@ pub struct SessionCheckpoint {
 pub trait GraphStore: Send + Sync {
     fn append_node(&self, node: &GraphNode) -> StoreResult<()>;
     fn nodes(&self) -> StoreResult<Vec<GraphNode>>;
+    /// Atomically drop the nodes with these ids (and their search entries).
+    fn delete_nodes(&self, ids: &[SmolStr]) -> StoreResult<()>;
     fn append_chain(&self, chain: &GraphChain) -> StoreResult<()>;
     fn chains(&self) -> StoreResult<Vec<GraphChain>>;
     /// Atomically replace `chains.jsonl` (used after chain simplification).
@@ -196,6 +198,7 @@ pub trait TrackerStore: Send + Sync {
     fn cursor(&self, source_key: &str) -> StoreResult<Option<IngestCursor>>;
     fn set_cursor(&self, cursor: &IngestCursor) -> StoreResult<()>;
     fn upsert_session(&self, session: &CodingSession) -> StoreResult<()>;
+    fn session(&self, id: &str) -> StoreResult<Option<CodingSession>>;
     fn upsert_decision(&self, decision: &DecisionRecord) -> StoreResult<()>;
     fn decisions(&self) -> StoreResult<Vec<DecisionRecord>>;
     fn upsert_book_chunk(&self, chunk: &BookChunk) -> StoreResult<()>;
@@ -272,6 +275,9 @@ mod tests {
         }
         fn nodes(&self) -> StoreResult<Vec<GraphNode>> {
             Ok(vec![])
+        }
+        fn delete_nodes(&self, _: &[SmolStr]) -> StoreResult<()> {
+            Ok(())
         }
         fn append_chain(&self, chain: &GraphChain) -> StoreResult<()> {
             self.chains.lock().unwrap().push(chain.clone());
@@ -356,6 +362,9 @@ mod tests {
         }
         fn upsert_session(&self, _: &CodingSession) -> StoreResult<()> {
             Ok(())
+        }
+        fn session(&self, _: &str) -> StoreResult<Option<CodingSession>> {
+            Ok(None)
         }
         fn upsert_decision(&self, _: &DecisionRecord) -> StoreResult<()> {
             Ok(())

@@ -32,6 +32,15 @@ impl TrackerStore for Mem {
         ss.push(s.clone());
         Ok(())
     }
+    fn session(&self, id: &str) -> StoreResult<Option<CodingSession>> {
+        Ok(self
+            .sessions
+            .lock()
+            .unwrap()
+            .iter()
+            .find(|s| s.id == id)
+            .cloned())
+    }
     fn upsert_decision(&self, _: &DecisionRecord) -> StoreResult<()> {
         Ok(())
     }
