@@ -293,7 +293,7 @@ flowchart TD
     T11 --> T20
     T12 --> T20
     T01 --> T21["T21: lp-cli-driver Multi-Account Discovery & Quota Pool"]
-    T21 --> T22["T22: lp-cli-driver Subprocess Streaming, Schema Runner & FauxEngine"]
+    T01 --> T22["T22: lp-cli-driver Subprocess Streaming, Schema Runner & FauxEngine"]
     T20 --> T30["T30: lp-agent Prober, Teacher & Adaptive Practice Engine"]
     T22 --> T30
     T30 --> T31["T31: lp-agent Async Sub-Agents (research/pdf/visual/demo) & Wake Pump"]
@@ -302,8 +302,8 @@ flowchart TD
     T22 --> T40
     T40 --> T41["T41: lp-ingest Decision Distiller, MC Card Builder & Self-Hosting Seed"]
     T32 --> T41
-    T31 --> T50["T50: lp-tui App Shell, ArcSwap State, Keymap & Accounts Modal"]
-    T41 --> T50
+    T10 --> T50["T50: lp-tui App Shell, ArcSwap State, Keymap & Accounts Modal"]
+    T11 --> T50
     T50 --> T51["T51: lp-tui Classroom View, Question Dock & Plan DAG Pane"]
     T50 --> T52["T52: lp-tui Braille Force-Directed Graph Canvas & Chain Table"]
     T50 --> T53["T53: lp-tui Tracker Digest & FSRS 4-Choice Quiz View"]
