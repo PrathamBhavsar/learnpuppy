@@ -1,7 +1,7 @@
 //! Real `Web` and `Pdf` adapters for the workbench, bounded by timeouts and size caps.
 
 use std::io::Read;
-use std::net::{IpAddr, SocketAddr};
+use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::path::Path;
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
@@ -53,8 +53,11 @@ impl HttpWeb {
             let mut builder = reqwest::Client::builder()
                 .timeout(WEB_TIMEOUT)
                 .user_agent("learnpuppy")
+                .no_proxy()
                 .redirect(reqwest::redirect::Policy::none());
             if let Some((host, addr)) = self.vet(&url).await? {
+                // The request must use the exact name the pin is registered under.
+                url.set_host(Some(&host)).map_err(|e| e.to_string())?;
                 builder = builder.resolve(&host, addr);
             }
             let client = builder.build().map_err(|e| e.to_string())?;
@@ -132,7 +135,13 @@ impl HttpWeb {
 fn is_internal(ip: IpAddr) -> bool {
     match ip {
         IpAddr::V4(v4) => {
+            let [a, b, c, _] = v4.octets();
             v4.is_loopback()
+                || a == 0 // 0.0.0.0/8
+                || a >= 240 // 240.0.0.0/4 reserved, incl. broadcast
+                || (a == 100 && b & 0xc0 == 64) // 100.64.0.0/10 CGNAT
+                || (a == 192 && b == 0 && c == 0) // 192.0.0.0/24
+                || (a == 198 && b & 0xfe == 18) // 198.18.0.0/15
                 || v4.is_unspecified()
                 || v4.is_private()
                 || v4.is_link_local()
@@ -140,8 +149,14 @@ fn is_internal(ip: IpAddr) -> bool {
                 || v4.is_broadcast()
         }
         IpAddr::V6(v6) => {
-            if let Some(v4) = v6.to_ipv4_mapped() {
-                return is_internal(v4.into());
+            if let Some(v4) = v6.to_ipv4() {
+                return is_internal(v4.into()); // mapped and IPv4-compatible forms
+            }
+            let seg = v6.segments();
+            if seg[..6] == [0x64, 0xff9b, 0, 0, 0, 0] {
+                // NAT64: check the embedded IPv4 address.
+                let o = v6.octets();
+                return is_internal(Ipv4Addr::new(o[12], o[13], o[14], o[15]).into());
             }
             let first = v6.segments()[0];
             v6.is_loopback()
@@ -365,6 +380,12 @@ mod tests {
             "http://[fd00::1]/",
             "http://[fe80::1]/",
             "http://user:pw@example.com/",
+            "http://100.64.0.1/",
+            "http://0.1.2.3/",
+            "http://198.18.0.1/",
+            "http://240.0.0.1/",
+            "http://[64:ff9b::7f00:1]/",
+            "http://[::127.0.0.1]/",
         ] {
             assert!(web.fetch(url).await.is_err(), "{url} should be rejected");
         }
