@@ -346,6 +346,14 @@ pub async fn run_turn<E: LlmEngine>(
         let req = TurnRequest {
             prompt: render_prompt(agent.as_ref(), s),
             model: None,
+            tools: agent
+                .tools()
+                .iter()
+                .map(|t| lp_cli_driver::engine::ToolDecl {
+                    name: t.name.into(),
+                    usage: t.usage.into(),
+                })
+                .collect(),
         };
         let resp = engine
             .stream_turn(req, events.clone(), cancel.clone())

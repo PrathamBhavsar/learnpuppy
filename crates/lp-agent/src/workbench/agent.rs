@@ -69,6 +69,10 @@ pub async fn run_submit_agent<E: LlmEngine, T>(
             let req = TurnRequest {
                 prompt: prompt.clone(),
                 model: None,
+                tools: vec![lp_cli_driver::engine::ToolDecl {
+                    name: "submit".into(),
+                    usage: "submit({...}) the final result".into(),
+                }],
             };
             let resp = run.engine.stream_turn(req, tx, run.cancel.clone()).await;
             let _ = drain.await;
