@@ -208,6 +208,10 @@ pub trait TrackerStore: Send + Sync {
     fn upsert_book_chunk(&self, chunk: &BookChunk) -> StoreResult<()>;
     fn upsert_card(&self, card: &FlashCard) -> StoreResult<()>;
     fn cards(&self) -> StoreResult<Vec<FlashCard>>;
+    /// One card by id; stores override this to avoid loading every card.
+    fn card(&self, id: &str) -> StoreResult<Option<FlashCard>> {
+        Ok(self.cards()?.into_iter().find(|c| c.id == id))
+    }
     fn append_review(&self, review: &FsrsReviewLog) -> StoreResult<()>;
     fn reviews(&self) -> StoreResult<Vec<FsrsReviewLog>>;
     /// Persist a rescheduled card and its review row together; stores override this to be atomic.

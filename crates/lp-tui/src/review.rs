@@ -26,9 +26,7 @@ pub fn grade(
     now: i64,
 ) -> StoreResult<()> {
     let mut card = t
-        .cards()?
-        .into_iter()
-        .find(|c| c.id == card_id)
+        .card(card_id)?
         .ok_or_else(|| StoreError::NotFound(card_id.into()))?;
     let log = FsrsReviewLog {
         card_id: card.id.clone(),

@@ -8,6 +8,7 @@ publish.workspace = true
 [dependencies]
 lp-core = { path = "../lp-core" }
 rusqlite.workspace = true
+tracing.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 smol_str.workspace = true
