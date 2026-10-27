@@ -1,5 +1,5 @@
 //! `FsChatStore`: one atomically-replaced `chats/<id>.json` per chat.
-use crate::jsonl::{be, check_id, read_json, write_json};
+use crate::jsonl::{be, check_id, create_dir, lock, read_json, write_atomic, write_json};
 use lp_core::fsrs::TurnUsage;
 use lp_core::ports::{ChatRecord, ChatStore, ChatSummary, StoreResult};
 use std::path::PathBuf;
@@ -14,7 +14,7 @@ pub struct FsChatStore {
 impl FsChatStore {
     pub fn open(dir: impl Into<PathBuf>) -> StoreResult<Self> {
         let dir = dir.into();
-        std::fs::create_dir_all(&dir).map_err(be)?;
+        create_dir(&dir)?;
         Ok(Self {
             dir,
             lock: Mutex::new(()),
@@ -28,9 +28,11 @@ impl FsChatStore {
 
     fn modify(&self, id: &str, f: impl FnOnce(&mut ChatRecord)) -> StoreResult<()> {
         let _guard = self.lock.lock().map_err(be)?;
+        let path = self.path(id)?;
+        let _file_lock = lock(&path)?;
         let mut chat = self.load_chat(id)?;
         f(&mut chat);
-        write_json(&self.path(id)?, &chat)
+        write_atomic(&path, &serde_json::to_vec(&chat).map_err(be)?)
     }
 }
 
@@ -53,7 +55,10 @@ impl ChatStore for FsChatStore {
         for entry in std::fs::read_dir(&self.dir).map_err(be)? {
             let path = entry.map_err(be)?.path();
             if path.extension().is_some_and(|e| e == "json") {
-                let c: ChatRecord = read_json(&path, "")?;
+                // One unreadable chat must not hide the rest.
+                let Ok(c) = read_json::<ChatRecord>(&path, "") else {
+                    continue;
+                };
                 out.push(ChatSummary {
                     id: c.id,
                     title: c.title,

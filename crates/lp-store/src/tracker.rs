@@ -1,6 +1,6 @@
 //! `SqliteTrackerStore`: tracker tables in one WAL database, plus `sync-<device>.jsonl` replication.
 use crate::db::{self, fts_query};
-use crate::jsonl::{append, be, check_id, read_all};
+use crate::jsonl::{append, be, check_id, create_dir, read_all};
 use lp_core::fsrs::Rating;
 use lp_core::ports::*;
 use rusqlite::{params, Connection, OptionalExtension};
@@ -45,7 +45,7 @@ impl SqliteTrackerStore {
     /// `dir` holds `tracker.db` and the `sync-<device>.jsonl` files.
     pub fn open(dir: impl Into<PathBuf>) -> StoreResult<Self> {
         let dir = dir.into();
-        std::fs::create_dir_all(&dir).map_err(be)?;
+        create_dir(&dir)?;
         let db = db::open(&dir.join("tracker.db"), MIGRATIONS)?;
         Ok(Self {
             dir,
@@ -251,6 +251,26 @@ impl TrackerStore for SqliteTrackerStore {
             })
         })
         .collect()
+    }
+    fn commit_review(&self, c: &FlashCard, r: &FsrsReviewLog) -> StoreResult<()> {
+        let mut db = self.db.lock().map_err(be)?;
+        let tx = db.transaction().map_err(be)?;
+        tx.execute(
+            "INSERT INTO cards VALUES (?1, ?2) ON CONFLICT(id) DO UPDATE SET json = ?2",
+            params![c.id.as_str(), serde_json::to_string(c).map_err(be)?],
+        )
+        .map_err(be)?;
+        tx.execute(
+            "INSERT OR IGNORE INTO fsrs_reviews VALUES (?1, ?2, ?3, ?4)",
+            params![
+                r.card_id.as_str(),
+                r.ts,
+                r.rating as i64,
+                r.device_id.as_str()
+            ],
+        )
+        .map_err(be)?;
+        tx.commit().map_err(be)
     }
     fn append_sync(&self, device_id: &str, line: &serde_json::Value) -> StoreResult<()> {
         check_id(device_id)?;

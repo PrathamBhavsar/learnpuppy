@@ -371,3 +371,139 @@ fn wal_readers_see_writes_from_another_connection() {
     w.join().unwrap();
     assert_eq!(reader.reviews().unwrap().len(), 50);
 }
+
+fn fcard(id: &str) -> FlashCard {
+    FlashCard {
+        id: id.into(),
+        front: "q".into(),
+        options: ["a".into(), "b".into(), "c".into(), "d".into()],
+        correct_index: 0,
+        rationale: String::new(),
+        card: Card::new(0),
+    }
+}
+
+#[test]
+fn corrupt_interior_line_neither_hides_nor_deletes_later_records() {
+    let dir = tempfile::tempdir().unwrap();
+    let s = FsGraphStore::open(dir.path()).unwrap();
+    for id in ["a1", "a2", "a3"] {
+        s.append_chain(&chain(id)).unwrap();
+    }
+    let path = dir.path().join("chains.jsonl");
+    let text = std::fs::read_to_string(&path).unwrap();
+    let mut lines: Vec<_> = text.lines().collect();
+    lines[1] = "deadbeef\t{\"bit\":\"flip\"}";
+    std::fs::write(&path, lines.join("\n") + "\n").unwrap();
+    s.append_chain(&chain("a4")).unwrap();
+    assert_eq!(
+        s.chains().unwrap(),
+        vec![chain("a1"), chain("a3"), chain("a4")]
+    );
+}
+
+#[test]
+fn concurrent_appends_from_independent_handles_lose_nothing() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("l.jsonl");
+    let threads: Vec<_> = (0..8)
+        .map(|t| {
+            let path = path.clone();
+            std::thread::spawn(move || {
+                for i in 0..20 {
+                    crate::jsonl::append(&path, &format!("{t}-{i}")).unwrap();
+                }
+            })
+        })
+        .collect();
+    threads.into_iter().for_each(|t| t.join().unwrap());
+    assert_eq!(crate::jsonl::read_all::<String>(&path).unwrap().len(), 160);
+}
+
+#[test]
+fn index_holds_the_merged_node_not_the_last_link_line() {
+    let dir = tempfile::tempdir().unwrap();
+    let s = FsGraphStore::open(dir.path()).unwrap();
+    s.append_node(&node("n1", "Original", "original wording"))
+        .unwrap();
+    s.append_node(&node("n1", "Paraphrase", "reworded claim"))
+        .unwrap();
+    let check = |s: &FsGraphStore| {
+        let hit = s.search_propositions("original", 10).unwrap();
+        assert_eq!(hit.len(), 1);
+        assert_eq!(hit[0].statement, "original wording");
+        assert_eq!(hit[0].aliases, ["reworded claim"]);
+        assert_eq!(s.search_propositions("reworded", 10).unwrap().len(), 1);
+    };
+    check(&s);
+    drop(s);
+    check(&FsGraphStore::open(dir.path()).unwrap());
+}
+
+#[test]
+fn store_files_are_owner_only() {
+    use std::os::unix::fs::PermissionsExt;
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().join("lp");
+    let g = FsGraphStore::open(root.join("graph")).unwrap();
+    g.append_chain(&chain("a1")).unwrap();
+    FsChatStore::open(root.join("chats"))
+        .unwrap()
+        .save_chat(&chat("c1", 1))
+        .unwrap();
+    SqliteTrackerStore::open(root.join("tracker")).unwrap();
+    let mode = |p: std::path::PathBuf| std::fs::metadata(p).unwrap().permissions().mode() & 0o777;
+    assert_eq!(mode(root.clone()), 0o700);
+    assert_eq!(mode(root.join("graph/chains.jsonl")), 0o600);
+    assert_eq!(mode(root.join("chats/c1.json")), 0o600);
+    assert_eq!(mode(root.join("tracker/tracker.db")), 0o600);
+}
+
+#[test]
+fn one_corrupt_chat_or_job_file_is_skipped() {
+    let dir = tempfile::tempdir().unwrap();
+    let chats = FsChatStore::open(dir.path().join("chats")).unwrap();
+    chats.save_chat(&chat("c1", 1)).unwrap();
+    std::fs::write(dir.path().join("chats/bad.json"), b"{nope").unwrap();
+    assert_eq!(chats.list_chats().unwrap().len(), 1);
+    let jobs = FsJobStore::open(dir.path().join("jobs")).unwrap();
+    jobs.create_job(&job("j1", JobStatus::Running)).unwrap();
+    std::fs::write(dir.path().join("jobs/bad.json"), b"{nope").unwrap();
+    assert_eq!(jobs.interrupted_jobs().unwrap().len(), 1);
+}
+
+#[test]
+fn new_ledger_handles_wait_on_a_locked_database_instead_of_failing() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("x.db");
+    let holder = rusqlite::Connection::open(&path).unwrap();
+    holder.execute_batch("CREATE TABLE t(a)").unwrap();
+    holder.execute_batch("BEGIN EXCLUSIVE").unwrap();
+    let t = std::thread::spawn(move || {
+        std::thread::sleep(std::time::Duration::from_millis(300));
+        holder.execute_batch("COMMIT").unwrap();
+    });
+    crate::db::open(&path, &[]).unwrap();
+    t.join().unwrap();
+}
+
+#[test]
+fn commit_review_is_all_or_nothing() {
+    let dir = tempfile::tempdir().unwrap();
+    let s = SqliteTrackerStore::open(dir.path()).unwrap();
+    let mut c = fcard("f1");
+    s.upsert_card(&c).unwrap();
+    rusqlite::Connection::open(dir.path().join("tracker.db"))
+        .unwrap()
+        .execute_batch("DROP TABLE fsrs_reviews")
+        .unwrap();
+    c.rationale = "changed".into();
+    let log = FsrsReviewLog {
+        card_id: "f1".into(),
+        ts: 1,
+        rating: Rating::Good,
+        device_id: "d".into(),
+    };
+    assert!(s.commit_review(&c, &log).is_err());
+    assert_eq!(s.cards().unwrap()[0].rationale, "");
+}

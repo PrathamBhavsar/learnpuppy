@@ -1,9 +1,9 @@
 //! `FsGraphStore`: JSONL ledgers are the source of truth; `graph.db` holds a rebuildable FTS5 index.
 use crate::db::{self, fts_query};
-use crate::jsonl::{append, be, read_all, rewrite};
-use lp_core::graph::{CoverageEntry, GraphChain, GraphNode};
+use crate::jsonl::{append, be, create_dir, read_all, rewrite};
+use lp_core::graph::{CoverageEntry, GraphChain, GraphNode, GraphSnapshot};
 use lp_core::ports::{GraphStore, SessionCheckpoint, StoreResult};
-use rusqlite::{params, Connection};
+use rusqlite::{params, Connection, OptionalExtension};
 use smol_str::SmolStr;
 use std::path::PathBuf;
 use std::sync::Mutex;
@@ -20,15 +20,18 @@ impl FsGraphStore {
     /// the ledger append and the index write heals on restart.
     pub fn open(dir: impl Into<PathBuf>) -> StoreResult<Self> {
         let dir = dir.into();
-        std::fs::create_dir_all(&dir).map_err(be)?;
+        create_dir(&dir)?;
         let db = db::open(&dir.join("graph.db"), MIGRATIONS)?;
         db.execute("DELETE FROM propositions_fts", []).map_err(be)?;
         let store = Self {
             dir,
             db: Mutex::new(db),
         };
-        for node in store.nodes()? {
-            store.index(&node)?;
+        for node in GraphSnapshot::from_ledgers(&store.nodes()?, &[])
+            .nodes
+            .values()
+        {
+            store.index(node)?;
         }
         Ok(store)
     }
@@ -56,7 +59,27 @@ impl FsGraphStore {
 impl GraphStore for FsGraphStore {
     fn append_node(&self, node: &GraphNode) -> StoreResult<()> {
         append(&self.path("nodes.jsonl"), node)?;
-        self.index(node)
+        // Index the merged node, not the raw line: fold it onto what the index already holds.
+        let held: Option<String> = self
+            .db
+            .lock()
+            .map_err(be)?
+            .query_row(
+                "SELECT json FROM propositions_fts WHERE id = ?1",
+                [node.id.as_str()],
+                |r| r.get(0),
+            )
+            .optional()
+            .map_err(be)?;
+        let mut lines = vec![];
+        if let Some(j) = held {
+            lines.push(serde_json::from_str(&j).map_err(be)?);
+        }
+        lines.push(node.clone());
+        match GraphSnapshot::from_ledgers(&lines, &[]).nodes.get(&node.id) {
+            Some(merged) => self.index(merged),
+            None => Ok(()),
+        }
     }
     fn nodes(&self) -> StoreResult<Vec<GraphNode>> {
         read_all(&self.path("nodes.jsonl"))
