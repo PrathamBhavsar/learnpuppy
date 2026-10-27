@@ -1,6 +1,7 @@
 //! Tool handlers shared by the agents: question tools, plan/probe/practice tools and read-only file tools.
 
-use std::fs;
+use std::fs::{self, File};
+use std::io::Read;
 use std::path::{Path, PathBuf};
 
 use lp_core::plan::{
@@ -8,6 +9,7 @@ use lp_core::plan::{
     ConcludeInput, PlanTree, PracticeGate, ProblemInput, QuizInput, QuizOption,
     PROBE_DONE_ACK_TEXT,
 };
+use lp_core::redact::redact;
 use serde::de::DeserializeOwned;
 use serde::Deserialize;
 
@@ -219,6 +221,11 @@ struct PatternArg {
 
 /// Resolve `rel` inside `root`, refusing anything that escapes it (`..`, absolute paths, symlinks).
 fn resolve(root: &Path, rel: &str) -> Result<PathBuf, String> {
+    if Path::new(rel).components().any(
+        |c| matches!(c, std::path::Component::Normal(n) if n.to_string_lossy().starts_with('.')),
+    ) {
+        return Err(format!("{rel}: hidden paths are not readable"));
+    }
     let root = root.canonicalize().map_err(|e| e.to_string())?;
     let full = root
         .join(rel)
@@ -235,7 +242,7 @@ fn rel(root: &Path, p: &Path) -> String {
     p.strip_prefix(root).unwrap_or(p).display().to_string()
 }
 
-/// Every non-hidden, non-symlink file under `dir`.
+/// Every non-hidden, non-symlink regular file under `dir`, skipping build and dependency trees.
 fn walk(dir: &Path) -> Vec<PathBuf> {
     let mut out = Vec::new();
     let mut stack = vec![dir.to_path_buf()];
@@ -245,12 +252,15 @@ fn walk(dir: &Path) -> Vec<PathBuf> {
         };
         for e in entries.flatten() {
             let Ok(ft) = e.file_type() else { continue };
-            if e.file_name().to_string_lossy().starts_with('.') || ft.is_symlink() {
+            let name = e.file_name().to_string_lossy().into_owned();
+            if name.starts_with('.') || ft.is_symlink() {
                 continue;
             }
             if ft.is_dir() {
-                stack.push(e.path());
-            } else {
+                if name != "target" && name != "node_modules" {
+                    stack.push(e.path());
+                }
+            } else if ft.is_file() {
                 out.push(e.path());
             }
         }
@@ -259,10 +269,30 @@ fn walk(dir: &Path) -> Vec<PathBuf> {
     out
 }
 
+/// At most `MAX_READ_CHARS` chars of a regular file, secrets masked; never reads the rest.
+fn read_capped(path: &Path) -> Result<String, String> {
+    let file = File::open(path).map_err(|e| format!("{}: {e}", path.display()))?;
+    if !file.metadata().is_ok_and(|m| m.is_file()) {
+        return Err(format!("{}: not a regular file", path.display()));
+    }
+    let mut buf = Vec::new();
+    // 4 bytes per char bounds the cap; a cut multi-byte tail becomes U+FFFD and is trimmed below.
+    file.take(MAX_READ_CHARS as u64 * 4)
+        .read_to_end(&mut buf)
+        .map_err(|e| format!("{}: {e}", path.display()))?;
+    if buf.contains(&0) {
+        return Err(format!("{}: binary file", path.display()));
+    }
+    let text: String = String::from_utf8_lossy(&buf)
+        .chars()
+        .take(MAX_READ_CHARS)
+        .collect();
+    Ok(redact(&text))
+}
+
 pub(super) fn read(root: &Path, call: &Call) -> Result<Effect, String> {
     let path = resolve(root, &parse::<PathArg>(call)?.path)?;
-    let text = fs::read_to_string(&path).map_err(|e| format!("{}: {e}", path.display()))?;
-    Ok(Effect::Ack(text.chars().take(MAX_READ_CHARS).collect()))
+    Ok(Effect::Ack(read_capped(&path)?))
 }
 
 pub(super) fn ls(root: &Path, call: &Call) -> Result<Effect, String> {
@@ -299,7 +329,7 @@ pub(super) fn grep(root: &Path, call: &Call) -> Result<Effect, String> {
     let base = resolve(root, &a.path)?;
     let mut hits = Vec::new();
     'files: for p in walk(&base) {
-        let Ok(text) = fs::read_to_string(&p) else {
+        let Ok(text) = read_capped(&p) else {
             continue;
         };
         for (i, line) in text.lines().enumerate() {

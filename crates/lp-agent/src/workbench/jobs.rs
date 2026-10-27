@@ -44,15 +44,17 @@ pub struct Done {
 pub fn readable(html: &str) -> String {
     let mut out = String::new();
     let mut rest = html;
+    // ASCII lowering keeps byte offsets, so `lower` is searched in step with `rest`.
+    let lower = html.to_ascii_lowercase();
     while let Some(i) = rest.find('<') {
         out.push_str(&rest[..i]);
         rest = &rest[i..];
-        let head = rest.as_bytes()[..rest.len().min(7)].to_ascii_lowercase();
+        let at = html.len() - rest.len();
         let raw = [("<script", "</script"), ("<style", "</style")]
             .into_iter()
-            .find(|(open, _)| head.starts_with(open.as_bytes()));
+            .find(|(open, _)| lower[at..].starts_with(open));
         if let Some((_, end)) = raw {
-            rest = &rest[rest.to_ascii_lowercase().find(end).unwrap_or(rest.len())..];
+            rest = &rest[lower[at..].find(end).unwrap_or(rest.len())..];
         }
         rest = rest.find('>').map_or("", |j| &rest[j + 1..]);
         out.push(' ');

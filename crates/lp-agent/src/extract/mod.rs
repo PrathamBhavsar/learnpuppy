@@ -58,6 +58,9 @@ pub struct Pipeline<E, G> {
     audit_merge: Mutex<()>,
 }
 
+/// ~20k tokens of source text per extractor call.
+const BATCH_CHARS: usize = 80_000;
+
 impl<E: LlmEngine, G: GraphStore> Pipeline<E, G> {
     pub fn new(engine: Arc<E>, store: Arc<G>) -> Self {
         Self {
@@ -98,51 +101,53 @@ impl<E: LlmEngine, G: GraphStore> Pipeline<E, G> {
             return Ok(0);
         }
 
-        let digest = graph_so_far(&self.store.nodes()?, source);
-        let sub = self
-            .engine
-            .complete_structured::<Submission>(
-                StructuredRequest {
-                    prompt: extractor_prompt(&digest, &fresh),
-                    model: None,
+        for batch in batches(&fresh) {
+            let digest = graph_so_far(&self.store.nodes()?, source);
+            let sub = self
+                .engine
+                .complete_structured::<Submission>(
+                    StructuredRequest {
+                        prompt: extractor_prompt(&digest, batch),
+                        model: None,
+                    },
+                    cancel.clone(),
+                )
+                .await?
+                .value;
+            let findings = scope_local_ids(
+                SessionFindings {
+                    chat_id: source.into(),
+                    message_ids: batch.iter().map(|m| m.id.to_string()).collect(),
+                    propositions: sub.propositions,
+                    chains: sub.chains,
                 },
-                cancel.clone(),
-            )
-            .await?
-            .value;
-        let findings = scope_local_ids(
-            SessionFindings {
-                chat_id: source.into(),
-                message_ids: fresh.iter().map(|m| m.id.to_string()).collect(),
-                propositions: sub.propositions,
-                chains: sub.chains,
-            },
-            &fresh[0].id,
-        );
+                &batch[0].id,
+            );
 
-        let _turn = self.audit_merge.lock().await;
-        let verdicts = self.audit(&findings, cancel).await?;
-        let now = Utc::now();
-        let snap = GraphSnapshot::from_ledgers(&self.store.nodes()?, &self.store.chains()?);
-        let out = merge_findings(&snap, &findings, &verdicts, now);
-        for n in &out.node_lines {
-            self.store.append_node(n)?;
-        }
-        if out.rewrite {
-            self.store.rewrite_chains(&out.chains)?;
-        } else {
-            for c in &out.chain_lines {
-                self.store.append_chain(c)?;
+            let _turn = self.audit_merge.lock().await;
+            let verdicts = self.audit(&findings, cancel.clone()).await?;
+            let now = Utc::now();
+            let snap = GraphSnapshot::from_ledgers(&self.store.nodes()?, &self.store.chains()?);
+            let out = merge_findings(&snap, &findings, &verdicts, now);
+            for n in &out.node_lines {
+                self.store.append_node(n)?;
             }
-        }
-        // Coverage last: a failed write above leaves the messages eligible for retry.
-        for m in &fresh {
-            self.store.append_coverage(&CoverageEntry {
-                chat_id: source.into(),
-                fp: m.fingerprint(),
-                tokens: (m.text.len() / 4) as u32,
-                folded_at: now,
-            })?;
+            if out.rewrite {
+                self.store.rewrite_chains(&out.chains)?;
+            } else {
+                for c in &out.chain_lines {
+                    self.store.append_chain(c)?;
+                }
+            }
+            // Coverage last: a failed write above leaves the messages eligible for retry.
+            for m in batch {
+                self.store.append_coverage(&CoverageEntry {
+                    chat_id: source.into(),
+                    fp: m.fingerprint(),
+                    tokens: (m.text.len() / 4) as u32,
+                    folded_at: now,
+                })?;
+            }
         }
         Ok(fresh.len())
     }
@@ -230,6 +235,20 @@ fn graph_so_far(nodes: &[GraphNode], source: &str) -> String {
         .map(|n| format!("{}: {} - {}", n.id, n.name, n.statement))
         .collect::<Vec<_>>()
         .join("\n")
+}
+
+/// Greedy runs of messages whose text stays under `BATCH_CHARS` (a lone oversized message is its own batch).
+fn batches<'a>(fresh: &'a [&'a SourceMessage]) -> Vec<&'a [&'a SourceMessage]> {
+    let (mut out, mut start, mut size) = (Vec::new(), 0, 0);
+    for (i, m) in fresh.iter().enumerate() {
+        if i > start && size + m.text.len() > BATCH_CHARS {
+            out.push(&fresh[start..i]);
+            (start, size) = (i, 0);
+        }
+        size += m.text.len();
+    }
+    out.push(&fresh[start..]);
+    out
 }
 
 fn extractor_prompt(digest: &str, fresh: &[&SourceMessage]) -> String {
