@@ -140,6 +140,7 @@ async fn research_acks_now_and_steers_later_with_artifact() {
     assert!(text.contains("Leases bound stale reads."));
     let md = std::fs::read_to_string(rig.dir.path().join(format!("artifacts/{id}.md"))).unwrap();
     assert!(md.contains("[Raft](https://example.test/raft)"));
+    assert!(md.contains("## Fetched\n\n- https://example.test/raft\n"));
     // Exactly once.
     assert!(!rig.wb.deliver(&mut s).unwrap());
 }
@@ -560,4 +561,62 @@ fn readable_is_linear_on_many_scripts() {
     let t = std::time::Instant::now();
     assert_eq!(readable(&html).len(), 20_000 * 2 - 1);
     assert!(t.elapsed().as_secs() < 2);
+}
+
+#[tokio::test]
+async fn each_job_kind_consumes_only_its_own_roles_engine() {
+    let dir = tempfile::tempdir().unwrap();
+    let engines: HashMap<&str, Arc<FauxEngine>> = ROLES
+        .into_iter()
+        .map(|r| (r, Arc::new(FauxEngine::new())))
+        .collect();
+    let jobs = Arc::new(FsJobStore::open(dir.path().join("jobs")).unwrap());
+    let wb = {
+        let engines = engines.clone();
+        Workbench::routed(
+            move |r| engines[r].clone(),
+            jobs.clone(),
+            Arc::new(FakeWeb),
+            Arc::new(FakePdf),
+            dir.path().join("artifacts"),
+        )
+    };
+    let tool = |role: &str, args: Value| engines[role].faux_tool_call("submit", args);
+    tool(
+        "research",
+        json!({"brief": "b", "sources": [{"title": "t", "url": "https://example.test/x"}]}),
+    );
+    tool("visual", svg());
+    tool(
+        "demo",
+        json!({"title": "t", "html": "<html></html>", "sliders": [{"name": "a", "min": 0.0, "max": 1.0, "default": 0.5}], "frames": [[1.0]]}),
+    );
+    engines["pdf"].faux_tool_call("read", json!({"page": 1}));
+    tool("pdf", json!({"brief": "b"}));
+    let mut s = teach();
+    for (i, (name, args)) in [
+        ("research", json!({"question": "q"})),
+        ("visual", json!({"description": "d"})),
+        ("demo", json!({"description": "d"})),
+        ("pdf", json!({"path": "p.pdf", "question": "q"})),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let call = Call {
+            id: format!("c{i}"),
+            name: name.into(),
+            args,
+        };
+        exec(&mut s, &call).unwrap().unwrap();
+    }
+    for h in wb.launch(&mut s).unwrap() {
+        h.await.unwrap();
+    }
+    // A job on the wrong engine would hit an empty script or a foreign submit and deliver an error.
+    let done = jobs.claim_steers("c1").unwrap();
+    assert_eq!(done.len(), 4);
+    for job in done {
+        assert!(job.result.unwrap().get("error").is_none());
+    }
 }
