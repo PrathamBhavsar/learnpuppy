@@ -50,6 +50,9 @@ pub struct SubprocessEngine {
     pub timeout: Duration,
     /// Claude only: `CLAUDE_CONFIG_DIR` selecting which account to use.
     pub config_dir: Option<PathBuf>,
+    /// Model and effort used when a request names none (a role profile's choice).
+    pub model: Option<String>,
+    pub effort: Option<String>,
     /// Private (0700, random name) working directory, removed when the last clone drops.
     sandbox: Arc<tempfile::TempDir>,
 }
@@ -66,6 +69,8 @@ impl SubprocessEngine {
             program: program.into(),
             timeout: Duration::from_secs(600),
             config_dir: None,
+            model: None,
+            effort: None,
             sandbox: Arc::new(tempfile::Builder::new().prefix("lp-sandbox-").tempdir()?),
         })
     }
@@ -179,6 +184,7 @@ impl SubprocessEngine {
             a,
             &with_tools(&req.prompt, &req.tools),
             req.model.as_deref(),
+            req.effort.as_deref(),
         )
     }
 
@@ -188,7 +194,10 @@ impl SubprocessEngine {
         mut a: Vec<String>,
         prompt: &str,
         model: Option<&str>,
+        effort: Option<&str>,
     ) -> (Vec<String>, Option<String>) {
+        let model = model.or(self.model.as_deref());
+        let effort = effort.or(self.effort.as_deref());
         if let Some(m) = model {
             a.push(
                 if self.kind == CliKind::Codex {
@@ -199,6 +208,19 @@ impl SubprocessEngine {
                 .into(),
             );
             a.push(m.into());
+        }
+        if let Some(e) = effort {
+            match self.kind {
+                CliKind::Codex => {
+                    a.extend(["-c".into(), format!("model_reasoning_effort=\"{e}\"")]);
+                }
+                CliKind::Claude => a.extend(["--effort".into(), e.into()]),
+                // agy slugs already encode effort (`gemini-4-argon-high`); only a bare slug takes the flag.
+                CliKind::Agy if !model.is_some_and(slug_has_effort) => {
+                    a.extend(["--effort".into(), e.into()]);
+                }
+                CliKind::Agy => {}
+            }
         }
         match self.kind {
             CliKind::Codex => {
@@ -212,6 +234,12 @@ impl SubprocessEngine {
             CliKind::Claude => (a, Some(prompt.into())),
         }
     }
+}
+
+fn slug_has_effort(slug: &str) -> bool {
+    slug.rsplit('-')
+        .next()
+        .is_some_and(|t| matches!(t, "low" | "medium" | "high" | "xhigh" | "max" | "ultra"))
 }
 
 struct Proc {
@@ -478,7 +506,7 @@ impl LlmEngine for SubprocessEngine {
                 a.push(schema);
             }
         }
-        let (args, stdin) = self.finish_args(a, &req.prompt, req.model.as_deref());
+        let (args, stdin) = self.finish_args(a, &req.prompt, req.model.as_deref(), None);
         let mut proc = self.spawn(args, stdin, cancel)?;
         let mut stdout = String::new();
         while let Some(line) = proc.next().await? {
@@ -534,6 +562,7 @@ echo '{"type":"result","result":"hi there"}'"#;
                 TurnRequest {
                     prompt: "p".into(),
                     model: None,
+                    effort: None,
                     tools: vec![],
                 },
                 tx,
@@ -782,6 +811,71 @@ case "$p" in *'<tool_call>'*quiz*) echo '{"type":"assistant","message":{"content
             .await
             .unwrap();
         assert!(resp.text.contains("-s read-only"), "{}", resp.text);
+    }
+
+    #[test]
+    fn effort_maps_to_each_clis_flag() {
+        let argv = |kind, model: Option<&str>, effort: Option<&str>| {
+            let e = SubprocessEngine::new(kind).unwrap();
+            let req = TurnRequest {
+                model: model.map(Into::into),
+                effort: effort.map(Into::into),
+                ..TurnRequest::default()
+            };
+            let (a, _) = e.turn_args(&req);
+            a.join(" ")
+        };
+        let a = argv(CliKind::Codex, Some("gpt-6-sol"), Some("high"));
+        assert!(
+            a.ends_with(r#"-m gpt-6-sol -c model_reasoning_effort="high" -"#),
+            "{a}"
+        );
+        let a = argv(CliKind::Claude, Some("m"), Some("max"));
+        assert!(a.ends_with("--model m --effort max"), "{a}");
+        // agy: a slug that already ends in an effort gets no flag; a bare slug does.
+        let a = argv(CliKind::Agy, Some("gemini-4-argon-high"), Some("low"));
+        assert!(a.ends_with("--model gemini-4-argon-high -p -"), "{a}");
+        let a = argv(CliKind::Agy, Some("gemini-4-argon"), Some("low"));
+        assert!(
+            a.ends_with("--model gemini-4-argon --effort low -p -"),
+            "{a}"
+        );
+        assert!(!argv(CliKind::Codex, Some("m"), None).contains("effort"));
+    }
+
+    #[tokio::test]
+    async fn mock_codex_receives_model_and_effort_argv() {
+        let (_d, mut x) = mock(
+            CliKind::Codex,
+            r#"cat >/dev/null; echo "{\"type\":\"item.completed\",\"item\":{\"type\":\"agent_message\",\"text\":\"$(echo "$*" | tr -d '"')\"}}""#,
+        );
+        x.timeout = Duration::from_secs(10);
+        let req = TurnRequest {
+            model: Some("gpt-6-sol".into()),
+            effort: Some("xhigh".into()),
+            ..TurnRequest::default()
+        };
+        let (tx, _rx) = mpsc::channel(4);
+        let resp = x
+            .stream_turn(req, tx, CancellationToken::new())
+            .await
+            .unwrap();
+        // The mock drops quotes so the argv fits in its JSON reply.
+        assert!(
+            resp.text
+                .ends_with("-m gpt-6-sol -c model_reasoning_effort=xhigh -"),
+            "{}",
+            resp.text
+        );
+    }
+
+    #[test]
+    fn engine_defaults_apply_when_request_names_none() {
+        let mut e = SubprocessEngine::new(CliKind::Claude).unwrap();
+        e.model = Some("m".into());
+        e.effort = Some("low".into());
+        let (a, _) = e.turn_args(&TurnRequest::default());
+        assert!(a.join(" ").ends_with("--model m --effort low"));
     }
 
     #[tokio::test]

@@ -13,6 +13,8 @@ use lp_cli_driver::engine::{
 };
 use schemars::JsonSchema;
 use serde::de::DeserializeOwned;
+
+use crate::state::{LearningStyle, Profile, Settings};
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use parking_lot::Mutex;
@@ -30,10 +32,24 @@ struct Seen {
     emitted: AtomicBool,
 }
 
+/// Appended to the prober and teacher prompts in the `visual` learning style.
+const VISUAL_STYLE: &str = "\n\nStyle: explain with ASCII or Mermaid diagrams, tables and small worked examples first, then prose.";
+
 pub struct CliPoolEngine {
     pool: Arc<AccountPool>,
     /// Slot pin: `<provider>:auto` prefers that provider, an account id pins that account.
     pin: String,
+    /// The role's provider, model and effort; the pool stays inside its provider unless it allows fallback.
+    profile: Option<Profile>,
+    visual: bool,
+}
+
+fn provider_kind(p: &str) -> ProviderKind {
+    match p {
+        "codex" => ProviderKind::CodexCli,
+        "agy" => ProviderKind::AgyCli,
+        _ => ProviderKind::ClaudeCli,
+    }
 }
 
 impl CliPoolEngine {
@@ -41,16 +57,42 @@ impl CliPoolEngine {
         Self {
             pool,
             pin: pin.into(),
+            profile: None,
+            visual: false,
         }
     }
 
-    fn chain(&self) -> [ProviderKind; 3] {
-        use ProviderKind::*;
-        match self.pin.split(':').next() {
-            Some("codex") => [CodexCli, ClaudeCli, AgyCli],
-            Some("agy") => [AgyCli, ClaudeCli, CodexCli],
-            _ => [ClaudeCli, CodexCli, AgyCli],
+    /// The engine for `role`: its profile (if any) overrides the pin's provider, and the
+    /// visual learning style tags the prober and teacher prompts.
+    pub fn for_role(pool: Arc<AccountPool>, settings: &Settings, role: &str, pin: &str) -> Self {
+        let mut e = Self::new(pool, pin);
+        e.profile = settings.profiles.get(role).cloned();
+        if let Some(p) = &e.profile {
+            // An account pin of the profile's provider stays; anything else becomes `<provider>:auto`.
+            if e.pin.split(':').next() != Some(p.provider.as_str()) {
+                e.pin = format!("{}:auto", p.provider);
+            }
         }
+        e.visual = settings.learning_style == LearningStyle::Visual
+            && matches!(role, "prober" | "teacher");
+        e
+    }
+
+    fn chain(&self) -> Vec<ProviderKind> {
+        use ProviderKind::*;
+        match (&self.profile, self.pin.split(':').next()) {
+            (Some(p), _) if !p.fallback => vec![provider_kind(&p.provider)],
+            (_, Some("codex")) => vec![CodexCli, ClaudeCli, AgyCli],
+            (_, Some("agy")) => vec![AgyCli, ClaudeCli, CodexCli],
+            _ => vec![ClaudeCli, CodexCli, AgyCli],
+        }
+    }
+
+    fn styled(&self, mut prompt: String) -> String {
+        if self.visual {
+            prompt.push_str(VISUAL_STYLE);
+        }
+        prompt
     }
 
     fn pick(&self) -> Option<AccountState> {
@@ -80,6 +122,15 @@ impl CliPoolEngine {
                 ProviderKind::AgyCli => CliKind::Agy,
             })?;
             engine.config_dir = acct.config_dir.clone();
+            // A fallback provider cannot run another provider's model slug.
+            if let Some(p) = self
+                .profile
+                .as_ref()
+                .filter(|p| provider_kind(&p.provider) == acct.provider)
+            {
+                engine.model = Some(p.model.clone());
+                engine.effort = p.effort.clone();
+            }
             seen.stdout.lock().clear();
             seen.emitted.store(false, Ordering::Relaxed);
             match call(engine).await {
@@ -174,10 +225,11 @@ fn classify(stderr: &str, stdout: &str) -> Failure {
 impl LlmEngine for CliPoolEngine {
     async fn stream_turn(
         &self,
-        req: TurnRequest,
+        mut req: TurnRequest,
         event_tx: mpsc::Sender<StreamDelta>,
         cancel: CancellationToken,
     ) -> Result<TurnResponse, DriverError> {
+        req.prompt = self.styled(req.prompt);
         let seen = Seen::default();
         self.with_account(&seen, |e| {
             let (req, cancel) = (req.clone(), cancel.clone());
@@ -245,6 +297,68 @@ mod tests {
             Strategy::Priority,
         );
         CliPoolEngine::new(Arc::new(pool), pin)
+    }
+
+    fn settings_with(role: &str, p: Profile, style: LearningStyle) -> Settings {
+        let mut s = Settings::default();
+        s.profiles.insert(role.into(), p);
+        s.learning_style = style;
+        s
+    }
+
+    #[test]
+    fn profile_routes_to_its_provider_without_fallback() {
+        let pool = engine("claude:auto").pool;
+        let p = Profile::new("codex", "gpt-6-sol", Some("high")).unwrap();
+        let s = settings_with("prober", p, LearningStyle::Default);
+        let e = CliPoolEngine::for_role(pool.clone(), &s, "prober", "claude:auto");
+        assert_eq!(e.pick().unwrap().id.0, "codex:c");
+        // The only codex account is out: no silent switch to claude.
+        pool.report_auth_expired(&AccountId("codex:c".into()));
+        assert!(e.pick().is_none());
+        // Unprofiled roles keep the pin and the old chain.
+        let e = CliPoolEngine::for_role(pool.clone(), &s, "teacher", "claude:auto");
+        assert_eq!(e.pick().unwrap().id.0, "claude:a");
+        let mut s = s;
+        s.profiles.get_mut("prober").unwrap().fallback = true;
+        let e = CliPoolEngine::for_role(pool, &s, "prober", "claude:auto");
+        assert_eq!(e.pick().unwrap().id.0, "claude:a");
+    }
+
+    #[test]
+    fn visual_style_tags_only_prober_and_teacher_prompts() {
+        let pool = engine("claude:auto").pool;
+        let p = Profile::new("claude", "m", None).unwrap();
+        let tagged = |role, style| {
+            let s = settings_with(role, p.clone(), style);
+            CliPoolEngine::for_role(pool.clone(), &s, role, "claude:auto").styled("hi".into())
+        };
+        assert!(tagged("teacher", LearningStyle::Visual).contains("Mermaid"));
+        assert!(tagged("prober", LearningStyle::Visual).contains("diagrams"));
+        assert_eq!(tagged("teacher", LearningStyle::Default), "hi");
+        assert_eq!(tagged("practice", LearningStyle::Visual), "hi");
+    }
+
+    #[tokio::test]
+    async fn profile_model_and_effort_reach_the_cli() {
+        let pool = engine("claude:auto").pool;
+        let p = Profile::new("codex", "gpt-6-sol", Some("high")).unwrap();
+        let s = settings_with("prober", p, LearningStyle::Default);
+        let e = CliPoolEngine::for_role(pool, &s, "prober", "claude:auto");
+        let got = e
+            .with_account(&Seen::default(), |x| async move {
+                Ok((x.kind, x.model, x.effort))
+            })
+            .await
+            .unwrap();
+        assert_eq!(
+            got,
+            (
+                CliKind::Codex,
+                Some("gpt-6-sol".into()),
+                Some("high".into())
+            )
+        );
     }
 
     #[test]

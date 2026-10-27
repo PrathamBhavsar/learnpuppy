@@ -35,6 +35,8 @@ pub enum StreamDelta {
 pub struct TurnRequest {
     pub prompt: String,
     pub model: Option<String>,
+    /// Reasoning effort (`low`..`ultra`); each CLI gets it in its own flag, or not at all.
+    pub effort: Option<String>,
     /// Tools the model may call; rendered into the prompt as a text/JSON protocol.
     pub tools: Vec<ToolDecl>,
 }
