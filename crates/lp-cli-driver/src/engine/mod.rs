@@ -33,6 +33,14 @@ pub enum StreamDelta {
 pub struct TurnRequest {
     pub prompt: String,
     pub model: Option<String>,
+    /// Tools the model may call; rendered into the prompt as a text/JSON protocol.
+    pub tools: Vec<ToolDecl>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ToolDecl {
+    pub name: String,
+    pub usage: String,
 }
 
 #[derive(Debug, Clone, Default, PartialEq)]

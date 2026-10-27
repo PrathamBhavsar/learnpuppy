@@ -19,7 +19,21 @@ use super::{
     TurnRequest, TurnResponse,
 };
 
-const STDERR_CAP: u64 = 64 * 1024;
+const STDERR_CAP: usize = 64 * 1024;
+const CALL_OPEN: &str = "<tool_call>";
+const CALL_CLOSE: &str = "</tool_call>";
+/// Env that real setups need (proxies, TLS roots, locale, temp dir); everything else is stripped.
+const ENV_ALLOW: [&str; 9] = [
+    "HOME",
+    "PATH",
+    "HTTPS_PROXY",
+    "HTTP_PROXY",
+    "NO_PROXY",
+    "SSL_CERT_FILE",
+    "SSL_CERT_DIR",
+    "TMPDIR",
+    "LANG",
+];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CliKind {
@@ -68,13 +82,23 @@ impl SubprocessEngine {
     ) -> Result<Proc, DriverError> {
         let mut cmd = Command::new(&self.program);
         // env_clear strips nested-session vars (CLAUDECODE, CLAUDE_*, ...).
-        cmd.args(args).env_clear().current_dir(self.sandbox());
-        for key in ["HOME", "PATH"] {
+        // process_group(0): grandchildren die with the CLI when it is killed.
+        cmd.args(args)
+            .env_clear()
+            .current_dir(self.sandbox())
+            .process_group(0);
+        for key in ENV_ALLOW {
             if let Some(v) = std::env::var_os(key) {
                 cmd.env(key, v);
             }
         }
-        if let Some(dir) = &self.config_dir {
+        // The default account lives in `~/.claude.json` + Keychain; exporting the default dir breaks it.
+        let default_dir = std::env::var_os("HOME").map(|h| Path::new(&h).join(".claude"));
+        if let Some(dir) = self
+            .config_dir
+            .as_ref()
+            .filter(|d| Some(*d) != default_dir.as_ref())
+        {
             cmd.env("CLAUDE_CONFIG_DIR", dir);
         }
         let mut child = cmd
@@ -90,10 +114,22 @@ impl SubprocessEngine {
             }
         });
         let mut err = child.stderr.take().expect("stderr piped");
+        // Drain to EOF so a chatty CLI never blocks on a full pipe; keep the first and last STDERR_CAP bytes.
         let stderr = tokio::spawn(async move {
-            let mut s = String::new();
-            let _ = (&mut err).take(STDERR_CAP).read_to_string(&mut s).await;
-            s
+            let (mut head, mut tail, mut buf) = (Vec::new(), Vec::new(), [0u8; 8192]);
+            while let Ok(n) = err.read(&mut buf).await {
+                if n == 0 {
+                    break;
+                }
+                let room = STDERR_CAP.saturating_sub(head.len()).min(n);
+                head.extend_from_slice(&buf[..room]);
+                tail.extend_from_slice(&buf[room..n]);
+                if tail.len() > STDERR_CAP {
+                    tail.drain(..tail.len() - STDERR_CAP);
+                }
+            }
+            head.extend_from_slice(&tail);
+            String::from_utf8_lossy(&head).into_owned()
         });
         let lines = BufReader::new(child.stdout.take().expect("stdout piped")).lines();
         Ok(Proc {
@@ -117,17 +153,33 @@ impl SubprocessEngine {
                         "stream-json",
                         "--verbose",
                         "--strict-mcp-config",
+                        "--tools",
+                        "",
                     ]
                     .map(String::from),
                 );
             }
             CliKind::Codex => {
-                a.extend(["exec", "--json", "--skip-git-repo-check", "-C"].map(String::from));
+                a.extend(
+                    [
+                        "exec",
+                        "--json",
+                        "--skip-git-repo-check",
+                        "-s",
+                        "read-only",
+                        "-C",
+                    ]
+                    .map(String::from),
+                );
                 a.push(self.sandbox().display().to_string());
             }
             CliKind::Agy => a.extend(["--output-format", "json", "--sandbox"].map(String::from)),
         }
-        self.finish_args(a, &req.prompt, req.model.as_deref())
+        self.finish_args(
+            a,
+            &with_tools(&req.prompt, &req.tools),
+            req.model.as_deref(),
+        )
     }
 
     /// Adds model and prompt delivery: stdin for claude/codex, `-p <prompt>` for agy.
@@ -184,7 +236,19 @@ impl Proc {
         match line {
             Ok(Some(l)) => Ok(Some(l)),
             Ok(None) => {
-                let status = self.child.wait().await?;
+                let status = tokio::select! {
+                    biased;
+                    _ = self.cancel.cancelled() => Err(DriverError::Cancelled),
+                    _ = tokio::time::sleep_until(self.deadline) => Err(DriverError::Timeout(self.timeout)),
+                    s = self.child.wait() => s.map_err(DriverError::from),
+                };
+                let status = match status {
+                    Ok(s) => s,
+                    Err(e) => {
+                        let _ = self.child.kill().await;
+                        return Err(e);
+                    }
+                };
                 if status.success() {
                     return Ok(None);
                 }
@@ -202,8 +266,69 @@ impl Proc {
     }
 }
 
-/// Stream deltas carried by one stdout line.
+/// Appends the text/JSON tool-call protocol and the tool list to the prompt.
+fn with_tools(prompt: &str, tools: &[super::ToolDecl]) -> String {
+    if tools.is_empty() {
+        return prompt.into();
+    }
+    let mut out = format!(
+        "{prompt}\n\nYou have no built-in tools. To call a tool, reply with exactly\n\
+         {CALL_OPEN}{{\"name\":\"<tool>\",\"input\":{{...}}}}{CALL_CLOSE}\n\
+         and nothing after it; the result arrives in the next turn. Available tools:\n"
+    );
+    for t in tools {
+        out.push_str(&format!("- {}: {}\n", t.name, t.usage));
+    }
+    out
+}
+
+/// Splits `<tool_call>{json}</tool_call>` blocks out of model text; malformed blocks stay as text.
+fn split_calls(text: String) -> Vec<StreamDelta> {
+    static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let (mut out, mut rest) = (Vec::new(), text.as_str());
+    while let Some(start) = rest.find(CALL_OPEN) {
+        let body = &rest[start + CALL_OPEN.len()..];
+        let Some(end) = body.find(CALL_CLOSE) else {
+            break;
+        };
+        let Some(v) = serde_json::from_str::<Value>(body[..end].trim())
+            .ok()
+            .filter(|v| v.get("name").and_then(Value::as_str).is_some())
+        else {
+            break;
+        };
+        if start > 0 {
+            out.push(StreamDelta::Text(rest[..start].into()));
+        }
+        let n = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        out.push(StreamDelta::ToolCall(ToolCall {
+            id: v
+                .get("id")
+                .and_then(Value::as_str)
+                .map_or(format!("call_{n}"), String::from),
+            name: v["name"].as_str().unwrap_or_default().into(),
+            input: v.get("input").cloned().unwrap_or(Value::Null),
+        }));
+        rest = &body[end + CALL_CLOSE.len()..];
+    }
+    if !rest.is_empty() {
+        out.push(StreamDelta::Text(rest.into()));
+    }
+    out
+}
+
+/// Stream deltas carried by one stdout line; text is scanned for protocol tool calls.
 fn deltas(kind: CliKind, line: &str) -> Vec<StreamDelta> {
+    raw_deltas(kind, line)
+        .into_iter()
+        .flat_map(|d| match d {
+            StreamDelta::Text(t) => split_calls(t),
+            d => vec![d],
+        })
+        .collect()
+}
+
+fn raw_deltas(kind: CliKind, line: &str) -> Vec<StreamDelta> {
     let Ok(v) = serde_json::from_str::<Value>(line) else {
         return match kind {
             CliKind::Agy if !line.is_empty() => vec![StreamDelta::Text(line.into())],
@@ -318,6 +443,8 @@ impl LlmEngine for SubprocessEngine {
                         "--output-format",
                         "json",
                         "--strict-mcp-config",
+                        "--tools",
+                        "",
                         "--json-schema",
                     ]
                     .map(String::from),
@@ -329,7 +456,17 @@ impl LlmEngine for SubprocessEngine {
                     .suffix(".json")
                     .tempfile_in(self.sandbox())?;
                 std::io::Write::write_all(&mut f, schema.as_bytes())?;
-                a.extend(["exec", "--json", "--skip-git-repo-check", "-C"].map(String::from));
+                a.extend(
+                    [
+                        "exec",
+                        "--json",
+                        "--skip-git-repo-check",
+                        "-s",
+                        "read-only",
+                        "-C",
+                    ]
+                    .map(String::from),
+                );
                 a.push(self.sandbox().display().to_string());
                 a.extend(["--output-schema".into(), f.path().display().to_string()]);
                 schema_file = Some(f);
@@ -397,6 +534,7 @@ echo '{"type":"result","result":"hi there"}'"#;
                 TurnRequest {
                     prompt: "p".into(),
                     model: None,
+                    tools: vec![],
                 },
                 tx,
                 CancellationToken::new(),
@@ -533,5 +671,110 @@ echo '{"type":"item.completed","item":{"type":"agent_message","text":"{\"n\":4}"
         let (err, pid) = hanging(None, cancel).await;
         assert!(matches!(err, DriverError::Cancelled));
         assert!(!pid_alive(&pid), "child {pid} survived cancel");
+    }
+
+    #[tokio::test]
+    async fn text_protocol_tool_call_is_yielded_for_every_cli() {
+        const CALL: &str = r#"ok <tool_call>{\"name\":\"quiz\",\"input\":{\"q\":1}}</tool_call>"#;
+        let lines = [
+            (
+                CliKind::Claude,
+                format!(
+                    r#"{{"type":"assistant","message":{{"content":[{{"type":"text","text":"{CALL}"}}]}}}}"#
+                ),
+            ),
+            (
+                CliKind::Codex,
+                format!(
+                    r#"{{"type":"item.completed","item":{{"type":"agent_message","text":"{CALL}"}}}}"#
+                ),
+            ),
+            (CliKind::Agy, format!(r#"{{"result":"{CALL}"}}"#)),
+        ];
+        for (kind, line) in lines {
+            let (_d, e) = mock(kind, &format!("cat >/dev/null; cat <<'EOF'\n{line}\nEOF"));
+            let (tx, _rx) = mpsc::channel(16);
+            let resp = e
+                .stream_turn(TurnRequest::default(), tx, CancellationToken::new())
+                .await
+                .unwrap();
+            assert_eq!(resp.text, "ok ", "{kind:?}");
+            assert_eq!(resp.tool_calls.len(), 1, "{kind:?}");
+            assert_eq!(resp.tool_calls[0].name, "quiz");
+            assert_eq!(resp.tool_calls[0].input["q"], 1);
+        }
+    }
+
+    #[tokio::test]
+    async fn tools_are_rendered_into_the_prompt() {
+        let (_d, e) = mock(
+            CliKind::Claude,
+            r#"p=$(cat)
+case "$p" in *'<tool_call>'*quiz*) echo '{"type":"assistant","message":{"content":[{"type":"text","text":"seen"}]}}';; esac"#,
+        );
+        let (tx, _rx) = mpsc::channel(4);
+        let req = TurnRequest {
+            prompt: "p".into(),
+            tools: vec![super::super::ToolDecl {
+                name: "quiz".into(),
+                usage: "ask".into(),
+            }],
+            ..Default::default()
+        };
+        let resp = e
+            .stream_turn(req, tx, CancellationToken::new())
+            .await
+            .unwrap();
+        assert_eq!(resp.text, "seen");
+    }
+
+    #[tokio::test]
+    async fn lockdown_flags_and_env_allowlist() {
+        let (_d, e) = mock(
+            CliKind::Claude,
+            r#"cat >/dev/null; echo "{\"type\":\"assistant\",\"message\":{\"content\":[{\"type\":\"text\",\"text\":\"$* [${HTTPS_PROXY:-none}] [${CLAUDE_CONFIG_DIR:-unset}]\"}]}}""#,
+        );
+        std::env::set_var("HTTPS_PROXY", "http://proxy:1");
+        let mut e = e;
+        e.config_dir = Some(Path::new(&std::env::var("HOME").unwrap()).join(".claude"));
+        let (tx, _rx) = mpsc::channel(4);
+        let resp = e
+            .stream_turn(TurnRequest::default(), tx, CancellationToken::new())
+            .await
+            .unwrap();
+        assert!(resp.text.contains("--tools"), "{}", resp.text);
+        assert!(resp.text.contains("[http://proxy:1]"), "{}", resp.text);
+        assert!(
+            resp.text.contains("[unset]"),
+            "default dir must not be exported: {}",
+            resp.text
+        );
+
+        let (_d, mut x) = mock(
+            CliKind::Codex,
+            r#"cat >/dev/null; echo "{\"type\":\"item.completed\",\"item\":{\"type\":\"agent_message\",\"text\":\"$*\"}}""#,
+        );
+        x.timeout = Duration::from_secs(10);
+        let (tx, _rx) = mpsc::channel(4);
+        let resp = x
+            .stream_turn(TurnRequest::default(), tx, CancellationToken::new())
+            .await
+            .unwrap();
+        assert!(resp.text.contains("-s read-only"), "{}", resp.text);
+    }
+
+    #[tokio::test]
+    async fn verbose_stderr_does_not_block_child() {
+        let (_d, e) = mock(
+            CliKind::Claude,
+            "cat >/dev/null; head -c 300000 /dev/zero | tr '\\0' x >&2; echo '{\"type\":\"result\"}'",
+        );
+        let (tx, _rx) = mpsc::channel(4);
+        let r = tokio::time::timeout(
+            Duration::from_secs(10),
+            e.stream_turn(TurnRequest::default(), tx, CancellationToken::new()),
+        )
+        .await;
+        assert!(r.expect("child blocked on stderr").is_ok());
     }
 }
