@@ -1,6 +1,7 @@
 //! Agent runtime for LearnPuppy.
 
 pub mod extract;
+pub mod loops;
 
 #[cfg(test)]
 mod tests {

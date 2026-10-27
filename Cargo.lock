@@ -670,6 +670,7 @@ dependencies = [
  "serde_json",
  "sha2",
  "smol_str",
+ "tempfile",
  "thiserror",
  "tokio",
  "tokio-util",
