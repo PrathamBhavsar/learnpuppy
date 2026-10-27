@@ -309,6 +309,8 @@ flowchart TD
     T50 --> T51["T51: lp-tui Classroom View, Question Dock & Plan DAG Pane"]
     T50 --> T52["T52: lp-tui Braille Force-Directed Graph Canvas & Chain Table"]
     T50 --> T53["T53: lp-tui Tracker Digest & FSRS 4-Choice Quiz View"]
+    T50 --> T54["T54: lp-tui main.rs backend wiring + headless CLI subcommands"]
+    T54 --> T60
     T51 --> T60["T60: E2E Suite (tester-army/e2e), Open-Code-Review (ocr) & Opus Sign-Off"]
     T52 --> T60
     T53 --> T60
