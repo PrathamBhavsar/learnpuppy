@@ -317,3 +317,37 @@ fn session_round_trips_through_the_chat_store() {
     assert_eq!(Session::load(&store, "r1").unwrap(), s);
     assert_eq!(store.load_chat("r1").unwrap().created_at, 10);
 }
+
+#[test]
+fn file_tools_redact_refuse_hidden_paths_and_cap_reads() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    std::fs::write(root.join(".env"), "API_KEY=hunter2hunter2\n").unwrap();
+    std::fs::write(root.join("a.txt"), "OPENAI_API_KEY=hunter2hunter2\n").unwrap();
+    std::fs::create_dir(root.join("node_modules")).unwrap();
+    std::fs::write(
+        root.join("node_modules/b.txt"),
+        "OPENAI_API_KEY=hunter2hunter2",
+    )
+    .unwrap();
+    std::fs::write(root.join("big.txt"), "x".repeat(200_000)).unwrap();
+    let run = |name: &str, args: Value| match tools::file_tool(
+        root,
+        &Call {
+            id: "x".into(),
+            name: name.into(),
+            args,
+        },
+    ) {
+        Some(Ok(Effect::Ack(t))) => t,
+        Some(Err(e)) => e,
+        _ => panic!("unexpected effect"),
+    };
+    assert!(run("read", json!({"path": ".env"})).contains("hidden"));
+    std::os::unix::fs::symlink(root.join(".env"), root.join("link")).unwrap();
+    assert!(run("read", json!({"path": "link"})).contains("hidden"));
+    assert!(!run("read", json!({"path": "a.txt"})).contains("hunter2"));
+    let hits = run("grep", json!({"pattern": "KEY"}));
+    assert!(hits.contains("a.txt") && !hits.contains("hunter2") && !hits.contains("node_modules"));
+    assert_eq!(run("read", json!({"path": "big.txt"})).len(), 20_000);
+}

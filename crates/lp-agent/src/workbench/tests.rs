@@ -523,3 +523,11 @@ fn readable_drops_markup_scripts_and_styles() {
     let html = "<HTML><Script>var a = '<b>';</Script><p>Hello <b>big</b>\n world</p><style>x{}</style></HTML>";
     assert_eq!(readable(html), "Hello big world");
 }
+
+#[test]
+fn readable_is_linear_on_many_scripts() {
+    let html = "<script>a</script>x".repeat(20_000);
+    let t = std::time::Instant::now();
+    assert_eq!(readable(&html).len(), 20_000 * 2 - 1);
+    assert!(t.elapsed().as_secs() < 2);
+}

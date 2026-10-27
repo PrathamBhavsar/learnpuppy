@@ -254,3 +254,21 @@ fn prompts_carry_digest_and_auditor_tools_find_candidates() {
     assert_eq!(audit::list_propositions(&store, "c1").unwrap().len(), 1);
     assert_eq!(audit::find(&store, "owner").unwrap()[0].id, "n_1");
 }
+
+#[tokio::test]
+async fn large_imports_are_split_into_batches() {
+    let (engine, store, pipe) = setup();
+    let para = "x".repeat(30_000);
+    let notes = format!("{para}\n\n{para}\n\n{para}");
+    for (name, audit) in [("A", true), ("B", true)] {
+        engine.faux_structured(json!({"propositions": [prop("p1", name)], "chains": []}));
+        if audit {
+            engine.faux_structured(json!({"links": []}));
+        }
+    }
+    pipe.import_notes(&notes, CancellationToken::new())
+        .await
+        .unwrap();
+    assert_eq!(store.coverage().unwrap().len(), 3);
+    assert_eq!(store.nodes().unwrap().len(), 2);
+}
