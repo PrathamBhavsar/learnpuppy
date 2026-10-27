@@ -13,8 +13,22 @@ use lp_cli_driver::engine::{
 };
 use schemars::JsonSchema;
 use serde::de::DeserializeOwned;
+use std::sync::atomic::{AtomicBool, Ordering};
+
+use parking_lot::Mutex;
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
+
+/// Stream channel capacity and how much stdout tail is kept for failure classification.
+const STREAM_CAP: usize = 512;
+const TAIL: usize = 4096;
+
+/// What one attempt has produced so far.
+#[derive(Default)]
+struct Seen {
+    stdout: Mutex<String>,
+    emitted: AtomicBool,
+}
 
 pub struct CliPoolEngine {
     pool: Arc<AccountPool>,
@@ -52,7 +66,7 @@ impl CliPoolEngine {
     }
 
     /// Runs `call` on successive accounts until one succeeds or fails for another reason.
-    async fn with_account<T, F, Fut>(&self, call: F) -> Result<T, DriverError>
+    async fn with_account<T, F, Fut>(&self, seen: &Seen, call: F) -> Result<T, DriverError>
     where
         F: Fn(SubprocessEngine) -> Fut,
         Fut: Future<Output = Result<T, DriverError>>,
@@ -66,22 +80,30 @@ impl CliPoolEngine {
                 ProviderKind::AgyCli => CliKind::Agy,
             })?;
             engine.config_dir = acct.config_dir.clone();
+            seen.stdout.lock().clear();
+            seen.emitted.store(false, Ordering::Relaxed);
             match call(engine).await {
                 Ok(v) => {
                     self.pool.report_success(&acct.id, 0, 0);
                     return Ok(v);
                 }
-                Err(DriverError::Exit { code, stderr }) => match classify(&stderr) {
-                    Failure::Auth => self.pool.report_auth_expired(&acct.id),
-                    Failure::RateLimit => {
-                        let epoch = SystemTime::now()
-                            .duration_since(UNIX_EPOCH)
-                            .map_or(0, |d| d.as_secs());
-                        self.pool
-                            .report_rate_limit(&acct.id, &stderr, Instant::now(), epoch);
+                Err(DriverError::Exit { code, stderr }) => {
+                    match classify(&stderr, &seen.stdout.lock()) {
+                        // Text already reached the learner; a retry would repeat it.
+                        _ if seen.emitted.load(Ordering::Relaxed) => {
+                            return Err(DriverError::Exit { code, stderr });
+                        }
+                        Failure::Auth => self.pool.report_auth_expired(&acct.id),
+                        Failure::RateLimit => {
+                            let epoch = SystemTime::now()
+                                .duration_since(UNIX_EPOCH)
+                                .map_or(0, |d| d.as_secs());
+                            self.pool
+                                .report_rate_limit(&acct.id, &stderr, Instant::now(), epoch);
+                        }
+                        Failure::Other => return Err(DriverError::Exit { code, stderr }),
                     }
-                    Failure::Other => return Err(DriverError::Exit { code, stderr }),
-                },
+                }
                 Err(e) => return Err(e),
             }
             last = Some(DriverError::Exit {
@@ -103,24 +125,45 @@ enum Failure {
     Other,
 }
 
-fn classify(stderr: &str) -> Failure {
-    let s = stderr.to_lowercase();
-    let has = |needles: &[&str]| needles.iter().any(|n| s.contains(n));
-    if has(&[
-        "rate limit",
-        "rate_limit",
-        "usage limit",
-        "limit reached",
-        "429",
-    ]) {
+/// Words of `text` (split on anything non-alphanumeric), lowercased.
+fn words(text: &str) -> Vec<String> {
+    text.split(|c: char| !c.is_alphanumeric())
+        .filter(|w| !w.is_empty())
+        .map(str::to_lowercase)
+        .collect()
+}
+
+/// Whole-word phrase match, so a path or port containing `401` never counts.
+fn has_phrase(w: &[String], phrase: &[&str]) -> bool {
+    w.windows(phrase.len())
+        .any(|win| win.iter().zip(phrase).all(|(a, b)| a == b))
+}
+
+/// A bare status code counts only right after a word that introduces one.
+fn has_code(w: &[String], code: &str) -> bool {
+    w.windows(2).any(|win| {
+        win[1] == code && matches!(win[0].as_str(), "status" | "http" | "error" | "code")
+    })
+}
+
+/// Claude prints its usage-limit message on stdout, so both streams are searched.
+fn classify(stderr: &str, stdout: &str) -> Failure {
+    let w = words(&format!("{stderr}\n{stdout}"));
+    let any = |ps: &[&[&str]]| ps.iter().any(|p| has_phrase(&w, p));
+    if any(&[
+        &["rate", "limit"],
+        &["usage", "limit"],
+        &["limit", "reached"],
+    ]) || has_code(&w, "429")
+    {
         Failure::RateLimit
-    } else if has(&[
-        "not logged in",
-        "unauthorized",
-        "401",
-        "login",
-        "token expired",
-    ]) {
+    } else if any(&[
+        &["not", "logged", "in"],
+        &["unauthorized"],
+        &["token", "expired"],
+        &["run", "login"],
+    ]) || has_code(&w, "401")
+    {
         Failure::Auth
     } else {
         Failure::Other
@@ -135,9 +178,29 @@ impl LlmEngine for CliPoolEngine {
         event_tx: mpsc::Sender<StreamDelta>,
         cancel: CancellationToken,
     ) -> Result<TurnResponse, DriverError> {
-        self.with_account(|e| {
-            let (req, tx, cancel) = (req.clone(), event_tx.clone(), cancel.clone());
-            async move { e.stream_turn(req, tx, cancel).await }
+        let seen = Seen::default();
+        self.with_account(&seen, |e| {
+            let (req, cancel) = (req.clone(), cancel.clone());
+            // Tee the text deltas so a limit message printed on stdout can be classified.
+            let (tx, mut rx) = mpsc::channel(STREAM_CAP);
+            let (seen, fwd) = (&seen, event_tx.clone());
+            async move {
+                let tee = async {
+                    while let Some(d) = rx.recv().await {
+                        if let StreamDelta::Text(t) = &d {
+                            seen.emitted.store(true, Ordering::Relaxed);
+                            let mut o = seen.stdout.lock();
+                            o.push_str(t);
+                            let cut = o.len().saturating_sub(TAIL);
+                            let cut = (cut..).find(|i| o.is_char_boundary(*i)).unwrap_or(0);
+                            o.drain(..cut);
+                        }
+                        let _ = fwd.send(d).await;
+                    }
+                };
+                let (r, ()) = tokio::join!(e.stream_turn(req, tx, cancel), tee);
+                r
+            }
         })
         .await
     }
@@ -147,7 +210,7 @@ impl LlmEngine for CliPoolEngine {
         req: StructuredRequest,
         cancel: CancellationToken,
     ) -> Result<StructuredOutput<T>, DriverError> {
-        self.with_account(|e| {
+        self.with_account(&Seen::default(), |e| {
             let (req, cancel) = (req.clone(), cancel.clone());
             async move { e.complete_structured::<T>(req, cancel).await }
         })
@@ -187,11 +250,28 @@ mod tests {
     #[test]
     fn classifies_cli_failures() {
         assert_eq!(
-            classify("Claude usage limit reached|1700"),
+            classify("Claude usage limit reached|1700", ""),
             Failure::RateLimit
         );
-        assert_eq!(classify("Error: Not logged in"), Failure::Auth);
-        assert_eq!(classify("segfault"), Failure::Other);
+        assert_eq!(classify("Error: Not logged in", ""), Failure::Auth);
+        assert_eq!(classify("segfault", ""), Failure::Other);
+    }
+
+    #[test]
+    fn classify_is_word_bounded_and_reads_stdout() {
+        for noise in [
+            "open /home/u/401/x: denied",
+            "connect 127.0.0.1:4290 refused",
+            "cannot read login.rs",
+            "429 apples",
+        ] {
+            assert_eq!(classify(noise, ""), Failure::Other, "{noise}");
+        }
+        assert_eq!(classify("HTTP 401", ""), Failure::Auth);
+        assert_eq!(
+            classify("", "Claude usage limit reached|17"),
+            Failure::RateLimit
+        );
     }
 
     #[test]
@@ -208,11 +288,32 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn no_failover_after_text_was_emitted() {
+        let e = engine("claude:auto");
+        let seen = Seen::default();
+        let n = parking_lot::Mutex::new(0);
+        let r = e
+            .with_account(&seen, |_| {
+                *n.lock() += 1;
+                seen.emitted.store(true, Ordering::Relaxed);
+                async {
+                    Err::<(), _>(DriverError::Exit {
+                        code: Some(1),
+                        stderr: "rate limit".into(),
+                    })
+                }
+            })
+            .await;
+        assert!(r.is_err());
+        assert_eq!(*n.lock(), 1);
+    }
+
+    #[tokio::test]
     async fn fails_over_on_rate_limit_and_stops_on_other_errors() {
         let e = engine("claude:auto");
         let seen = parking_lot::Mutex::new(0);
         let out = e
-            .with_account(|_| {
+            .with_account(&Seen::default(), |_| {
                 *seen.lock() += 1;
                 let n = *seen.lock();
                 async move {
@@ -230,7 +331,7 @@ mod tests {
             .unwrap();
         assert_eq!(out, 3);
         let err = e
-            .with_account(|_| async {
+            .with_account(&Seen::default(), |_| async {
                 Err::<(), _>(DriverError::Exit {
                     code: Some(2),
                     stderr: "boom".into(),
@@ -246,7 +347,10 @@ mod tests {
             Arc::new(AccountPool::new(vec![], Strategy::Priority)),
             "claude:auto",
         );
-        let err = e.with_account(|_| async { Ok(()) }).await.unwrap_err();
+        let err = e
+            .with_account(&Seen::default(), |_| async { Ok(()) })
+            .await
+            .unwrap_err();
         assert!(err.to_string().contains("no usable CLI account"));
     }
 }

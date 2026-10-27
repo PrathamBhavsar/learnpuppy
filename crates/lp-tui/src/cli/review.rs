@@ -36,6 +36,7 @@ fn choose(
 
 pub fn run(
     tracker: &dyn TrackerStore,
+    device: &str,
     args: Args,
     input: &mut dyn BufRead,
     out: &mut dyn Write,
@@ -60,7 +61,7 @@ pub fn run(
             break;
         };
         let rating = [Rating::Again, Rating::Hard, Rating::Good, Rating::Easy][r - 1];
-        grade(tracker, &card.id, rating, now_ms())?;
+        grade(tracker, device, &card.id, rating, now_ms())?;
         done += 1;
     }
     writeln!(out, "\nreviewed {done}")?;
@@ -83,6 +84,7 @@ mod tests {
         // card 1: pick 3 (right), grade good; card 2: quit at the answer prompt.
         run(
             &t,
+            "dev1",
             Args { limit: 15 },
             &mut "3\n3\nq\n".as_bytes(),
             &mut out,

@@ -51,18 +51,38 @@ pub struct ViewSnapshot {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Command {
-    PinSlot { role: String, pin: String },
+    PinSlot {
+        role: String,
+        pin: String,
+    },
     Refresh,
-    Practice { chains: Vec<String> },
-    DeleteNodes { nodes: Vec<String> },
+    Practice {
+        chains: Vec<String>,
+    },
+    DeleteNodes {
+        nodes: Vec<String>,
+    },
     Answer(Answer),
-    Grade { card: String, rating: Rating },
-    FoldDecision { id: String },
+    Grade {
+        card: String,
+        rating: Rating,
+    },
+    FoldDecision {
+        id: String,
+    },
+    /// Stops the in-flight model turn.
+    Cancel,
+    /// Starts a Teach session on `topic`.
+    StartTeach {
+        topic: String,
+    },
 }
 
 pub trait DataSource: Send + Sync {
     fn snapshot(&self) -> ViewSnapshot;
     fn apply(&self, cmd: Command);
+    /// Called once when the UI exits: cancel whatever is still running.
+    fn shutdown(&self) {}
 }
 
 pub type Shared = Arc<ArcSwap<ViewSnapshot>>;
@@ -237,6 +257,7 @@ impl App {
             }
             (_, Action::OpenAccounts) => self.modal = Some(Modal::Accounts { selected: 0 }),
             (Some(_), Action::CloseModal) => self.modal = None,
+            (None, Action::CloseModal) => return Some(Command::Cancel),
             (Some(Modal::Palette { query, selected }), Action::Char(c)) => {
                 query.push(c);
                 *selected = 0;
@@ -301,13 +322,20 @@ fn next_pin(snap: &ViewSnapshot, current: &str) -> String {
 pub async fn run(src: Arc<dyn DataSource>) -> io::Result<()> {
     let shared: Shared = Arc::new(ArcSwap::from_pointee(src.snapshot()));
     let (tx, rx) = mpsc::channel(32);
-    let worker = tokio::spawn(run_worker(src, shared.clone(), rx));
+    let worker = tokio::spawn(run_worker(src.clone(), shared.clone(), rx));
     let mut terminal = ratatui::init();
     let res = event_loop(&mut terminal, &shared, &tx).await;
     ratatui::restore();
+    src.shutdown();
     drop(tx);
     let _ = worker.await;
     res
+}
+
+/// Queues a user command, waiting for room: only the periodic `Refresh` may be dropped.
+/// False once the worker is gone.
+async fn submit(tx: &mpsc::Sender<Command>, cmd: Command) -> bool {
+    tx.send(cmd).await.is_ok()
 }
 
 async fn event_loop(
@@ -331,8 +359,10 @@ async fn event_loop(
                     .map_key(key)
                     .and_then(|action| app.update(action, &snap))
                 {
-                    // Full queue means the worker is behind; dropping beats blocking the UI.
-                    let _ = tx.try_send(cmd);
+                    // A user command must not be lost; only the periodic Refresh may be dropped.
+                    if !submit(tx, cmd).await {
+                        break;
+                    }
                 }
             }
         }
@@ -445,6 +475,33 @@ mod tests {
             app.update(Action::NextView, &s);
         }
         assert_eq!(app.view, View::Classroom);
+    }
+
+    #[test]
+    fn esc_without_modal_cancels_the_turn() {
+        let mut app = App::default();
+        let s = ViewSnapshot::default();
+        assert_eq!(app.update(Action::CloseModal, &s), Some(Command::Cancel));
+    }
+
+    #[tokio::test]
+    async fn submit_waits_for_room_instead_of_dropping() {
+        let (tx, mut rx) = mpsc::channel(1);
+        tx.send(Command::Refresh).await.unwrap();
+        let sender = tokio::spawn(async move {
+            submit(
+                &tx,
+                Command::Grade {
+                    card: "c".into(),
+                    rating: Rating::Good,
+                },
+            )
+            .await
+        });
+        tokio::time::sleep(Duration::from_millis(20)).await;
+        assert_eq!(rx.recv().await, Some(Command::Refresh));
+        assert!(sender.await.unwrap());
+        assert!(matches!(rx.recv().await, Some(Command::Grade { .. })));
     }
 
     #[tokio::test]

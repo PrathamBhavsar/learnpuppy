@@ -10,8 +10,10 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use anyhow::anyhow;
+use async_trait::async_trait;
 use lp_agent::extract::{Pipeline, SourceMessage};
 use lp_agent::loops::{Kind, Session};
+use lp_agent::workbench::{Hit, Pdf, Web, Workbench};
 use lp_cli_driver::accounts::{AccountHealth, AccountPool};
 use lp_cli_driver::engine::{LlmEngine, StreamDelta};
 use lp_core::fsrs;
@@ -19,6 +21,7 @@ use lp_core::graph::GraphSnapshot;
 use lp_core::ports::{
     ChatStore, DecisionBasis, DecisionRecord, GraphStore, SessionCheckpoint, TrackerStore,
 };
+use lp_store::FsJobStore;
 use parking_lot::Mutex;
 use tokio::runtime::Handle;
 use tokio::sync::mpsc;
@@ -45,6 +48,34 @@ pub const DEFAULT_PIN: &str = "claude:auto";
 /// Bounded stream channel capacity (PLAN 3.1).
 const STREAM_DELTA_CAP: usize = 512;
 
+/// Web search and PDF extraction are not configured yet: jobs finish with this error, which the
+/// teacher is told about, rather than never finishing.
+struct Unconfigured;
+
+#[async_trait]
+impl Web for Unconfigured {
+    async fn search(&self, _: &str) -> Result<Vec<Hit>, String> {
+        Err("web access is not configured".into())
+    }
+    async fn fetch(&self, _: &str) -> Result<String, String> {
+        Err("web access is not configured".into())
+    }
+}
+
+impl Pdf for Unconfigured {
+    fn pages(&self, _: &str) -> Result<Vec<String>, String> {
+        Err("pdf extraction is not configured".into())
+    }
+}
+
+/// Keeps the value, or the default plus a message the UI shows (a corrupt store must not look empty).
+fn keep<T: Default, X: std::fmt::Display>(r: Result<T, X>, errs: &mut Vec<String>) -> T {
+    r.unwrap_or_else(|e| {
+        errs.push(e.to_string());
+        T::default()
+    })
+}
+
 /// `(role, pin) -> engine`; called per turn so a re-pinned slot applies immediately.
 type EngineFor<E> = Box<dyn Fn(&str, &str) -> Arc<E> + Send + Sync>;
 
@@ -55,6 +86,8 @@ struct Live {
     /// Assistant text streamed so far in the running turn.
     stream: String,
     error: Option<String>,
+    /// Cancels the running turn (a child of `Inner::shutdown`).
+    turn: CancellationToken,
 }
 
 struct Inner<E> {
@@ -66,6 +99,11 @@ struct Inner<E> {
     settings: Mutex<Settings>,
     engine_for: EngineFor<E>,
     live: Mutex<Live>,
+    /// Replication device id for FSRS reviews.
+    device: String,
+    /// Cancelled on quit; every turn and fold hangs off it.
+    shutdown: CancellationToken,
+    wb: Arc<Workbench<E, FsJobStore>>,
     graph: Mutex<GraphData>,
 }
 
@@ -84,6 +122,8 @@ impl<E: LlmEngine + 'static> Backend<E> {
         pool: Arc<AccountPool>,
         engine_for: impl Fn(&str, &str) -> Arc<E> + Send + Sync + 'static,
     ) -> Self {
+        let engine_for = Arc::new(engine_for);
+        let engine_for2 = engine_for.clone();
         let latest = stores
             .chats
             .list_chats()
@@ -91,9 +131,24 @@ impl<E: LlmEngine + 'static> Backend<E> {
             .into_iter()
             .max_by_key(|c| c.updated_at)
             .and_then(|c| Session::load(stores.chats.as_ref(), &c.id).ok());
-        let live = Live {
+        let mut live = Live {
             session: latest,
             ..Live::default()
+        };
+        let wb = Workbench::new(
+            engine_for("teacher", DEFAULT_PIN),
+            stores.jobs.clone(),
+            Arc::new(Unconfigured),
+            Arc::new(Unconfigured),
+            root.join("artifacts"),
+        );
+        if let Err(e) = wb.recover() {
+            live.error = Some(e.to_string());
+        }
+        let device = if settings.device_id.is_empty() {
+            "local".to_owned()
+        } else {
+            settings.device_id.clone()
         };
         Self {
             inner: Arc::new(Inner {
@@ -102,8 +157,11 @@ impl<E: LlmEngine + 'static> Backend<E> {
                 stores,
                 pool,
                 settings: Mutex::new(settings),
-                engine_for: Box::new(engine_for),
+                engine_for: Box::new(move |r, p| engine_for2(r, p)),
                 live: Mutex::new(live),
+                device,
+                shutdown: CancellationToken::new(),
+                wb,
                 graph: Mutex::new(GraphData::default()),
             }),
             rt: Handle::current(),
@@ -129,13 +187,19 @@ impl<E: LlmEngine + 'static> Backend<E> {
             }
             live.busy = true;
             live.error = None;
+            live.turn = i.shutdown.child_token();
             live.session = Some(s.clone());
         }
         if let Err(e) = s.save(i.stores.chats.as_ref(), now_ms() / 1000) {
             i.live.lock().error = Some(e.to_string());
         }
-        self.background(move |i| i.drive(s));
+        let cancel = live_turn(i);
+        self.background(move |i| i.drive(s, cancel));
     }
+}
+
+fn live_turn<E>(i: &Inner<E>) -> CancellationToken {
+    i.live.lock().turn.clone()
 }
 
 impl<E: LlmEngine + 'static> Inner<E> {
@@ -144,7 +208,7 @@ impl<E: LlmEngine + 'static> Inner<E> {
         (self.engine_for)(role, pin.as_deref().unwrap_or(DEFAULT_PIN))
     }
 
-    async fn drive(self: Arc<Self>, mut s: Session) {
+    async fn drive(self: Arc<Self>, mut s: Session, cancel: CancellationToken) {
         let (tx, mut rx) = mpsc::channel(STREAM_DELTA_CAP);
         let me = self.clone();
         let drain = tokio::spawn(async move {
@@ -154,14 +218,11 @@ impl<E: LlmEngine + 'static> Inner<E> {
                 }
             }
         });
-        let res = run_to_rest(
-            &|r| self.engine(r),
-            &self.cwd,
-            &mut s,
-            &tx,
-            &CancellationToken::new(),
-        )
-        .await;
+        let res = run_to_rest(&|r| self.engine(r), &self.cwd, &mut s, &tx, &cancel).await;
+        let launched = match &res {
+            Ok(()) => self.wb.launch(&mut s).err().map(|e| e.to_string()),
+            Err(_) => None,
+        };
         drop(tx);
         let _ = drain.await;
         let saved = s.save(self.stores.chats.as_ref(), now_ms() / 1000);
@@ -172,7 +233,8 @@ impl<E: LlmEngine + 'static> Inner<E> {
         live.error = res
             .err()
             .map(|e| e.to_string())
-            .or_else(|| saved.err().map(|e| e.to_string()));
+            .or_else(|| saved.err().map(|e| e.to_string()))
+            .or(launched);
     }
 
     /// Folds one decision into the knowledge graph through the Extractor -> Auditor -> Merger pipeline.
@@ -190,7 +252,7 @@ impl<E: LlmEngine + 'static> Inner<E> {
                 id: "decision".into(),
                 text: decision_text(&d),
             };
-            pipe.extract(&d.id, &[msg], CancellationToken::new())
+            pipe.extract(&d.id, &[msg], self.shutdown.child_token())
                 .await?;
             self.stores.graph.append_checkpoint(&SessionCheckpoint {
                 chat_id: d.id,
@@ -204,12 +266,9 @@ impl<E: LlmEngine + 'static> Inner<E> {
         }
     }
 
-    fn graph_snapshot(&self) -> GraphSnapshot {
+    fn graph_snapshot(&self, errs: &mut Vec<String>) -> GraphSnapshot {
         let g = &self.stores.graph;
-        GraphSnapshot::from_ledgers(
-            &g.nodes().unwrap_or_default(),
-            &g.chains().unwrap_or_default(),
-        )
+        GraphSnapshot::from_ledgers(&keep(g.nodes(), errs), &keep(g.chains(), errs))
     }
 
     fn fail(&self, e: impl std::fmt::Display) {
@@ -276,8 +335,9 @@ impl<E: LlmEngine + 'static> DataSource for Backend<E> {
                 })
                 .collect()
         };
+        let mut errs = Vec::new();
         let graph = {
-            let snap = i.graph_snapshot();
+            let snap = i.graph_snapshot(&mut errs);
             let mut cache = i.graph.lock();
             if cache.snap != snap {
                 *cache = GraphData::new(snap);
@@ -295,19 +355,44 @@ impl<E: LlmEngine + 'static> DataSource for Backend<E> {
             }
             cl
         };
+        let digest = digest(i, &mut errs);
+        let mut classroom = classroom;
+        classroom
+            .transcript
+            .extend(errs.iter().map(|e| format!("⚠ {e}")));
         ViewSnapshot {
             accounts,
             slots,
             graph,
             classroom,
-            digest: digest(i),
+            digest,
         }
     }
 
     fn apply(&self, cmd: Command) {
         let i = &self.inner;
         match cmd {
-            Command::Refresh => {}
+            Command::Refresh => {
+                // Wake the teacher with finished background jobs, unless a turn is running.
+                let mut s = {
+                    let live = i.live.lock();
+                    match live.session.clone() {
+                        Some(s) if !live.busy => s,
+                        _ => return,
+                    }
+                };
+                match i.wb.deliver(&mut s) {
+                    Ok(true) => self.start(s),
+                    Ok(false) => {}
+                    Err(e) => i.fail(e),
+                }
+            }
+            Command::Cancel => i.live.lock().turn.cancel(),
+            Command::StartTeach { topic } => {
+                let mut s = Session::new(format!("te_{:x}", now_ms()), Kind::Teach);
+                s.push_user(topic);
+                self.start(s);
+            }
             Command::PinSlot { role, pin } => {
                 let mut s = i.settings.lock();
                 s.pins.insert(role, pin);
@@ -316,7 +401,7 @@ impl<E: LlmEngine + 'static> DataSource for Backend<E> {
                 }
             }
             Command::Practice { chains } => {
-                let snap = i.graph_snapshot();
+                let snap = i.graph_snapshot(&mut Vec::new());
                 let name = |id: &str| snap.nodes.get(id).map_or(id.to_owned(), |n| n.name.clone());
                 let lines: Vec<String> = snap
                     .chains
@@ -337,12 +422,15 @@ impl<E: LlmEngine + 'static> DataSource for Backend<E> {
             Command::DeleteNodes { nodes } => {
                 // Deleting a node also drops every chain that touches it.
                 let ids: Vec<_> = nodes.iter().map(|n| n.as_str().into()).collect();
-                let doomed: Vec<_> = i.graph_snapshot().deletion_blast_radius(&ids);
-                let keep: Vec<_> = i
-                    .stores
-                    .graph
-                    .chains()
-                    .unwrap_or_default()
+                let mut errs = Vec::new();
+                let doomed: Vec<_> = i.graph_snapshot(&mut errs).deletion_blast_radius(&ids);
+                // A failed read must abort: rewriting from an empty default would wipe every chain.
+                let chains = match i.stores.graph.chains() {
+                    Ok(c) if errs.is_empty() => c,
+                    Ok(_) => return i.fail(errs.join("; ")),
+                    Err(e) => return i.fail(e),
+                };
+                let keep: Vec<_> = chains
                     .into_iter()
                     .filter(|c| !doomed.contains(&c.id))
                     .collect();
@@ -372,6 +460,7 @@ impl<E: LlmEngine + 'static> DataSource for Backend<E> {
             Command::Grade { card, rating } => {
                 if let Err(e) = review::grade(
                     i.stores.tracker.as_ref(),
+                    &i.device,
                     &card,
                     fsrs_rating(rating),
                     now_ms(),
@@ -382,23 +471,21 @@ impl<E: LlmEngine + 'static> DataSource for Backend<E> {
             Command::FoldDecision { id } => self.background(move |i| i.fold(id)),
         }
     }
+
+    fn shutdown(&self) {
+        self.inner.shutdown.cancel();
+    }
 }
 
-fn digest<E>(i: &Inner<E>) -> DigestData {
+fn digest<E>(i: &Inner<E>, errs: &mut Vec<String>) -> DigestData {
     let t = i.stores.tracker.as_ref();
-    let folded: HashSet<_> = i
-        .stores
-        .graph
-        .checkpoints()
-        .unwrap_or_default()
+    let folded: HashSet<_> = keep(i.stores.graph.checkpoints(), errs)
         .into_iter()
         .map(|c| c.chat_id)
         .collect();
     let now = now_ms();
     DigestData {
-        decisions: t
-            .decisions()
-            .unwrap_or_default()
+        decisions: keep(t.decisions(), errs)
             .into_iter()
             .map(|d| Decision {
                 project: t
@@ -426,8 +513,7 @@ fn digest<E>(i: &Inner<E>) -> DigestData {
                 id: d.id.to_string(),
             })
             .collect(),
-        due: review::due_cards(t, now)
-            .unwrap_or_default()
+        due: keep(review::due_cards(t, now), errs)
             .into_iter()
             .map(|c| QuizCard {
                 id: c.id.to_string(),
@@ -577,5 +663,99 @@ mod tests {
         let cl = b.snapshot().classroom;
         assert!(cl.practice);
         assert!(cl.prompt.is_some(), "{:?}", cl.transcript);
+    }
+
+    impl Backend<FauxEngine> {
+        fn snapshot_transcript(&self) -> Vec<String> {
+            self.snapshot().classroom.transcript
+        }
+    }
+
+    fn wait_idle(b: &Backend<FauxEngine>) {
+        for _ in 0..300 {
+            if !b.inner.live.lock().busy {
+                return;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        panic!("turn never finished");
+    }
+
+    #[test]
+    fn cancel_and_shutdown_stop_a_streaming_turn() {
+        let d = tempfile::tempdir().unwrap();
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let _g = rt.enter();
+        let faux = Arc::new(FauxEngine::new());
+        // Never released: only cancellation can end these turns.
+        let _gate1 =
+            faux.faux_gated_turn(vec![lp_cli_driver::engine::StreamDelta::Text("hi".into())]);
+        let _gate2 =
+            faux.faux_gated_turn(vec![lp_cli_driver::engine::StreamDelta::Text("hi".into())]);
+        let b = backend(d.path(), faux);
+        b.apply(Command::StartTeach {
+            topic: "raft".into(),
+        });
+        assert!(b.inner.live.lock().busy);
+        b.apply(Command::Cancel);
+        wait_idle(&b);
+        b.apply(Command::StartTeach {
+            topic: "again".into(),
+        });
+        assert!(b.inner.live.lock().busy);
+        b.shutdown();
+        wait_idle(&b);
+    }
+
+    #[test]
+    fn start_teach_seeds_a_teach_session() {
+        let d = tempfile::tempdir().unwrap();
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let _g = rt.enter();
+        let faux = Arc::new(FauxEngine::new());
+        faux.faux_text("Let's begin.");
+        let b = backend(d.path(), faux);
+        b.apply(Command::StartTeach {
+            topic: "raft".into(),
+        });
+        wait_idle(&b);
+        assert_eq!(
+            b.inner.live.lock().session.as_ref().unwrap().kind,
+            Kind::Teach
+        );
+        assert!(!b.snapshot_transcript().is_empty());
+    }
+
+    #[test]
+    fn corrupt_store_is_reported_and_delete_does_not_wipe_chains() {
+        use lp_core::graph::GraphNode;
+        let d = tempfile::tempdir().unwrap();
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let _g = rt.enter();
+        let b = backend(d.path(), Arc::new(FauxEngine::new()));
+        b.inner
+            .stores
+            .graph
+            .append_node(&GraphNode {
+                id: "n_a".into(),
+                name: "a".into(),
+                statement: "a".into(),
+                aliases: vec![],
+                created_at: chrono::DateTime::UNIX_EPOCH,
+                provenance: vec![],
+            })
+            .unwrap();
+        let chains = d.path().join("graph/chains.jsonl");
+        std::fs::remove_file(&chains).ok();
+        std::fs::create_dir(&chains).unwrap(); // unreadable as a ledger
+        let t = b.snapshot().classroom.transcript;
+        assert!(t.iter().any(|l| l.starts_with('⚠')), "{t:?}");
+        b.apply(Command::DeleteNodes {
+            nodes: vec!["n_a".into()],
+        });
+        assert!(
+            chains.is_dir(),
+            "delete must not rewrite chains after a failed read"
+        );
     }
 }
