@@ -606,9 +606,20 @@ checksum = "f9f8bd3e56ce4dfc153cf470fffbfa98c7620958b312ca5c3a4b8d5181fd13c6"
 name = "lp-agent"
 version = "0.1.0"
 dependencies = [
+ "chrono",
+ "hex",
  "lp-cli-driver",
  "lp-core",
  "lp-store",
+ "parking_lot",
+ "schemars",
+ "serde",
+ "serde_json",
+ "sha2",
+ "smol_str",
+ "thiserror",
+ "tokio",
+ "tokio-util",
 ]
 
 [[package]]
