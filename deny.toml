@@ -5,7 +5,9 @@ ignore = ["RUSTSEC-2024-0436"]
 
 [licenses]
 version = 2
-allow = ["Apache-2.0", "BSD-2-Clause", "BSD-3-Clause", "ISC", "MIT", "Unicode-3.0", "Zlib"]
+# MPL-2.0 (scraper's cssparser/selectors): file-level weak copyleft, used unmodified.
+# CDLA-Permissive-2.0: webpki-roots CA data.
+allow = ["Apache-2.0", "BSD-2-Clause", "BSD-3-Clause", "CDLA-Permissive-2.0", "ISC", "MIT", "MPL-2.0", "Unicode-3.0", "Zlib"]
 confidence-threshold = 0.8
 
 [bans]

@@ -1,5 +1,5 @@
 SHELL := /bin/zsh
-export PATH := /opt/homebrew/opt/rustup/bin:$(HOME)/.cargo/bin:$(PATH)
+export PATH := /opt/homebrew/bin:/opt/homebrew/opt/rustup/bin:$(HOME)/.cargo/bin:$(PATH)
 CARGO ?= /opt/homebrew/opt/rustup/bin/cargo
 
 .PHONY: fmt clippy test okf deny gate ci
@@ -17,7 +17,7 @@ okf:
 	python3 /Users/pratham/.claude/skills/okf/scripts/validate.py brain --strict
 
 deny:
-	@command -v cargo-deny >/dev/null && $(CARGO) deny check || echo 'cargo-deny not installed, skipping'
+	@if command -v cargo-deny >/dev/null; then $(CARGO) deny check; else echo 'cargo-deny not installed, skipping'; fi
 
 gate: fmt clippy test okf
 
