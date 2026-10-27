@@ -715,10 +715,14 @@ dependencies = [
 name = "lp-ingest"
 version = "0.1.0"
 dependencies = [
+ "chrono",
  "lp-agent",
  "lp-cli-driver",
  "lp-core",
  "lp-store",
+ "rusqlite",
+ "serde_json",
+ "tempfile",
 ]
 
 [[package]]
