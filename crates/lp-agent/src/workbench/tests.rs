@@ -433,6 +433,36 @@ async fn recover_turns_interrupted_jobs_into_delivered_errors() {
 }
 
 #[tokio::test]
+async fn claimed_steer_lost_before_save_is_redelivered_after_restart() {
+    let rig = Rig::new();
+    let rec = JobRecord {
+        id: "job_c".into(),
+        chat_id: "c1".into(),
+        kind: JobKind::Research,
+        status: JobStatus::Done,
+        delivery: DeliveryStatus::Pending,
+        created_at: 0,
+        result: Some(json!("r")),
+        usage: vec![],
+    };
+    rig.jobs.create_job(&rec).unwrap();
+    // Crash window: claimed on disk, transcript never saved.
+    let mut lost = teach();
+    assert!(rig.wb.deliver(&mut lost).unwrap());
+    assert!(rig.jobs.claim_steers("c1").unwrap().is_empty());
+
+    rig.wb.recover().unwrap();
+    let mut s = teach();
+    assert!(rig.wb.deliver(&mut s).unwrap());
+    assert_eq!(steers(&s).len(), 1);
+
+    // Saved before the crash: recovery re-offers it, but the transcript already holds it.
+    rig.wb.recover().unwrap();
+    assert!(!rig.wb.deliver(&mut s).unwrap());
+    assert_eq!(steers(&s).len(), 1);
+}
+
+#[tokio::test]
 async fn pump_runs_a_continuation_turn_only_when_woken() {
     let rig = Rig::new();
     submit(&rig, svg());

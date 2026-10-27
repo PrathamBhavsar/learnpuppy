@@ -118,6 +118,10 @@ pub trait JobStore: Send + Sync {
     fn claim_steers(&self, chat_id: &str) -> StoreResult<Vec<JobRecord>>;
     /// Crash recovery: jobs still `Running` after a restart.
     fn interrupted_jobs(&self) -> StoreResult<Vec<JobRecord>>;
+    /// Finished jobs marked `Claimed`; after a restart these may never have reached a saved transcript.
+    fn claimed_jobs(&self) -> StoreResult<Vec<JobRecord>> {
+        Ok(Vec::new())
+    }
 }
 
 // ---------------------------------------------------------------- tracker

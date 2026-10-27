@@ -182,7 +182,7 @@ impl SubprocessEngine {
         )
     }
 
-    /// Adds model and prompt delivery: stdin for claude/codex, `-p <prompt>` for agy.
+    /// Adds model and prompt delivery: stdin for every CLI (agy: `-p -`), so large prompts never hit argv limits or `ps`.
     fn finish_args(
         &self,
         mut a: Vec<String>,
@@ -206,8 +206,8 @@ impl SubprocessEngine {
                 (a, Some(prompt.into()))
             }
             CliKind::Agy => {
-                a.extend(["-p".into(), prompt.into()]);
-                (a, None)
+                a.extend(["-p".into(), "-".into()]);
+                (a, Some(prompt.into()))
             }
             CliKind::Claude => (a, Some(prompt.into())),
         }
@@ -621,6 +621,27 @@ echo '{"type":"item.completed","item":{"type":"agent_message","text":"{\"n\":4}"
             .unwrap();
         assert!(resp.text.starts_with("[unset]"), "{}", resp.text);
         assert!(resp.text.contains("lp-sandbox-"), "{}", resp.text);
+    }
+
+    #[tokio::test]
+    async fn agy_prompt_goes_over_stdin_not_argv() {
+        let (_d, e) = mock(
+            CliKind::Agy,
+            r#"n=$(wc -c | tr -d ' '); echo "{\"result\":\"stdin=$n argc=$#\"}""#,
+        );
+        let (tx, _rx) = mpsc::channel(4);
+        let resp = e
+            .stream_turn(
+                TurnRequest {
+                    prompt: "x".repeat(1_000_000),
+                    ..TurnRequest::default()
+                },
+                tx,
+                CancellationToken::new(),
+            )
+            .await
+            .unwrap();
+        assert!(resp.text.starts_with("stdin=1000000 "), "{}", resp.text);
     }
 
     /// The mock records its pid then blocks; the child must be dead after the error.

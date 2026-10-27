@@ -178,6 +178,15 @@ impl Session {
             .any(|c| is_question(&c.name) && !resolved.contains(c.id.as_str()))
     }
 
+    /// True if the transcript or the wake queue already holds steer `id`.
+    pub(crate) fn has_steer(&self, id: &str) -> bool {
+        self.steers.iter().any(|(s, _)| s == id)
+            || self
+                .messages
+                .iter()
+                .any(|m| matches!(m, Msg::Steer { id: s, .. } if s == id))
+    }
+
     /// Deliver queued steers once no question is waiting; true if the transcript changed.
     pub fn wake(&mut self) -> bool {
         if self.pending_question() || self.steers.is_empty() {

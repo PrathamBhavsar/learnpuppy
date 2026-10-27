@@ -87,6 +87,24 @@ fn prop(id: &str, name: &str) -> Value {
     json!({"id": id, "name": name, "statement": format!("{name} holds")})
 }
 
+/// The id `scope_local_ids` mints for `prop(local, name)` in a batch starting at `batch`.
+fn minted(batch: &str, local: &str, name: &str) -> String {
+    let f = SessionFindings {
+        chat_id: "c".into(),
+        message_ids: vec![],
+        propositions: serde_json::from_value(json!([prop(local, name)])).unwrap(),
+        chains: vec![],
+    };
+    scope_local_ids(f, batch).propositions.remove(0).id
+}
+
+#[test]
+fn minted_id_depends_on_proposition_text() {
+    // A retry may reuse `p1` for different text; it must not collide with the earlier node.
+    assert_ne!(minted("m1", "p1", "A"), minted("m1", "p1", "B"));
+    assert_eq!(minted("m1", "p1", "A"), minted("m1", "p1", "A"));
+}
+
 fn id_of(store: &MemGraph, name: &str) -> String {
     store
         .nodes()
@@ -133,7 +151,9 @@ async fn auditor_links_equivalent_propositions_across_sessions() {
     let existing = id_of(&store, "Borrowing");
 
     engine.faux_structured(json!({"propositions": [prop("p1", "Borrow rule")], "chains": []}));
-    engine.faux_structured(json!({"links": [{"id": "m1:p1", "link_to": existing}]}));
+    engine.faux_structured(
+        json!({"links": [{"id": minted("m1", "p1", "Borrow rule"), "link_to": existing}]}),
+    );
     run(&pipe, "c2", &[msg("m1", "y")]).await;
 
     let snap = GraphSnapshot::from_ledgers(&store.nodes().unwrap(), &[]);
