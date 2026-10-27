@@ -8,6 +8,7 @@ license.workspace = true
 lp-core = { path = "../lp-core" }
 lp-store = { path = "../lp-store" }
 lp-cli-driver = { path = "../lp-cli-driver" }
+async-trait.workspace = true
 chrono.workspace = true
 hex.workspace = true
 parking_lot.workspace = true
@@ -18,6 +19,7 @@ sha2.workspace = true
 smol_str.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
+tracing.workspace = true
 tokio-util.workspace = true
 
 [dev-dependencies]

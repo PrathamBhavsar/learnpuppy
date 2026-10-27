@@ -3,6 +3,8 @@ use std::path::PathBuf;
 use lp_core::plan::{derive_plan_statuses, ToolCall};
 
 use super::tools::{self, ASK, EXPLAIN, FIND, GREP, LS, PLAN_INIT, QUIZ, READ};
+use crate::workbench;
+
 use super::{Agent, Call, Effect, Session, ToolSpec};
 
 pub struct TeacherAgent {
@@ -39,7 +41,20 @@ impl Agent for TeacherAgent {
     }
 
     fn tools(&self) -> Vec<&'static ToolSpec> {
-        vec![&PLAN_INIT, &QUIZ, &EXPLAIN, &ASK, &READ, &LS, &FIND, &GREP]
+        vec![
+            &PLAN_INIT,
+            &QUIZ,
+            &EXPLAIN,
+            &ASK,
+            &READ,
+            &LS,
+            &FIND,
+            &GREP,
+            &workbench::RESEARCH,
+            &workbench::DEMO,
+            &workbench::VISUAL,
+            &workbench::PDF,
+        ]
     }
 
     fn exec(&self, s: &mut Session, call: &Call) -> Result<Effect, String> {
@@ -48,7 +63,8 @@ impl Agent for TeacherAgent {
             "quiz" => tools::quiz(s, call),
             "explain" => tools::explain(s, call),
             "ask_user_question" => tools::ask(call),
-            _ => tools::file_tool(&self.root, call)
+            _ => workbench::exec(s, call)
+                .or_else(|| tools::file_tool(&self.root, call))
                 .unwrap_or_else(|| Err(format!("unknown tool `{}`", call.name))),
         }
     }

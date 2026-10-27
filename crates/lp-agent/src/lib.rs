@@ -2,6 +2,7 @@
 
 pub mod extract;
 pub mod loops;
+pub mod workbench;
 
 #[cfg(test)]
 mod tests {

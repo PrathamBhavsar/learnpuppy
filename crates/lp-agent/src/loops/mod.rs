@@ -20,6 +20,8 @@ use serde_json::Value;
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 
+use crate::workbench::{GraphHandle, JobRequest};
+
 pub use practice::PracticeAgent;
 pub use prober::ProberAgent;
 pub use teacher::TeacherAgent;
@@ -98,6 +100,12 @@ pub struct Session {
     /// Handoff steers queued by tools, delivered by `wake`.
     steers: Vec<(String, String)>,
     problem_active: bool,
+    /// Workbench dispatches queued by tools, started by `Workbench::launch`.
+    #[serde(default)]
+    pub(crate) requests: Vec<JobRequest>,
+    /// Graph behind the `list_*` tools; attached at runtime, never persisted.
+    #[serde(skip)]
+    pub(crate) graph: Option<GraphHandle>,
 }
 
 impl Session {
@@ -109,7 +117,13 @@ impl Session {
             plan: None,
             steers: Vec::new(),
             problem_active: false,
+            requests: Vec::new(),
+            graph: None,
         }
+    }
+
+    pub(crate) fn queue_steer(&mut self, id: String, text: String) {
+        self.steers.push((id, text));
     }
 
     pub fn push_user(&mut self, text: impl Into<String>) {
