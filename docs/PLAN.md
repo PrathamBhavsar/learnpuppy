@@ -289,6 +289,8 @@ flowchart TD
     T01 --> T10["T10: lp-core Graph, Merger & simplify_chains"]
     T01 --> T11["T11: lp-core Plan DAG, Phases & QuestionCore"]
     T01 --> T12["T12: lp-core FSRS v5, Compaction & Cost Math"]
+    T01 --> T19["T19: lp-core ports.rs traits (GraphStore/ChatStore/JobStore/TrackerStore/LlmEngine)"]
+    T19 --> T20
     T10 --> T20["T20: lp-store Hybrid JSONL + SQLite WAL + FTS5"]
     T11 --> T20
     T12 --> T20
