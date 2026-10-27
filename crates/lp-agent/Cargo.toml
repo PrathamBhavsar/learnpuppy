@@ -8,6 +8,15 @@ license.workspace = true
 lp-core = { path = "../lp-core" }
 lp-store = { path = "../lp-store" }
 lp-cli-driver = { path = "../lp-cli-driver" }
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+tokio-util.workspace = true
+
+[dev-dependencies]
+parking_lot.workspace = true
+tempfile.workspace = true
 
 [lints]
 workspace = true
