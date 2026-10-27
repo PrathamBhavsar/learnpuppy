@@ -302,7 +302,7 @@ pub fn render(f: &mut Frame, area: Rect, cl: &Classroom, dock: &Dock) {
         .title(format!("Classroom [{}]", cl.badge()));
     let inner = block.inner(area);
     f.render_widget(block, area);
-    let lines = dock_lines(cl, dock, usize::from(inner.width));
+    let lines = dock_lines(cl, dock, usize::from(inner.width.saturating_sub(2)));
     let dock_h = if lines.is_empty() {
         0
     } else {
