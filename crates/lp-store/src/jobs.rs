@@ -1,5 +1,5 @@
 //! `FsJobStore`: one atomically-replaced `jobs/<id>.json` per job.
-use crate::jsonl::{be, check_id, read_json, write_json};
+use crate::jsonl::{be, check_id, create_dir, lock, read_json, write_json};
 use lp_core::ports::{DeliveryStatus, JobRecord, JobStatus, JobStore, StoreError, StoreResult};
 use std::path::PathBuf;
 use std::sync::Mutex;
@@ -13,7 +13,7 @@ pub struct FsJobStore {
 impl FsJobStore {
     pub fn open(dir: impl Into<PathBuf>) -> StoreResult<Self> {
         let dir = dir.into();
-        std::fs::create_dir_all(&dir).map_err(be)?;
+        create_dir(&dir)?;
         Ok(Self {
             dir,
             lock: Mutex::new(()),
@@ -30,7 +30,10 @@ impl FsJobStore {
         for entry in std::fs::read_dir(&self.dir).map_err(be)? {
             let path = entry.map_err(be)?.path();
             if path.extension().is_some_and(|e| e == "json") {
-                jobs.push(read_json(&path, "")?);
+                // One unreadable job must not block claiming or recovery of the rest.
+                if let Ok(job) = read_json(&path, "") {
+                    jobs.push(job);
+                }
             }
         }
         jobs.sort_by(|a: &JobRecord, b| {
@@ -57,6 +60,7 @@ impl JobStore for FsJobStore {
     }
     fn claim_steers(&self, chat_id: &str) -> StoreResult<Vec<JobRecord>> {
         let _guard = self.lock.lock().map_err(be)?;
+        let _file_lock = lock(&self.dir.join("claims"))?;
         let mut claimed = vec![];
         for mut job in self.all()? {
             if job.chat_id == chat_id

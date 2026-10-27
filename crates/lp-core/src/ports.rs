@@ -206,6 +206,11 @@ pub trait TrackerStore: Send + Sync {
     fn cards(&self) -> StoreResult<Vec<FlashCard>>;
     fn append_review(&self, review: &FsrsReviewLog) -> StoreResult<()>;
     fn reviews(&self) -> StoreResult<Vec<FsrsReviewLog>>;
+    /// Persist a rescheduled card and its review row together; stores override this to be atomic.
+    fn commit_review(&self, card: &FlashCard, review: &FsrsReviewLog) -> StoreResult<()> {
+        self.upsert_card(card)?;
+        self.append_review(review)
+    }
     /// Append a review/card replication line to `sync-<device_id>.jsonl`.
     fn append_sync(&self, device_id: &str, line: &serde_json::Value) -> StoreResult<()>;
 }

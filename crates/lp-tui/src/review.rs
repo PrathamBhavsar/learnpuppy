@@ -25,14 +25,13 @@ pub fn grade(t: &dyn TrackerStore, card_id: &str, rating: Rating, now: i64) -> S
         .find(|c| c.id == card_id)
         .ok_or_else(|| StoreError::NotFound(card_id.into()))?;
     card.card = fsrs::review(&card.card, now, rating);
-    t.upsert_card(&card)?;
     let log = FsrsReviewLog {
-        card_id: card.id,
+        card_id: card.id.clone(),
         ts: now,
         rating,
         device_id: DEVICE.into(),
     };
-    t.append_review(&log)?;
+    t.commit_review(&card, &log)?;
     let mut line = serde_json::to_value(&log).map_err(|e| StoreError::Backend(e.to_string()))?;
     line["kind"] = "review".into();
     t.append_sync(DEVICE, &line)
