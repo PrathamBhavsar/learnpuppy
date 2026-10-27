@@ -292,7 +292,7 @@ flowchart TD
     T10 --> T20["T20: lp-store Hybrid JSONL + SQLite WAL + FTS5"]
     T11 --> T20
     T12 --> T20
-    T12 --> T21["T21: lp-cli-driver Multi-Account Discovery & Quota Pool"]
+    T01 --> T21["T21: lp-cli-driver Multi-Account Discovery & Quota Pool"]
     T21 --> T22["T22: lp-cli-driver Subprocess Streaming, Schema Runner & FauxEngine"]
     T20 --> T30["T30: lp-agent Prober, Teacher & Adaptive Practice Engine"]
     T22 --> T30
