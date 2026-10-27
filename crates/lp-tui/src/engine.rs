@@ -42,6 +42,7 @@ pub struct CliPoolEngine {
     /// The role's provider, model and effort; the pool stays inside its provider unless it allows fallback.
     profile: Option<Profile>,
     visual: bool,
+    role: String,
 }
 
 fn provider_kind(p: &str) -> ProviderKind {
@@ -59,6 +60,7 @@ impl CliPoolEngine {
             pin: pin.into(),
             profile: None,
             visual: false,
+            role: String::new(),
         }
     }
 
@@ -66,6 +68,7 @@ impl CliPoolEngine {
     /// visual learning style tags the prober and teacher prompts.
     pub fn for_role(pool: Arc<AccountPool>, settings: &Settings, role: &str, pin: &str) -> Self {
         let mut e = Self::new(pool, pin);
+        e.role = role.into();
         e.profile = settings.profiles.get(role).cloned();
         if let Some(p) = &e.profile {
             // An account pin of the profile's provider stays; anything else becomes `<provider>:auto`.
@@ -122,6 +125,8 @@ impl CliPoolEngine {
                 ProviderKind::AgyCli => CliKind::Agy,
             })?;
             engine.config_dir = acct.config_dir.clone();
+            engine.role = self.role.clone();
+            engine.account = acct.id.0.clone();
             // A fallback provider cannot run another provider's model slug.
             if let Some(p) = self
                 .profile

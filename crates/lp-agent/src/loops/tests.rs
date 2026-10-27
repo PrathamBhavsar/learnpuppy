@@ -351,3 +351,23 @@ fn file_tools_redact_refuse_hidden_paths_and_cap_reads() {
     assert!(hits.contains("a.txt") && !hits.contains("hunter2") && !hits.contains("node_modules"));
     assert_eq!(run("read", json!({"path": "big.txt"})).len(), 20_000);
 }
+
+#[tokio::test]
+async fn probe_done_is_forced_after_the_question_cap() {
+    let rig = Rig::new();
+    let mut s = Session::new("c1", Kind::Teach);
+    s.push_user("teach me ownership");
+    for i in 0..MAX_PROBE_QUESTIONS {
+        assert_eq!(s.phase(), Phase::Probe, "question {i}");
+        rig.engine.faux_tool_call("probe", quiz_args(json!({})));
+        assert!(rig.turn(&mut s).await.unwrap().pending_question);
+        let id = last_call_id(&s);
+        s.answer(&id, "selected: a; confidence: 3");
+    }
+    assert_eq!(s.probe_questions(), MAX_PROBE_QUESTIONS);
+    // No model reply is queued: the cap ends the probe without asking the engine.
+    let out = rig.turn(&mut s).await.unwrap();
+    assert!(!out.pending_question);
+    assert_eq!(s.phase(), Phase::Plan);
+    assert!(s.wake());
+}

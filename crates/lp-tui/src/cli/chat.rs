@@ -8,6 +8,7 @@ use anyhow::{bail, Context};
 use clap::{Args, Subcommand};
 use lp_agent::loops::{Kind, Session};
 use lp_cli_driver::engine::LlmEngine;
+use lp_core::plan::Phase;
 use lp_core::ports::ChatStore;
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
@@ -96,6 +97,12 @@ pub async fn run<E: LlmEngine>(
 
     let view = classroom_view(&s, "");
     writeln!(out, "chat {}", s.id)?;
+    write!(out, "phase {:?}", s.phase())?;
+    if s.phase() == Phase::Probe {
+        let max = lp_agent::loops::MAX_PROBE_QUESTIONS;
+        write!(out, ", probe question {}/{max}", s.probe_questions())?;
+    }
+    writeln!(out)?;
     if let Some(last) = view.transcript.last() {
         writeln!(out, "{last}")?;
     }
@@ -150,6 +157,7 @@ mod tests {
             .unwrap();
         let text = String::from_utf8(out).unwrap();
         assert!(text.contains("? Who owns it?") && text.contains("One (a)"));
+        assert!(text.contains("phase Probe, probe question 1/8"), "{text}");
         let id = chats.list_chats().unwrap()[0].id.to_string();
         assert_eq!(chats.load_chat(&id).unwrap().title, "ownership");
 

@@ -32,6 +32,8 @@ const SHARED_PROMPT: &str = include_str!("prompts/shared.md");
 const MAX_STEPS: usize = 16;
 /// Consecutive invalid tool calls tolerated before the turn fails.
 const MAX_INVALID: usize = 3;
+/// Questions the prober may put before `probe_done` is forced with what was learned.
+pub const MAX_PROBE_QUESTIONS: usize = 8;
 pub const HANDOFF_TEXT: &str = "The probe is finished. Judge the learner from the probe transcript, call plan_init to author the plan, then begin teaching.";
 pub const COMPACTED_HISTORY_HEADER: &str = "Summary of earlier conversation:";
 
@@ -160,6 +162,13 @@ impl Session {
             Msg::Assistant { calls, .. } => calls.as_slice(),
             _ => &[],
         })
+    }
+
+    /// Questions the prober has put so far.
+    pub fn probe_questions(&self) -> usize {
+        self.calls()
+            .filter(|c| matches!(c.name.as_str(), "probe" | "recall" | "ask_user_question"))
+            .count()
     }
 
     /// A question call that has neither an answer nor a (failed) tool result.
@@ -350,6 +359,35 @@ pub async fn run_turn<E: LlmEngine>(
     cancel: &CancellationToken,
 ) -> Result<TurnOutcome, TurnError> {
     let mut invalid = 0;
+    if s.kind == Kind::Teach
+        && s.phase() == Phase::Probe
+        && !s.pending_question()
+        && s.probe_questions() >= MAX_PROBE_QUESTIONS
+    {
+        // Cap reached: end the probe ourselves; the caller's wake delivers the handoff steer.
+        let id = format!("probe_done_forced#{}", s.messages.len());
+        if let Ok(Effect::Ack(text)) = tools::probe_done(s) {
+            s.messages.push(Msg::Assistant {
+                text: String::new(),
+                calls: vec![Call {
+                    id: id.clone(),
+                    name: "probe_done".into(),
+                    args: Value::Object(Default::default()),
+                }],
+            });
+            s.messages.push(Msg::ToolResult {
+                call_id: id,
+                name: "probe_done".into(),
+                ok: true,
+                text,
+            });
+            return Ok(TurnOutcome {
+                text: String::new(),
+                pending_question: false,
+                compact_at: s.compaction_cut(),
+            });
+        }
+    }
     for _ in 0..MAX_STEPS {
         let agent = s.agent(root);
         let req = TurnRequest {

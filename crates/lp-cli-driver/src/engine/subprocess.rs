@@ -53,6 +53,9 @@ pub struct SubprocessEngine {
     /// Model and effort used when a request names none (a role profile's choice).
     pub model: Option<String>,
     pub effort: Option<String>,
+    /// Role and account id, for the call log only.
+    pub role: String,
+    pub account: String,
     /// Private (0700, random name) working directory, removed when the last clone drops.
     sandbox: Arc<tempfile::TempDir>,
 }
@@ -71,12 +74,56 @@ impl SubprocessEngine {
             config_dir: None,
             model: None,
             effort: None,
+            role: String::new(),
+            account: String::new(),
             sandbox: Arc::new(tempfile::Builder::new().prefix("lp-sandbox-").tempdir()?),
         })
     }
 
     fn sandbox(&self) -> &Path {
         self.sandbox.path()
+    }
+
+    /// One info line per CLI call. The prompt travels on stdin and the schema is blanked, so neither is logged.
+    fn log_start(&self, args: &[String]) -> std::time::Instant {
+        let mut argv = args.to_vec();
+        for i in 1..argv.len() {
+            if argv[i - 1] == "--json-schema" {
+                argv[i] = "<redacted>".into();
+            }
+        }
+        let flag = |names: [&str; 2]| {
+            args.windows(2)
+                .find(|w| names.contains(&w[0].as_str()))
+                .map_or("", |w| w[1].as_str())
+                .to_owned()
+        };
+        tracing::info!(
+            role = %self.role,
+            provider = ?self.kind,
+            account = %self.account,
+            model = %flag(["-m", "--model"]),
+            effort = %flag(["--effort", "-c"]),
+            argv = ?argv,
+            "cli turn start"
+        );
+        std::time::Instant::now()
+    }
+
+    fn log_end<T>(&self, started: std::time::Instant, r: &Result<T, DriverError>) {
+        let status = match r {
+            Ok(_) => "ok".to_owned(),
+            Err(DriverError::Exit { code, .. }) => format!("exit {code:?}"),
+            Err(e) => format!("error: {e}"),
+        };
+        tracing::info!(
+            role = %self.role,
+            provider = ?self.kind,
+            account = %self.account,
+            duration_ms = u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX),
+            status = %status,
+            "cli turn end"
+        );
     }
 
     fn spawn(
@@ -429,15 +476,14 @@ fn structured_json(kind: CliKind, stdout: &str) -> Result<Value, DriverError> {
     }
 }
 
-#[async_trait]
-impl LlmEngine for SubprocessEngine {
-    async fn stream_turn(
+impl SubprocessEngine {
+    async fn run_turn(
         &self,
-        req: TurnRequest,
+        args: Vec<String>,
+        stdin: Option<String>,
         event_tx: mpsc::Sender<StreamDelta>,
         cancel: CancellationToken,
     ) -> Result<TurnResponse, DriverError> {
-        let (args, stdin) = self.turn_args(&req);
         let mut proc = self.spawn(args, stdin, cancel)?;
         let mut resp = TurnResponse::default();
         while let Some(line) = proc.next().await? {
@@ -451,6 +497,22 @@ impl LlmEngine for SubprocessEngine {
             }
         }
         Ok(resp)
+    }
+}
+
+#[async_trait]
+impl LlmEngine for SubprocessEngine {
+    async fn stream_turn(
+        &self,
+        req: TurnRequest,
+        event_tx: mpsc::Sender<StreamDelta>,
+        cancel: CancellationToken,
+    ) -> Result<TurnResponse, DriverError> {
+        let (args, stdin) = self.turn_args(&req);
+        let started = self.log_start(&args);
+        let r = self.run_turn(args, stdin, event_tx, cancel).await;
+        self.log_end(started, &r);
+        r
     }
 
     async fn complete_structured<T: DeserializeOwned + JsonSchema + Send>(
@@ -507,13 +569,20 @@ impl LlmEngine for SubprocessEngine {
             }
         }
         let (args, stdin) = self.finish_args(a, &req.prompt, req.model.as_deref(), None);
-        let mut proc = self.spawn(args, stdin, cancel)?;
-        let mut stdout = String::new();
-        while let Some(line) = proc.next().await? {
-            stdout.push_str(&line);
-            stdout.push('\n');
+        let started = self.log_start(&args);
+        let ran = async {
+            let mut proc = self.spawn(args, stdin, cancel)?;
+            let mut stdout = String::new();
+            while let Some(line) = proc.next().await? {
+                stdout.push_str(&line);
+                stdout.push('\n');
+            }
+            Ok(stdout)
         }
+        .await;
+        self.log_end(started, &ran);
         drop(schema_file);
+        let stdout = ran?;
         let raw = structured_json(self.kind, &stdout)?;
         let value =
             serde_json::from_value(raw.clone()).map_err(|e| DriverError::Parse(e.to_string()))?;
