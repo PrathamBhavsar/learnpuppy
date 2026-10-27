@@ -4,6 +4,7 @@ use crate::jsonl::{append, be, read_all, rewrite};
 use lp_core::graph::{CoverageEntry, GraphChain, GraphNode};
 use lp_core::ports::{GraphStore, SessionCheckpoint, StoreResult};
 use rusqlite::{params, Connection};
+use smol_str::SmolStr;
 use std::path::PathBuf;
 use std::sync::Mutex;
 
@@ -59,6 +60,20 @@ impl GraphStore for FsGraphStore {
     }
     fn nodes(&self) -> StoreResult<Vec<GraphNode>> {
         read_all(&self.path("nodes.jsonl"))
+    }
+    fn delete_nodes(&self, ids: &[SmolStr]) -> StoreResult<()> {
+        let keep: Vec<_> = self
+            .nodes()?
+            .into_iter()
+            .filter(|n| !ids.contains(&n.id))
+            .collect();
+        rewrite(&self.path("nodes.jsonl"), &keep)?;
+        let db = self.db.lock().map_err(be)?;
+        for id in ids {
+            db.execute("DELETE FROM propositions_fts WHERE id = ?1", [id.as_str()])
+                .map_err(be)?;
+        }
+        Ok(())
     }
     fn append_chain(&self, chain: &GraphChain) -> StoreResult<()> {
         append(&self.path("chains.jsonl"), chain)

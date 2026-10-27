@@ -335,10 +335,9 @@ impl<E: LlmEngine + 'static> DataSource for Backend<E> {
                 self.start(s);
             }
             Command::DeleteNodes { nodes } => {
-                // The node ledger is append-only; deleting drops every chain that touches them.
-                let doomed: Vec<_> = i.graph_snapshot().deletion_blast_radius(
-                    &nodes.iter().map(|n| n.as_str().into()).collect::<Vec<_>>(),
-                );
+                // Deleting a node also drops every chain that touches it.
+                let ids: Vec<_> = nodes.iter().map(|n| n.as_str().into()).collect();
+                let doomed: Vec<_> = i.graph_snapshot().deletion_blast_radius(&ids);
                 let keep: Vec<_> = i
                     .stores
                     .graph
@@ -347,7 +346,12 @@ impl<E: LlmEngine + 'static> DataSource for Backend<E> {
                     .into_iter()
                     .filter(|c| !doomed.contains(&c.id))
                     .collect();
-                if let Err(e) = i.stores.graph.rewrite_chains(&keep) {
+                if let Err(e) = i
+                    .stores
+                    .graph
+                    .rewrite_chains(&keep)
+                    .and_then(|()| i.stores.graph.delete_nodes(&ids))
+                {
                     i.fail(e);
                 }
             }
@@ -397,8 +401,15 @@ fn digest<E>(i: &Inner<E>) -> DigestData {
             .unwrap_or_default()
             .into_iter()
             .map(|d| Decision {
-                // The store has no session lookup, so decisions are not grouped by project.
-                project: "-".into(),
+                project: t
+                    .session(&d.session_id)
+                    .ok()
+                    .flatten()
+                    .and_then(|s| {
+                        let name = std::path::Path::new(&s.cwd).file_name()?;
+                        Some(name.to_string_lossy().into_owned())
+                    })
+                    .unwrap_or_else(|| "-".into()),
                 // Session ids are `<source>:<id>`.
                 tool: d.session_id.split(':').next().unwrap_or_default().into(),
                 what: d.what,
@@ -480,6 +491,69 @@ mod tests {
             Settings::load(d.path()).unwrap().pins["teacher"],
             "agy:default"
         );
+    }
+
+    #[test]
+    fn delete_removes_nodes_and_chains_and_digest_shows_project() {
+        use lp_core::graph::{GraphChain, GraphNode};
+        use lp_core::ports::CodingSession;
+        let d = tempfile::tempdir().unwrap();
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let _g = rt.enter();
+        let b = backend(d.path(), Arc::new(FauxEngine::new()));
+        let g = &b.inner.stores.graph;
+        for id in ["n_a", "n_b", "n_c"] {
+            g.append_node(&GraphNode {
+                id: id.into(),
+                name: id.into(),
+                statement: id.into(),
+                aliases: vec![],
+                created_at: chrono::DateTime::UNIX_EPOCH,
+                provenance: vec![],
+            })
+            .unwrap();
+        }
+        let chain = |id: &str, p: &str, c: &str| GraphChain {
+            id: id.into(),
+            premises: vec![p.into()],
+            conclusion: c.into(),
+            provenance: vec![],
+            created_at: chrono::DateTime::UNIX_EPOCH,
+        };
+        g.append_chain(&chain("ch1", "n_a", "n_b")).unwrap();
+        g.append_chain(&chain("ch2", "n_b", "n_c")).unwrap();
+        b.apply(Command::DeleteNodes {
+            nodes: vec!["n_a".into()],
+        });
+        let ids: Vec<_> = g.nodes().unwrap().into_iter().map(|n| n.id).collect();
+        assert_eq!(ids, ["n_b", "n_c"]);
+        let chains: Vec<_> = g.chains().unwrap().into_iter().map(|c| c.id).collect();
+        assert_eq!(chains, ["ch2"]);
+
+        let t = &b.inner.stores.tracker;
+        t.upsert_session(&CodingSession {
+            id: "claude:s1".into(),
+            source: "claude".into(),
+            cwd: "/home/me/code/tracker".into(),
+            git_branch: None,
+            started_at: 1,
+            transcript: String::new(),
+        })
+        .unwrap();
+        t.upsert_decision(&DecisionRecord {
+            id: "d1".into(),
+            session_id: "claude:s1".into(),
+            title: "t".into(),
+            what: "w".into(),
+            why: "y".into(),
+            basis: DecisionBasis::Stated,
+            alternatives: vec![],
+            risk: String::new(),
+            files: vec![],
+            commit_sha: None,
+        })
+        .unwrap();
+        assert_eq!(b.snapshot().digest.decisions[0].project, "tracker");
     }
 
     #[test]

@@ -155,6 +155,25 @@ impl TrackerStore for SqliteTrackerStore {
         .map_err(be)?;
         tx.commit().map_err(be)
     }
+    fn session(&self, id: &str) -> StoreResult<Option<CodingSession>> {
+        let db = self.db.lock().map_err(be)?;
+        db.query_row(
+            "SELECT source, cwd, git_branch, started_at, transcript FROM sessions WHERE id = ?1",
+            [id],
+            |r| {
+                Ok(CodingSession {
+                    id: id.into(),
+                    source: r.get::<_, String>(0)?.into(),
+                    cwd: r.get(1)?,
+                    git_branch: r.get(2)?,
+                    started_at: r.get(3)?,
+                    transcript: r.get(4)?,
+                })
+            },
+        )
+        .optional()
+        .map_err(be)
+    }
     fn upsert_decision(&self, d: &DecisionRecord) -> StoreResult<()> {
         let db = self.db.lock().map_err(be)?;
         db.execute(
