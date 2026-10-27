@@ -1,15 +1,17 @@
+SHELL := /bin/zsh
 export PATH := /opt/homebrew/opt/rustup/bin:$(HOME)/.cargo/bin:$(PATH)
+CARGO ?= /opt/homebrew/opt/rustup/bin/cargo
 
 .PHONY: fmt clippy test okf gate ci
 
 fmt:
-	cargo fmt --all -- --check
+	$(CARGO) fmt --all -- --check
 
 clippy:
-	cargo clippy --workspace --all-targets -- -D warnings
+	$(CARGO) clippy --workspace --all-targets -- -D warnings
 
 test:
-	cargo test --workspace --all-targets
+	$(CARGO) test --workspace --all-targets
 
 okf:
 	python3 /Users/pratham/.claude/skills/okf/scripts/validate.py brain --strict
