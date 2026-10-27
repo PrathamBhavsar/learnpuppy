@@ -26,6 +26,9 @@ const MAX_PDF_BYTES: u64 = 8 << 20;
 pub struct HttpWeb {
     search_url: String,
     allow_loopback: bool,
+    /// Test-only: answer every DNS lookup with this address instead of asking the resolver.
+    #[cfg(test)]
+    fake_dns: Option<SocketAddr>,
 }
 
 impl Default for HttpWeb {
@@ -33,6 +36,8 @@ impl Default for HttpWeb {
         Self {
             search_url: SEARCH_URL.into(),
             allow_loopback: false,
+            #[cfg(test)]
+            fake_dns: None,
         }
     }
 }
@@ -44,6 +49,7 @@ impl HttpWeb {
         Self {
             search_url: url.into(),
             allow_loopback: true,
+            fake_dns: None,
         }
     }
 
@@ -54,7 +60,7 @@ impl HttpWeb {
                 .timeout(WEB_TIMEOUT)
                 .user_agent("learnpuppy")
                 .redirect(reqwest::redirect::Policy::none());
-            if let Some((host, addr)) = self.vet(&url).await? {
+            if let Some((host, addr)) = self.vet(&mut url).await? {
                 builder = builder.resolve(&host, addr);
             }
             let client = builder.build().map_err(|e| e.to_string())?;
@@ -93,8 +99,9 @@ impl HttpWeb {
     }
 
     /// Reject URLs that could reach internal hosts. Returns the host and the validated address
-    /// to pin the connection to, or `None` for an IP-literal host (nothing to resolve).
-    async fn vet(&self, url: &reqwest::Url) -> Result<Option<(String, SocketAddr)>, String> {
+    /// to pin the connection to, or `None` for an IP-literal host (nothing to resolve). The URL's
+    /// host is rewritten to the normalised string so reqwest's pin lookup matches it exactly.
+    async fn vet(&self, url: &mut reqwest::Url) -> Result<Option<(String, SocketAddr)>, String> {
         if !matches!(url.scheme(), "http" | "https") {
             return Err("only http(s) urls can be fetched".into());
         }
@@ -115,10 +122,18 @@ impl HttpWeb {
         if !self.allow_loopback && (host == "localhost" || host.ends_with(".localhost")) {
             return Err("blocked host localhost".into());
         }
-        let addrs: Vec<SocketAddr> = tokio::net::lookup_host((host.as_str(), port))
-            .await
-            .map_err(|e| format!("dns lookup failed: {e}"))?
-            .collect();
+        url.set_host(Some(&host)).map_err(|e| e.to_string())?;
+        #[cfg(test)]
+        let fake = self.fake_dns;
+        #[cfg(not(test))]
+        let fake: Option<SocketAddr> = None;
+        let addrs: Vec<SocketAddr> = match fake {
+            Some(a) => vec![a],
+            None => tokio::net::lookup_host((host.as_str(), port))
+                .await
+                .map_err(|e| format!("dns lookup failed: {e}"))?
+                .collect(),
+        };
         if let Some(a) = addrs.iter().find(|a| blocked(a.ip())) {
             return Err(format!("{host} resolves to blocked address {}", a.ip()));
         }
@@ -138,12 +153,22 @@ fn is_internal(ip: IpAddr) -> bool {
                 || v4.is_link_local()
                 || v4.is_multicast()
                 || v4.is_broadcast()
+                || v4.octets()[0] == 0 // 0.0.0.0/8
+                || (v4.octets()[0] == 100 && v4.octets()[1] & 0xc0 == 0x40) // 100.64.0.0/10 CGNAT
+                || v4.octets()[..3] == [192, 0, 0] // 192.0.0.0/24
         }
         IpAddr::V6(v6) => {
             if let Some(v4) = v6.to_ipv4_mapped() {
                 return is_internal(v4.into());
             }
-            let first = v6.segments()[0];
+            let seg = v6.segments();
+            if seg[..6] == [0x64, 0xff9b, 0, 0, 0, 0] {
+                // 64:ff9b::/96 NAT64 embeds an IPv4 address
+                let [a, b] = seg[6].to_be_bytes();
+                let [c, d] = seg[7].to_be_bytes();
+                return is_internal(std::net::Ipv4Addr::new(a, b, c, d).into());
+            }
+            let first = seg[0];
             v6.is_loopback()
                 || v6.is_unspecified()
                 || v6.is_multicast()
@@ -367,6 +392,37 @@ mod tests {
             "http://user:pw@example.com/",
         ] {
             assert!(web.fetch(url).await.is_err(), "{url} should be rejected");
+        }
+    }
+
+    #[test]
+    fn is_internal_covers_cgnat_zero_net_ietf_and_nat64() {
+        for ip in [
+            "100.100.100.200",
+            "100.64.0.1",
+            "100.127.255.255",
+            "0.1.2.3",
+            "192.0.0.8",
+            "64:ff9b::7f00:1",
+            "64:ff9b::a9fe:a9fe",
+        ] {
+            assert!(is_internal(ip.parse().unwrap()), "{ip}");
+        }
+        for ip in ["100.63.0.1", "100.128.0.1", "192.0.1.1", "64:ff9b::808:808"] {
+            assert!(!is_internal(ip.parse().unwrap()), "{ip}");
+        }
+    }
+
+    #[tokio::test]
+    async fn pin_is_used_for_trailing_dot_and_mixed_case_hosts() {
+        let base = serve(route).await;
+        let addr: SocketAddr = base.trim_start_matches("http://").parse().unwrap();
+        let mut web = HttpWeb::for_test("");
+        web.fake_dns = Some(addr);
+        // `pin.test` never resolves for real, so success proves the vetted address was used.
+        for host in ["pin.test.", "PIN.Test", "Pin.TEST."] {
+            let url = format!("http://{host}:{}/page", addr.port());
+            assert_eq!(web.fetch(&url).await.unwrap(), "<p>hello</p>", "{url}");
         }
     }
 
