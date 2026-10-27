@@ -112,7 +112,16 @@ pub async fn run(cli: Cli) -> anyhow::Result<()> {
         Some(Cmd::Config(cmd)) => config::run(&root, &mut settings, cmd, &mut out)?,
         Some(Cmd::Chat(cmd)) => {
             let cwd = std::env::current_dir()?;
-            chat::run(stores.chats.as_ref(), &engine_for, &cwd, cmd, &mut out).await?;
+            chat::run(
+                stores.chats.as_ref(),
+                stores.jobs.clone(),
+                &engine_for,
+                &root,
+                &cwd,
+                cmd,
+                &mut out,
+            )
+            .await?;
         }
         Some(Cmd::Graph(cmd)) => {
             graph::run(stores.graph, engine_for("extractor"), cmd, &mut out).await?;

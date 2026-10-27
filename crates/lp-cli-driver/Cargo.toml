@@ -8,6 +8,7 @@ publish.workspace = true
 [dependencies]
 lp-core = { path = "../lp-core" }
 async-trait.workspace = true
+chrono.workspace = true
 parking_lot.workspace = true
 reqwest.workspace = true
 schemars.workspace = true
