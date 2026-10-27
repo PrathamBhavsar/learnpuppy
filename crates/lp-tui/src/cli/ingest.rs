@@ -92,7 +92,13 @@ async fn distill_all<E: LlmEngine + 'static, G: GraphStore + 'static>(
     let cancel = CancellationToken::new();
     let (mut decisions, mut cards): (Vec<DecisionRecord>, usize) = (vec![], 0);
     for s in &rep.stored {
-        let commits = commits_for_session(s, s.started_at, allow);
+        let commits = match commits_for_session(s, s.started_at, allow).await {
+            Ok(c) => c,
+            Err(e) => {
+                writeln!(out, "warning: {}: {e}", s.id)?;
+                vec![]
+            }
+        };
         let step = async {
             let recs =
                 distill_session(engine.as_ref(), tracker, s, &commits, cancel.clone()).await?;

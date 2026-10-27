@@ -209,6 +209,15 @@ impl TrackerStore for SqliteTrackerStore {
         let db = self.db.lock().map_err(be)?;
         json_rows(&db, "SELECT json FROM cards ORDER BY rowid")
     }
+    fn card(&self, id: &str) -> StoreResult<Option<FlashCard>> {
+        let db = self.db.lock().map_err(be)?;
+        let json: Option<String> = db
+            .query_row("SELECT json FROM cards WHERE id = ?1", [id], |r| r.get(0))
+            .optional()
+            .map_err(be)?;
+        json.map(|j| serde_json::from_str(&j).map_err(be))
+            .transpose()
+    }
     fn append_review(&self, r: &FsrsReviewLog) -> StoreResult<()> {
         let db = self.db.lock().map_err(be)?;
         db.execute(

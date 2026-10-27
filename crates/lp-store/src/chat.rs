@@ -51,12 +51,25 @@ impl ChatStore for FsChatStore {
         self.modify(id, |c| c.extractions.push(usage))
     }
     fn list_chats(&self) -> StoreResult<Vec<ChatSummary>> {
+        let (out, skipped) = self.list_chats_report()?;
+        for s in skipped {
+            tracing::warn!("skipped unreadable chat file {s}");
+        }
+        Ok(out)
+    }
+}
+
+impl FsChatStore {
+    /// Like `list_chats`, plus the paths of chat files that could not be read.
+    pub fn list_chats_report(&self) -> StoreResult<(Vec<ChatSummary>, Vec<String>)> {
         let mut out = vec![];
+        let mut skipped = vec![];
         for entry in std::fs::read_dir(&self.dir).map_err(be)? {
             let path = entry.map_err(be)?.path();
             if path.extension().is_some_and(|e| e == "json") {
                 // One unreadable chat must not hide the rest.
                 let Ok(c) = read_json::<ChatRecord>(&path, "") else {
+                    skipped.push(path.display().to_string());
                     continue;
                 };
                 out.push(ChatSummary {
@@ -71,6 +84,6 @@ impl ChatStore for FsChatStore {
                 .cmp(&a.updated_at)
                 .then_with(|| a.id.cmp(&b.id))
         });
-        Ok(out)
+        Ok((out, skipped))
     }
 }

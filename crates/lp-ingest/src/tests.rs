@@ -236,8 +236,8 @@ fn git(repo: &Path, date: &str, args: &[&str]) {
     assert!(ok);
 }
 
-#[test]
-fn commits_match_session_time_window() {
+#[tokio::test]
+async fn commits_match_session_time_window() {
     let repo = tempfile::tempdir().unwrap();
     let r = repo.path();
     git(r, "2026-05-01T10:00:00Z", &["init", "-q"]);
@@ -258,12 +258,19 @@ fn commits_match_session_time_window() {
         started_at: T0_MS,
         transcript: String::new(),
     };
-    let commits = commits_for_session(&session, T0_MS, &[r.to_path_buf()]);
+    let commits = commits_for_session(&session, T0_MS, &[r.to_path_buf()])
+        .await
+        .unwrap();
     assert_eq!(commits.len(), 1);
     assert_eq!(commits[0].subject, "in window");
     assert_eq!(commits[0].files, ["in.txt"]);
     assert!(commits[0].diff.contains("+x"));
-    assert!(commits_for_session(&session, T0_MS, &[PathBuf::from("/nope")]).is_empty());
+    assert!(
+        commits_for_session(&session, T0_MS, &[PathBuf::from("/nope")])
+            .await
+            .unwrap()
+            .is_empty()
+    );
 }
 
 #[test]
@@ -298,8 +305,8 @@ fn secrets_never_reach_the_store() {
     );
 }
 
-#[test]
-fn commit_diffs_are_redacted() {
+#[tokio::test]
+async fn commit_diffs_are_redacted() {
     let repo = tempfile::tempdir().unwrap();
     let r = repo.path();
     git(r, "2026-05-01T10:00:00Z", &["init", "-q"]);
@@ -318,7 +325,9 @@ fn commit_diffs_are_redacted() {
         started_at: T0_MS,
         transcript: String::new(),
     };
-    let commits = commits_for_session(&session, T0_MS, &[r.to_path_buf()]);
+    let commits = commits_for_session(&session, T0_MS, &[r.to_path_buf()])
+        .await
+        .unwrap();
     assert!(commits[0].diff.contains("API_TOKEN=[REDACTED]"));
     assert!(!commits[0].diff.contains("abc123secret"));
 }
@@ -386,8 +395,8 @@ fn agy_artifacts_are_redacted_before_clipping() {
     assert!(!s.transcript.contains("sk-abc"), "{}", s.transcript);
 }
 
-#[test]
-fn git_helpers_never_run_repo_configured_diff_programs() {
+#[tokio::test]
+async fn git_helpers_never_run_repo_configured_diff_programs() {
     let repo = tempfile::tempdir().unwrap();
     let r = repo.path();
     git(r, "2026-05-01T10:00:00Z", &["init", "-q"]);
@@ -419,7 +428,27 @@ fn git_helpers_never_run_repo_configured_diff_programs() {
         started_at: T0_MS,
         transcript: String::new(),
     };
-    let commits = commits_for_session(&s, T0_MS, &[r.to_path_buf()]);
+    let commits = commits_for_session(&s, T0_MS, &[r.to_path_buf()])
+        .await
+        .unwrap();
     assert_eq!(commits.len(), 2);
     assert!(!marker.exists());
+}
+
+#[tokio::test]
+async fn git_failure_is_an_error_not_no_commits() {
+    let dir = tempfile::tempdir().unwrap();
+    let session = CodingSession {
+        id: "claude:s".into(),
+        source: "claude".into(),
+        cwd: dir.path().to_string_lossy().into_owned(),
+        git_branch: None,
+        started_at: T0_MS,
+        transcript: String::new(),
+    };
+    // allowlisted but not a git repo: `git log` exits non-zero
+    let err = commits_for_session(&session, T0_MS, &[dir.path().to_path_buf()])
+        .await
+        .unwrap_err();
+    assert!(err.contains("git log failed"), "{err}");
 }

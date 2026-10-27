@@ -384,6 +384,21 @@ fn fcard(id: &str) -> FlashCard {
 }
 
 #[test]
+fn card_by_id_does_not_parse_other_cards() {
+    let dir = tempfile::tempdir().unwrap();
+    let s = SqliteTrackerStore::open(dir.path()).unwrap();
+    s.upsert_card(&fcard("c1")).unwrap();
+    s.upsert_card(&fcard("c2")).unwrap();
+    rusqlite::Connection::open(dir.path().join("tracker.db"))
+        .unwrap()
+        .execute("UPDATE cards SET json = 'garbage' WHERE id = 'c2'", [])
+        .unwrap();
+    assert!(s.cards().is_err());
+    assert_eq!(s.card("c1").unwrap().unwrap(), fcard("c1"));
+    assert!(s.card("nope").unwrap().is_none());
+}
+
+#[test]
 fn corrupt_interior_line_neither_hides_nor_deletes_later_records() {
     let dir = tempfile::tempdir().unwrap();
     let s = FsGraphStore::open(dir.path()).unwrap();
@@ -506,4 +521,22 @@ fn commit_review_is_all_or_nothing() {
     };
     assert!(s.commit_review(&c, &log).is_err());
     assert_eq!(s.cards().unwrap()[0].rationale, "");
+}
+
+#[test]
+fn unreadable_chat_and_job_files_are_reported_not_silent() {
+    let dir = tempfile::tempdir().unwrap();
+    let chats = FsChatStore::open(dir.path().join("chats")).unwrap();
+    chats.save_chat(&chat("c1", 1)).unwrap();
+    std::fs::write(dir.path().join("chats/bad.json"), b"{").unwrap();
+    let (list, skipped) = chats.list_chats_report().unwrap();
+    assert_eq!(list.len(), 1);
+    assert_eq!(skipped.len(), 1);
+    assert!(skipped[0].ends_with("bad.json"));
+
+    let jobs = FsJobStore::open(dir.path().join("jobs")).unwrap();
+    std::fs::write(dir.path().join("jobs/bad.json"), b"{").unwrap();
+    let (list, skipped) = jobs.all_report().unwrap();
+    assert!(list.is_empty());
+    assert!(skipped[0].ends_with("bad.json"));
 }

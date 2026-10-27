@@ -25,14 +25,17 @@ impl FsJobStore {
         Ok(self.dir.join(format!("{id}.json")))
     }
 
-    fn all(&self) -> StoreResult<Vec<JobRecord>> {
+    /// Every readable job, oldest first, plus the paths of job files that could not be read.
+    pub fn all_report(&self) -> StoreResult<(Vec<JobRecord>, Vec<String>)> {
         let mut jobs = vec![];
+        let mut skipped = vec![];
         for entry in std::fs::read_dir(&self.dir).map_err(be)? {
             let path = entry.map_err(be)?.path();
             if path.extension().is_some_and(|e| e == "json") {
                 // One unreadable job must not block claiming or recovery of the rest.
-                if let Ok(job) = read_json(&path, "") {
-                    jobs.push(job);
+                match read_json(&path, "") {
+                    Ok(job) => jobs.push(job),
+                    Err(_) => skipped.push(path.display().to_string()),
                 }
             }
         }
@@ -41,6 +44,14 @@ impl FsJobStore {
                 .cmp(&b.created_at)
                 .then_with(|| a.id.cmp(&b.id))
         });
+        Ok((jobs, skipped))
+    }
+
+    fn all(&self) -> StoreResult<Vec<JobRecord>> {
+        let (jobs, skipped) = self.all_report()?;
+        for s in skipped {
+            tracing::warn!("skipped unreadable job file {s}");
+        }
         Ok(jobs)
     }
 }
