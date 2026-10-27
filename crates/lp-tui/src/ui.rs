@@ -7,6 +7,7 @@ use ratatui::widgets::{Block, Borders, Clear, Paragraph};
 use ratatui::Frame;
 
 use crate::app::{palette_matches, App, Health, Modal, View, ViewSnapshot};
+use crate::views::graph;
 
 pub fn render(f: &mut Frame, app: &App, snap: &ViewSnapshot) {
     let [top, body, bottom] = Layout::vertical([
@@ -32,14 +33,21 @@ pub fn render(f: &mut Frame, app: &App, snap: &ViewSnapshot) {
         let a = areas.next().unwrap_or_default();
         f.render_widget(pane("Sessions"), a);
     }
-    f.render_widget(pane(app.view.title()), areas.next().unwrap_or_default());
+    let main = areas.next().unwrap_or_default();
+    if app.view == View::Graph {
+        graph::render(f, main, &app.graph, &snap.graph);
+    } else {
+        f.render_widget(pane(app.view.title()), main);
+    }
     if plan {
         f.render_widget(pane("Plan"), areas.next().unwrap_or_default());
     }
 
     f.render_widget(
-        Paragraph::new("Ctrl+K palette  Ctrl+A accounts  Ctrl+B sidebar  Ctrl+P plan  Tab view  q quit")
-            .style(Style::new().fg(Color::DarkGray)),
+        Paragraph::new(
+            "Ctrl+K palette  Ctrl+A accounts  Ctrl+B sidebar  Ctrl+P plan  Tab view  q quit",
+        )
+        .style(Style::new().fg(Color::DarkGray)),
         bottom,
     );
 
@@ -61,7 +69,9 @@ fn top_bar<'a>(app: &App, snap: &ViewSnapshot) -> Paragraph<'a> {
     )];
     for (i, v) in View::ALL.iter().enumerate() {
         let style = if *v == app.view {
-            Style::new().fg(Color::Cyan).add_modifier(Modifier::REVERSED)
+            Style::new()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::REVERSED)
         } else {
             Style::new()
         };
@@ -72,7 +82,10 @@ fn top_bar<'a>(app: &App, snap: &ViewSnapshot) -> Paragraph<'a> {
         .iter()
         .filter(|a| a.health == Health::Healthy)
         .count();
-    spans.push(Span::raw(format!("  accounts {healthy}/{}", snap.accounts.len())));
+    spans.push(Span::raw(format!(
+        "  accounts {healthy}/{}",
+        snap.accounts.len()
+    )));
     Paragraph::new(Line::from(spans))
 }
 
@@ -117,7 +130,10 @@ fn palette(f: &mut Frame, query: &str, selected: usize) {
 
 fn accounts(f: &mut Frame, snap: &ViewSnapshot, selected: usize) {
     let inner = popup(f, "Accounts and model slots", 76, 20);
-    let mut lines = vec![Line::styled("Accounts", Style::new().add_modifier(Modifier::BOLD))];
+    let mut lines = vec![Line::styled(
+        "Accounts",
+        Style::new().add_modifier(Modifier::BOLD),
+    )];
     for a in &snap.accounts {
         let color = match a.health {
             Health::Healthy => Color::Green,
@@ -146,7 +162,10 @@ fn accounts(f: &mut Frame, snap: &ViewSnapshot, selected: usize) {
         } else {
             ("  ", Style::new())
         };
-        lines.push(Line::styled(format!("{mark}{:<12} {}", s.role, s.pin), style));
+        lines.push(Line::styled(
+            format!("{mark}{:<12} {}", s.role, s.pin),
+            style,
+        ));
     }
     f.render_widget(Paragraph::new(lines), inner);
 }

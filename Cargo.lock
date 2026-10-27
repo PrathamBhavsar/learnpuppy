@@ -667,6 +667,7 @@ name = "lp-tui"
 version = "0.1.0"
 dependencies = [
  "arc-swap",
+ "chrono",
  "crossterm",
  "insta",
  "lp-core",
