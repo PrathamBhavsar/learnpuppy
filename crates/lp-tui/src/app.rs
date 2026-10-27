@@ -14,6 +14,7 @@ use ratatui::DefaultTerminal;
 use tokio::sync::mpsc;
 
 use crate::ui;
+use crate::views::graph::{self, GraphData, GraphUi};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Health {
@@ -37,16 +38,19 @@ pub struct SlotPin {
 }
 
 /// Immutable view data read lock-free by the renderer.
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct ViewSnapshot {
     pub accounts: Vec<AccountRow>,
     pub slots: Vec<SlotPin>,
+    pub graph: GraphData,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Command {
     PinSlot { role: String, pin: String },
     Refresh,
+    Practice { chains: Vec<String> },
+    DeleteNodes { nodes: Vec<String> },
 }
 
 pub trait DataSource: Send + Sync {
@@ -138,6 +142,7 @@ pub struct App {
     pub sidebar: bool,
     pub plan_pane: bool,
     pub modal: Option<Modal>,
+    pub graph: GraphUi,
     pub quit: bool,
 }
 
@@ -148,6 +153,7 @@ impl Default for App {
             sidebar: true,
             plan_pane: true,
             modal: None,
+            graph: GraphUi::default(),
             quit: false,
         }
     }
@@ -173,6 +179,11 @@ impl App {
             KeyCode::Enter => Some(Action::Enter),
             KeyCode::Backspace => Some(Action::Backspace),
             KeyCode::Char(c) if matches!(self.modal, Some(Modal::Palette { .. })) => {
+                Some(Action::Char(c))
+            }
+            KeyCode::Char(c)
+                if self.modal.is_none() && self.view == View::Graph && graph::KEYS.contains(c) =>
+            {
                 Some(Action::Char(c))
             }
             _ if self.modal.is_some() => None,
@@ -233,6 +244,7 @@ impl App {
             }
             (None, Action::ToggleSidebar) => self.sidebar = !self.sidebar,
             (None, Action::TogglePlan) => self.plan_pane = !self.plan_pane,
+            (None, a) if self.view == View::Graph => return self.graph.update(a, &snap.graph),
             (None, _) => {}
         }
         None
@@ -323,6 +335,7 @@ pub(crate) fn sample_snapshot() -> ViewSnapshot {
                 pin: "claude:auto".into(),
             })
             .collect(),
+        graph: crate::views::graph::sample_graph(),
     }
 }
 
@@ -353,7 +366,10 @@ mod tests {
             Some(Action::SwitchView(View::Graph))
         );
         app.modal = Some(Modal::Accounts { selected: 0 });
-        assert_eq!(app.map_key(key(KeyCode::Char('q'), KeyModifiers::NONE)), None);
+        assert_eq!(
+            app.map_key(key(KeyCode::Char('q'), KeyModifiers::NONE)),
+            None
+        );
         assert_eq!(app.map_key(ctrl('c')), Some(Action::Quit));
     }
 
@@ -410,6 +426,7 @@ mod tests {
                         role: "r".into(),
                         pin: n.to_string(),
                     }],
+                    ..Default::default()
                 }
             }
             fn apply(&self, _: Command) {
