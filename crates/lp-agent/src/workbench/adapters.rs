@@ -1,6 +1,7 @@
 //! Real `Web` and `Pdf` adapters for the workbench, bounded by timeouts and size caps.
 
 use std::io::Read;
+use std::net::{IpAddr, SocketAddr};
 use std::path::Path;
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
@@ -13,72 +14,156 @@ use super::jobs::{Hit, Pdf, Web};
 const SEARCH_URL: &str = "https://html.duckduckgo.com/html/";
 const WEB_TIMEOUT: Duration = Duration::from_secs(15);
 const MAX_BODY_BYTES: usize = 2 << 20;
+const MAX_REDIRECTS: usize = 4;
 const MAX_HITS: usize = 20;
 const PDF_TIMEOUT: Duration = Duration::from_secs(30);
 const MAX_PDF_BYTES: u64 = 8 << 20;
 
 /// Search through DuckDuckGo's HTML endpoint and fetch pages over http(s).
+///
+/// URLs come from an LLM, so every request is SSRF-checked: redirects are followed by hand and
+/// each hop is re-validated, and the connection is pinned to the address that passed the check.
 pub struct HttpWeb {
-    client: reqwest::Client,
     search_url: String,
+    allow_loopback: bool,
 }
 
 impl Default for HttpWeb {
     fn default() -> Self {
-        Self::with_search_url(SEARCH_URL)
+        Self {
+            search_url: SEARCH_URL.into(),
+            allow_loopback: false,
+        }
     }
 }
 
 impl HttpWeb {
-    pub fn with_search_url(url: impl Into<String>) -> Self {
-        let client = reqwest::Client::builder()
-            .timeout(WEB_TIMEOUT)
-            .user_agent("learnpuppy")
-            .build()
-            .unwrap_or_default();
+    /// Test-only: point search at a local mock server and let it be reached on loopback.
+    #[cfg(test)]
+    fn for_test(url: impl Into<String>) -> Self {
         Self {
-            client,
             search_url: url.into(),
+            allow_loopback: true,
         }
     }
 
-    /// GET `req`, reading at most `MAX_BODY_BYTES` of a successful body.
-    async fn body(&self, req: reqwest::RequestBuilder) -> Result<String, String> {
-        let mut resp = req.send().await.map_err(|e| e.without_url().to_string())?;
-        if !resp.status().is_success() {
-            return Err(format!("http status {}", resp.status()));
-        }
-        let mut buf = Vec::new();
-        while let Some(chunk) = resp
-            .chunk()
-            .await
-            .map_err(|e| e.without_url().to_string())?
-        {
-            buf.extend_from_slice(&chunk);
-            if buf.len() >= MAX_BODY_BYTES {
-                buf.truncate(MAX_BODY_BYTES);
-                break;
+    /// GET `url`, following up to `MAX_REDIRECTS` redirects, reading at most `MAX_BODY_BYTES`.
+    async fn get(&self, mut url: reqwest::Url) -> Result<String, String> {
+        for _ in 0..=MAX_REDIRECTS {
+            let mut builder = reqwest::Client::builder()
+                .timeout(WEB_TIMEOUT)
+                .user_agent("learnpuppy")
+                .redirect(reqwest::redirect::Policy::none());
+            if let Some((host, addr)) = self.vet(&url).await? {
+                builder = builder.resolve(&host, addr);
             }
+            let client = builder.build().map_err(|e| e.to_string())?;
+            let mut resp = client
+                .get(url.clone())
+                .send()
+                .await
+                .map_err(|e| e.without_url().to_string())?;
+            if resp.status().is_redirection() {
+                let next = resp
+                    .headers()
+                    .get(reqwest::header::LOCATION)
+                    .and_then(|v| v.to_str().ok())
+                    .ok_or("redirect without location")?;
+                url = url.join(next).map_err(|e| format!("bad redirect: {e}"))?;
+                continue;
+            }
+            if !resp.status().is_success() {
+                return Err(format!("http status {}", resp.status()));
+            }
+            let mut buf = Vec::new();
+            while let Some(chunk) = resp
+                .chunk()
+                .await
+                .map_err(|e| e.without_url().to_string())?
+            {
+                buf.extend_from_slice(&chunk);
+                if buf.len() >= MAX_BODY_BYTES {
+                    buf.truncate(MAX_BODY_BYTES);
+                    break;
+                }
+            }
+            return Ok(String::from_utf8_lossy(&buf).into_owned());
         }
-        Ok(String::from_utf8_lossy(&buf).into_owned())
+        Err("too many redirects".into())
+    }
+
+    /// Reject URLs that could reach internal hosts. Returns the host and the validated address
+    /// to pin the connection to, or `None` for an IP-literal host (nothing to resolve).
+    async fn vet(&self, url: &reqwest::Url) -> Result<Option<(String, SocketAddr)>, String> {
+        if !matches!(url.scheme(), "http" | "https") {
+            return Err("only http(s) urls can be fetched".into());
+        }
+        if !url.username().is_empty() || url.password().is_some() {
+            return Err("urls with credentials are not allowed".into());
+        }
+        let blocked = |ip: IpAddr| is_internal(ip) && !(self.allow_loopback && ip.is_loopback());
+        let port = url.port_or_known_default().ok_or("url has no port")?;
+        let host = url.host_str().ok_or("url has no host")?;
+        if let Ok(ip) = host.trim_matches(['[', ']']).parse::<IpAddr>() {
+            return if blocked(ip) {
+                Err(format!("blocked address {ip}"))
+            } else {
+                Ok(None)
+            };
+        }
+        let host = host.trim_end_matches('.').to_ascii_lowercase();
+        if !self.allow_loopback && (host == "localhost" || host.ends_with(".localhost")) {
+            return Err("blocked host localhost".into());
+        }
+        let addrs: Vec<SocketAddr> = tokio::net::lookup_host((host.as_str(), port))
+            .await
+            .map_err(|e| format!("dns lookup failed: {e}"))?
+            .collect();
+        if let Some(a) = addrs.iter().find(|a| blocked(a.ip())) {
+            return Err(format!("{host} resolves to blocked address {}", a.ip()));
+        }
+        let addr = *addrs.first().ok_or("host did not resolve")?;
+        Ok(Some((host, addr)))
+    }
+}
+
+/// True for loopback, unspecified, private, link-local, unique-local, multicast and broadcast
+/// addresses, including IPv4-mapped IPv6 forms of them.
+fn is_internal(ip: IpAddr) -> bool {
+    match ip {
+        IpAddr::V4(v4) => {
+            v4.is_loopback()
+                || v4.is_unspecified()
+                || v4.is_private()
+                || v4.is_link_local()
+                || v4.is_multicast()
+                || v4.is_broadcast()
+        }
+        IpAddr::V6(v6) => {
+            if let Some(v4) = v6.to_ipv4_mapped() {
+                return is_internal(v4.into());
+            }
+            let first = v6.segments()[0];
+            v6.is_loopback()
+                || v6.is_unspecified()
+                || v6.is_multicast()
+                || first & 0xfe00 == 0xfc00 // fc00::/7 unique-local
+                || first & 0xffc0 == 0xfe80 // fe80::/10 link-local
+        }
     }
 }
 
 #[async_trait]
 impl Web for HttpWeb {
     async fn search(&self, query: &str) -> Result<Vec<Hit>, String> {
-        let html = self
-            .body(self.client.get(&self.search_url).query(&[("q", query)]))
-            .await?;
-        Ok(parse_hits(&html))
+        let mut url = reqwest::Url::parse(&self.search_url).map_err(|e| format!("bad url: {e}"))?;
+        url.query_pairs_mut().append_pair("q", query);
+        Ok(parse_hits(&self.get(url).await?))
     }
 
     async fn fetch(&self, url: &str) -> Result<String, String> {
         let url = reqwest::Url::parse(url).map_err(|e| format!("bad url: {e}"))?;
-        if !matches!(url.scheme(), "http" | "https") {
-            return Err("only http(s) urls can be fetched".into());
-        }
-        self.body(self.client.get(url)).await
+        self.get(url).await
     }
 }
 
@@ -229,7 +314,7 @@ mod tests {
     #[tokio::test]
     async fn search_parses_hits_and_unwraps_redirect_urls() {
         let base = serve(route).await;
-        let web = HttpWeb::with_search_url(format!("{base}/search"));
+        let web = HttpWeb::for_test(format!("{base}/search"));
         let hits = web.search("raft").await.unwrap();
         assert_eq!(
             hits,
@@ -244,7 +329,7 @@ mod tests {
     #[tokio::test]
     async fn fetch_is_bounded_and_rejects_bad_schemes_and_statuses() {
         let base = serve(route).await;
-        let web = HttpWeb::default();
+        let web = HttpWeb::for_test("");
         assert_eq!(
             web.fetch(&format!("{base}/page")).await.unwrap(),
             "<p>hello</p>"
@@ -259,6 +344,49 @@ mod tests {
             .unwrap_err()
             .contains("404"));
         assert!(web.fetch("file:///etc/passwd").await.is_err());
+    }
+
+    #[tokio::test]
+    async fn fetch_rejects_internal_targets() {
+        let web = HttpWeb::default();
+        for url in [
+            "http://localhost/",
+            "http://localhost./",
+            "http://LOCALHOST:8080/",
+            "http://127.0.0.1/",
+            "http://[::1]/",
+            "http://10.1.2.3/",
+            "http://172.16.0.1/",
+            "http://192.168.1.1/",
+            "http://169.254.169.254/latest/meta-data/",
+            "http://0.0.0.0/",
+            "http://[::ffff:127.0.0.1]/",
+            "http://[::ffff:169.254.169.254]/",
+            "http://[fd00::1]/",
+            "http://[fe80::1]/",
+            "http://user:pw@example.com/",
+        ] {
+            assert!(web.fetch(url).await.is_err(), "{url} should be rejected");
+        }
+    }
+
+    #[tokio::test]
+    async fn redirect_to_private_address_is_rejected() {
+        let l = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = l.local_addr().unwrap();
+        tokio::spawn(async move {
+            while let Ok((mut s, _)) = l.accept().await {
+                let mut buf = vec![0; 4096];
+                let _ = s.read(&mut buf).await;
+                let head = "HTTP/1.1 302 X\r\nlocation: http://169.254.169.254/latest\r\ncontent-length: 0\r\nconnection: close\r\n\r\n";
+                let _ = s.write_all(head.as_bytes()).await;
+            }
+        });
+        // Loopback is allowed for the first hop only so the mock is reachable; the hop to the
+        // metadata address must still be refused.
+        let web = HttpWeb::for_test("");
+        let err = web.fetch(&format!("http://{addr}/")).await.unwrap_err();
+        assert!(err.contains("blocked"), "{err}");
     }
 
     #[test]
