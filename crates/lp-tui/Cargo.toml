@@ -1,0 +1,22 @@
+[package]
+name = "lp-tui"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+lp-core = { path = "../lp-core" }
+lp-store = { path = "../lp-store" }
+lp-cli-driver = { path = "../lp-cli-driver" }
+lp-agent = { path = "../lp-agent" }
+lp-ingest = { path = "../lp-ingest" }
+
+[lib]
+path = "src/lib.rs"
+
+[[bin]]
+name = "learnpuppy"
+path = "src/main.rs"
+
+[lints]
+workspace = true

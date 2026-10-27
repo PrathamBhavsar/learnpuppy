@@ -1,0 +1,13 @@
+[package]
+name = "lp-agent"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+lp-core = { path = "../lp-core" }
+lp-store = { path = "../lp-store" }
+lp-cli-driver = { path = "../lp-cli-driver" }
+
+[lints]
+workspace = true
