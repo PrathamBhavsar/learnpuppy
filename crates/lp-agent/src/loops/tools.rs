@@ -221,21 +221,22 @@ struct PatternArg {
 
 /// Resolve `rel` inside `root`, refusing anything that escapes it (`..`, absolute paths, symlinks).
 fn resolve(root: &Path, rel: &str) -> Result<PathBuf, String> {
-    if Path::new(rel).components().any(
-        |c| matches!(c, std::path::Component::Normal(n) if n.to_string_lossy().starts_with('.')),
-    ) {
-        return Err(format!("{rel}: hidden paths are not readable"));
-    }
     let root = root.canonicalize().map_err(|e| e.to_string())?;
     let full = root
         .join(rel)
         .canonicalize()
         .map_err(|e| format!("{rel}: {e}"))?;
-    if full.starts_with(&root) {
-        Ok(full)
-    } else {
-        Err(format!("{rel}: outside the workspace"))
+    // Checked on the canonical path so a visible symlink to `.env` is refused too.
+    let inside = full
+        .strip_prefix(&root)
+        .map_err(|_| format!("{rel}: outside the workspace"))?;
+    if inside
+        .components()
+        .any(|c| c.as_os_str().to_string_lossy().starts_with('.'))
+    {
+        return Err(format!("{rel}: hidden paths are not readable"));
     }
+    Ok(full)
 }
 
 fn rel(root: &Path, p: &Path) -> String {

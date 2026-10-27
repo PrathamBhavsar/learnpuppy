@@ -344,6 +344,8 @@ fn file_tools_redact_refuse_hidden_paths_and_cap_reads() {
         _ => panic!("unexpected effect"),
     };
     assert!(run("read", json!({"path": ".env"})).contains("hidden"));
+    std::os::unix::fs::symlink(root.join(".env"), root.join("link")).unwrap();
+    assert!(run("read", json!({"path": "link"})).contains("hidden"));
     assert!(!run("read", json!({"path": "a.txt"})).contains("hunter2"));
     let hits = run("grep", json!({"pattern": "KEY"}));
     assert!(hits.contains("a.txt") && !hits.contains("hunter2") && !hits.contains("node_modules"));
