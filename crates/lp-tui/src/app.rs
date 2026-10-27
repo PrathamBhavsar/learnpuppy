@@ -14,8 +14,9 @@ use ratatui::DefaultTerminal;
 use tokio::sync::mpsc;
 
 use crate::ui;
-use crate::views::graph::{self, GraphData, GraphUi};
 use crate::views::classroom::{Answer, Classroom, Dock, DockKey};
+use crate::views::graph::{self, GraphData, GraphUi};
+use crate::views::quiz::{DigestData, DigestUi, Rating};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Health {
@@ -45,6 +46,7 @@ pub struct ViewSnapshot {
     pub slots: Vec<SlotPin>,
     pub graph: GraphData,
     pub classroom: Classroom,
+    pub digest: DigestData,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -54,6 +56,8 @@ pub enum Command {
     Practice { chains: Vec<String> },
     DeleteNodes { nodes: Vec<String> },
     Answer(Answer),
+    Grade { card: String, rating: Rating },
+    FoldDecision { id: String },
 }
 
 pub trait DataSource: Send + Sync {
@@ -148,6 +152,7 @@ pub struct App {
     pub modal: Option<Modal>,
     pub graph: GraphUi,
     pub dock: Dock,
+    pub digest: DigestUi,
     pub quit: bool,
 }
 
@@ -160,6 +165,7 @@ impl Default for App {
             modal: None,
             graph: GraphUi::default(),
             dock: Dock::default(),
+            digest: DigestUi::default(),
             quit: false,
         }
     }
@@ -169,6 +175,11 @@ impl App {
     pub fn map_key(&self, key: KeyEvent) -> Option<Action> {
         if self.modal.is_none() && self.view == View::Classroom {
             if let Some(a) = self.dock.map_key(key) {
+                return Some(a);
+            }
+        }
+        if self.modal.is_none() && self.view == View::Digest {
+            if let Some(a) = self.digest.map_key(key) {
                 return Some(a);
             }
         }
@@ -263,6 +274,7 @@ impl App {
             (None, Action::ToggleSidebar) => self.sidebar = !self.sidebar,
             (None, Action::TogglePlan) => self.plan_pane = !self.plan_pane,
             (None, a) if self.view == View::Graph => return self.graph.update(a, &snap.graph),
+            (None, a) if self.view == View::Digest => return self.digest.update(a, &snap.digest),
             (None, _) => {}
         }
         None
@@ -343,6 +355,7 @@ pub(crate) fn sample_snapshot() -> ViewSnapshot {
     };
     ViewSnapshot {
         classroom: Default::default(),
+        digest: crate::views::quiz::sample_digest(),
         accounts: vec![
             acct("claude:a@example.com", Health::Healthy),
             acct("claude:b@example.com", Health::Cooldown { secs_left: 840 }),
