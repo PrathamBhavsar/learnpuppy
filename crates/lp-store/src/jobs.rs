@@ -74,6 +74,13 @@ impl JobStore for FsJobStore {
         }
         Ok(claimed)
     }
+    fn claimed_jobs(&self) -> StoreResult<Vec<JobRecord>> {
+        Ok(self
+            .all()?
+            .into_iter()
+            .filter(|j| j.status == JobStatus::Done && j.delivery == DeliveryStatus::Claimed)
+            .collect())
+    }
     fn interrupted_jobs(&self) -> StoreResult<Vec<JobRecord>> {
         Ok(self
             .all()?

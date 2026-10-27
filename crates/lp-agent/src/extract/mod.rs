@@ -213,10 +213,18 @@ impl<E: LlmEngine, G: GraphStore> Pipeline<E, G> {
 /// `merge_findings` mints node ids from `chat_id/local_id`, so local ids reused by a later
 /// batch of the same source (`p1` again) would collide. Prefix them with the batch's first message.
 fn scope_local_ids(mut f: SessionFindings, batch: &str) -> SessionFindings {
-    let local: HashSet<String> = f.propositions.iter().map(|p| p.id.clone()).collect();
+    // The proposition text is hashed in, so a retry that reuses `p1` for different text mints a new id.
+    let minted: HashMap<String, String> = f
+        .propositions
+        .iter()
+        .map(|p| {
+            let h = hex::encode(Sha256::digest(p.statement.as_bytes()));
+            (p.id.clone(), format!("{batch}:{}", &h[..8]))
+        })
+        .collect();
     let scope = |id: &mut String| {
-        if local.contains(id.as_str()) {
-            *id = format!("{batch}:{id}");
+        if let Some(new) = minted.get(id.as_str()) {
+            *id = new.clone();
         }
     };
     f.propositions.iter_mut().for_each(|p| scope(&mut p.id));

@@ -153,6 +153,12 @@ impl<E: LlmEngine + 'static, J: JobStore + 'static> Workbench<E, J> {
             rec.result = Some(json!({ "error": "interrupted by a restart" }));
             self.jobs.update_job(&rec)?;
         }
+        // Claimed but possibly never saved into a transcript: re-offer; `deliver` skips ones already there.
+        let claimed = self.jobs.claimed_jobs()?;
+        for mut rec in claimed.iter().cloned() {
+            rec.delivery = DeliveryStatus::Pending;
+            self.jobs.update_job(&rec)?;
+        }
         Ok(jobs.len())
     }
 
@@ -163,7 +169,10 @@ impl<E: LlmEngine + 'static, J: JobStore + 'static> Workbench<E, J> {
             return Ok(false);
         }
         for job in self.jobs.claim_steers(&s.id)? {
-            s.queue_steer(format!("steer_{}", job.id), steer_text(&job));
+            let id = format!("steer_{}", job.id);
+            if !s.has_steer(&id) {
+                s.queue_steer(id, steer_text(&job));
+            }
         }
         Ok(s.wake())
     }
