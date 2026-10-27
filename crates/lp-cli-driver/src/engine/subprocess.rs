@@ -56,6 +56,8 @@ pub struct SubprocessEngine {
     /// Role and account id, for the call log only.
     pub role: String,
     pub account: String,
+    /// Where `LEARNPUPPY_DEBUG_RAW=1` dumps each turn's redacted raw stdout; `None` = off.
+    pub raw_dir: Option<PathBuf>,
     /// Private (0700, random name) working directory, removed when the last clone drops.
     sandbox: Arc<tempfile::TempDir>,
 }
@@ -76,6 +78,7 @@ impl SubprocessEngine {
             effort: None,
             role: String::new(),
             account: String::new(),
+            raw_dir: raw_dir_from_env(),
             sandbox: Arc::new(tempfile::Builder::new().prefix("lp-sandbox-").tempdir()?),
         })
     }
@@ -225,7 +228,7 @@ impl SubprocessEngine {
                 );
                 a.push(self.sandbox().display().to_string());
             }
-            CliKind::Agy => a.extend(["--output-format", "json", "--sandbox"].map(String::from)),
+            CliKind::Agy => a.extend(AGY_STREAM.map(String::from)),
         }
         self.finish_args(
             a,
@@ -235,7 +238,8 @@ impl SubprocessEngine {
         )
     }
 
-    /// Adds model and prompt delivery: stdin for every CLI (agy: `-p -`), so large prompts never hit argv limits or `ps`.
+    /// Adds model and prompt delivery: stdin for every CLI (agy: one stream-json message), so large
+    /// prompts never hit argv limits or `ps`. Real agy treats `-p -` as the literal prompt "-".
     fn finish_args(
         &self,
         mut a: Vec<String>,
@@ -274,13 +278,38 @@ impl SubprocessEngine {
                 a.push("-".into());
                 (a, Some(prompt.into()))
             }
-            CliKind::Agy => {
-                a.extend(["-p".into(), "-".into()]);
-                (a, Some(prompt.into()))
-            }
+            CliKind::Agy => (a, Some(agy_message(prompt))),
             CliKind::Claude => (a, Some(prompt.into())),
         }
     }
+}
+
+/// `~/.learnpuppy/logs/raw` (or under `$LEARNPUPPY_HOME`), only when `LEARNPUPPY_DEBUG_RAW=1`.
+fn raw_dir_from_env() -> Option<PathBuf> {
+    if std::env::var("LEARNPUPPY_DEBUG_RAW").as_deref() != Ok("1") {
+        return None;
+    }
+    let root = std::env::var_os("LEARNPUPPY_HOME")
+        .map(PathBuf::from)
+        .or_else(|| std::env::var_os("HOME").map(|h| Path::new(&h).join(".learnpuppy")))?;
+    Some(root.join("logs").join("raw"))
+}
+
+/// agy reads NDJSON messages from stdin only with a stream-json output.
+const AGY_STREAM: [&str; 5] = [
+    "--input-format",
+    "stream-json",
+    "--output-format",
+    "stream-json",
+    "--sandbox",
+];
+
+/// The one stdin line that makes agy run a turn on `prompt`.
+fn agy_message(prompt: &str) -> String {
+    format!(
+        "{}\n",
+        serde_json::json!({"event": "user", "message": {"content": prompt}})
+    )
 }
 
 fn slug_has_effort(slug: &str) -> bool {
@@ -357,20 +386,25 @@ pub(super) fn with_tools(prompt: &str, tools: &[super::ToolDecl]) -> String {
     out
 }
 
-/// Splits `<tool_call>{json}</tool_call>` blocks out of model text; malformed blocks stay as text.
+/// Splits `<tool_call>{json}</tool_call>` blocks out of model text. Tags match case-insensitively,
+/// a missing closing tag is fine once the JSON object is complete; anything else stays text.
 pub(super) fn split_calls(text: String) -> Vec<StreamDelta> {
     static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
     let (mut out, mut rest) = (Vec::new(), text.as_str());
-    while let Some(start) = rest.find(CALL_OPEN) {
-        let body = &rest[start + CALL_OPEN.len()..];
-        let Some(end) = body.find(CALL_CLOSE) else {
-            break;
-        };
-        let Some(v) = serde_json::from_str::<Value>(body[..end].trim())
-            .ok()
+    while let Some(start) = rest.to_ascii_lowercase().find(CALL_OPEN) {
+        let body = rest[start + CALL_OPEN.len()..].trim_start();
+        let mut objs = serde_json::Deserializer::from_str(body).into_iter::<Value>();
+        let Some(v) = objs
+            .next()
+            .and_then(Result::ok)
             .filter(|v| v.get("name").and_then(Value::as_str).is_some())
         else {
             break;
+        };
+        let after = body[objs.byte_offset()..].trim_start();
+        let after = match after.get(..CALL_CLOSE.len()) {
+            Some(tag) if tag.eq_ignore_ascii_case(CALL_CLOSE) => &after[CALL_CLOSE.len()..],
+            _ => after,
         };
         if start > 0 {
             out.push(StreamDelta::Text(rest[..start].into()));
@@ -384,7 +418,7 @@ pub(super) fn split_calls(text: String) -> Vec<StreamDelta> {
             name: v["name"].as_str().unwrap_or_default().into(),
             input: v.get("input").cloned().unwrap_or(Value::Null),
         }));
-        rest = &body[end + CALL_CLOSE.len()..];
+        rest = after;
     }
     if !rest.is_empty() {
         out.push(StreamDelta::Text(rest.into()));
@@ -393,25 +427,42 @@ pub(super) fn split_calls(text: String) -> Vec<StreamDelta> {
 }
 
 /// Stream deltas carried by one stdout line; text is scanned for protocol tool calls.
-fn deltas(kind: CliKind, line: &str) -> Vec<StreamDelta> {
-    raw_deltas(kind, line)
+fn deltas(kind: CliKind, line: &str) -> Result<Vec<StreamDelta>, DriverError> {
+    Ok(raw_deltas(kind, line)?
         .into_iter()
         .flat_map(|d| match d {
             StreamDelta::Text(t) => split_calls(t),
             d => vec![d],
         })
-        .collect()
+        .collect())
 }
 
-fn raw_deltas(kind: CliKind, line: &str) -> Vec<StreamDelta> {
+/// The answer text of agy's final JSON (`{"status","response"}`, the older `result` string, or the
+/// `{"event":"result","result":{..}}` stream-json line); `status` other than SUCCESS is an error.
+fn agy_text(v: &Value) -> Result<Option<String>, DriverError> {
+    let body = match v.get("result") {
+        Some(o) if o.is_object() => o,
+        _ => v,
+    };
+    let str_of = |k: &str| body.get(k).and_then(Value::as_str);
+    if let Some(status) = str_of("status").filter(|s| *s != "SUCCESS") {
+        let err = str_of("error").filter(|e| !e.is_empty()).unwrap_or(status);
+        return Err(DriverError::Failed(format!("agy {status}: {err}")));
+    }
+    Ok(str_of("response")
+        .or_else(|| str_of("result"))
+        .map(String::from))
+}
+
+fn raw_deltas(kind: CliKind, line: &str) -> Result<Vec<StreamDelta>, DriverError> {
     let Ok(v) = serde_json::from_str::<Value>(line) else {
-        return match kind {
+        return Ok(match kind {
             CliKind::Agy if !line.is_empty() => vec![StreamDelta::Text(line.into())],
             _ => vec![],
-        };
+        });
     };
     let str_of = |v: &Value, k: &str| v.get(k).and_then(Value::as_str).map(String::from);
-    match (kind, v.get("type").and_then(Value::as_str)) {
+    Ok(match (kind, v.get("type").and_then(Value::as_str)) {
         (CliKind::Claude, Some("assistant")) => v["message"]["content"]
             .as_array()
             .into_iter()
@@ -438,12 +489,13 @@ fn raw_deltas(kind: CliKind, line: &str) -> Vec<StreamDelta> {
                 _ => vec![],
             }
         }
-        (CliKind::Agy, _) => str_of(&v, "result")
+        (CliKind::Agy, _) => agy_text(&v)?
+            .filter(|t| !t.is_empty())
             .map(StreamDelta::Text)
             .into_iter()
             .collect(),
         _ => vec![],
-    }
+    })
 }
 
 /// The structured JSON payload out of a finished run's stdout.
@@ -453,7 +505,10 @@ fn structured_json(kind: CliKind, stdout: &str) -> Result<Value, DriverError> {
         CliKind::Codex => {
             let last = stdout
                 .lines()
-                .flat_map(|l| deltas(kind, l))
+                .map(|l| deltas(kind, l))
+                .collect::<Result<Vec<_>, _>>()?
+                .into_iter()
+                .flatten()
                 .filter_map(|d| match d {
                     StreamDelta::Text(t) => Some(t),
                     _ => None,
@@ -462,7 +517,15 @@ fn structured_json(kind: CliKind, stdout: &str) -> Result<Value, DriverError> {
                 .ok_or_else(|| DriverError::Parse("no agent message".into()))?;
             serde_json::from_str(&last).map_err(bad)
         }
-        CliKind::Claude | CliKind::Agy => {
+        CliKind::Agy => {
+            let mut last = None;
+            for v in stdout.lines().filter_map(|l| serde_json::from_str(l).ok()) {
+                last = agy_text(&v)?.or(last);
+            }
+            let r = last.ok_or_else(|| DriverError::Parse("no agy response".into()))?;
+            serde_json::from_str(&r).map_err(bad)
+        }
+        CliKind::Claude => {
             let v: Value = serde_json::from_str(stdout.trim()).map_err(bad)?;
             if let Some(s) = v.get("structured_output") {
                 return Ok(s.clone());
@@ -485,18 +548,64 @@ impl SubprocessEngine {
         cancel: CancellationToken,
     ) -> Result<TurnResponse, DriverError> {
         let mut proc = self.spawn(args, stdin, cancel)?;
-        let mut resp = TurnResponse::default();
-        while let Some(line) = proc.next().await? {
-            for d in deltas(self.kind, &line) {
-                match &d {
-                    StreamDelta::Text(t) => resp.text.push_str(t),
-                    StreamDelta::ToolCall(c) => resp.tool_calls.push(c.clone()),
-                    StreamDelta::Thinking(_) => {}
+        let (mut resp, mut raw) = (TurnResponse::default(), String::new());
+        let ran: Result<(), DriverError> = async {
+            while let Some(line) = proc.next().await? {
+                self.keep_raw(&mut raw, &line);
+                for d in deltas(self.kind, &line)? {
+                    match &d {
+                        StreamDelta::Text(t) => resp.text.push_str(t),
+                        StreamDelta::ToolCall(c) => resp.tool_calls.push(c.clone()),
+                        StreamDelta::Thinking(_) => {}
+                    }
+                    event_tx.send(d).await.map_err(|_| DriverError::Cancelled)?;
                 }
-                event_tx.send(d).await.map_err(|_| DriverError::Cancelled)?;
             }
+            Ok(())
+        }
+        .await;
+        self.dump_raw(&raw);
+        ran?;
+        if resp.text.trim().is_empty() && resp.tool_calls.is_empty() {
+            return Err(DriverError::EmptyResponse);
         }
         Ok(resp)
+    }
+
+    fn keep_raw(&self, raw: &mut String, line: &str) {
+        if self.raw_dir.is_some() {
+            raw.push_str(line);
+            raw.push('\n');
+        }
+    }
+
+    /// `LEARNPUPPY_DEBUG_RAW=1`: the turn's stdout, redacted, as `<date>-<role>-<n>.jsonl` (0600).
+    fn dump_raw(&self, raw: &str) {
+        use std::os::unix::fs::OpenOptionsExt;
+        static SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+        let Some(dir) = &self.raw_dir else { return };
+        let date = chrono::Utc::now().format("%Y-%m-%d");
+        let role = if self.role.is_empty() {
+            "cli"
+        } else {
+            &self.role
+        };
+        let body = lp_core::redact::redact(raw);
+        let written = std::fs::create_dir_all(dir).and_then(|()| loop {
+            let n = SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            let opened = std::fs::OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .mode(0o600)
+                .open(dir.join(format!("{date}-{role}-{n}.jsonl")));
+            match opened {
+                Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {}
+                f => break f.and_then(|mut f| std::io::Write::write_all(&mut f, body.as_bytes())),
+            }
+        });
+        if let Err(e) = written {
+            tracing::warn!("raw turn log not written: {e}");
+        }
     }
 }
 
@@ -510,7 +619,19 @@ impl LlmEngine for SubprocessEngine {
     ) -> Result<TurnResponse, DriverError> {
         let (args, stdin) = self.turn_args(&req);
         let started = self.log_start(&args);
-        let r = self.run_turn(args, stdin, event_tx, cancel).await;
+        let mut r = self
+            .run_turn(
+                args.clone(),
+                stdin.clone(),
+                event_tx.clone(),
+                cancel.clone(),
+            )
+            .await;
+        // An empty turn streamed nothing, so one retry cannot repeat text the learner saw.
+        if matches!(r, Err(DriverError::EmptyResponse)) {
+            tracing::warn!(role = %self.role, "empty cli turn, retrying once");
+            r = self.run_turn(args, stdin, event_tx, cancel).await;
+        }
         self.log_end(started, &r);
         r
     }
@@ -562,10 +683,8 @@ impl LlmEngine for SubprocessEngine {
                 schema_file = Some(f);
             }
             CliKind::Agy => {
-                a.extend(
-                    ["--output-format", "json", "--sandbox", "--json-schema"].map(String::from),
-                );
-                a.push(schema);
+                a.extend(AGY_STREAM.map(String::from));
+                a.extend(["--json-schema".into(), schema]);
             }
         }
         let (args, stdin) = self.finish_args(a, &req.prompt, req.model.as_deref(), None);
@@ -573,11 +692,16 @@ impl LlmEngine for SubprocessEngine {
         let ran = async {
             let mut proc = self.spawn(args, stdin, cancel)?;
             let mut stdout = String::new();
-            while let Some(line) = proc.next().await? {
-                stdout.push_str(&line);
-                stdout.push('\n');
+            let read = async {
+                while let Some(line) = proc.next().await? {
+                    stdout.push_str(&line);
+                    stdout.push('\n');
+                }
+                Ok(())
             }
-            Ok(stdout)
+            .await;
+            self.dump_raw(&stdout);
+            read.map(|()| stdout)
         }
         .await;
         self.log_end(started, &ran);
@@ -721,17 +845,34 @@ echo '{"type":"item.completed","item":{"type":"agent_message","text":"{\"n\":4}"
         assert!(resp.text.contains("lp-sandbox-"), "{}", resp.text);
     }
 
+    /// Real agy 1.4.8: `-p -` takes "-" as the prompt and ignores stdin; only `-p <text>` or a
+    /// stream-json message on stdin reach the model.
+    const REAL_AGY: &str = r#"case "$*" in
+*"--input-format stream-json"*)
+  in=$(cat)
+  n=$(printf %s "$in" | wc -c | tr -d ' ')
+  case "$in" in
+    '{"event":"user","message":{"content":"'*) ok=yes;;
+    *) ok=no;;
+  esac
+  case "$in" in *END'"}}') end=yes;; *) end=no;; esac
+  echo '{"event":"init","init":{"cwd":"."}}'
+  echo '{"event":"step_update","step_update":{"step_type":"agent_response","text_delta":"partial"}}'
+  printf '{"event":"result","result":{"status":"SUCCESS","response":"argc=%s bytes=%s shape=%s end=%s"}}\n' "$#" "$n" "$ok" "$end";;
+*"-p -"*)
+  echo '{"status":"SUCCESS","response":"How can I help you today?\n"}';;
+*)
+  echo '{"status":"ERROR","response":"","error":"no prompt"}'; exit 1;;
+esac"#;
+
     #[tokio::test]
-    async fn agy_prompt_goes_over_stdin_not_argv() {
-        let (_d, e) = mock(
-            CliKind::Agy,
-            r#"n=$(wc -c | tr -d ' '); echo "{\"result\":\"stdin=$n argc=$#\"}""#,
-        );
-        let (tx, _rx) = mpsc::channel(4);
+    async fn agy_prompt_goes_over_stdin_as_a_stream_json_message() {
+        let (_d, e) = mock(CliKind::Agy, REAL_AGY);
+        let (tx, _rx) = mpsc::channel(8);
         let resp = e
             .stream_turn(
                 TurnRequest {
-                    prompt: "x".repeat(1_000_000),
+                    prompt: format!("{}END", "x".repeat(1_000_000)),
                     ..TurnRequest::default()
                 },
                 tx,
@@ -739,7 +880,223 @@ echo '{"type":"item.completed","item":{"type":"agent_message","text":"{\"n\":4}"
             )
             .await
             .unwrap();
-        assert!(resp.text.starts_with("stdin=1000000 "), "{}", resp.text);
+        assert!(resp.text.contains("argc=5 "), "{}", resp.text);
+        assert!(resp.text.contains("shape=yes end=yes"), "{}", resp.text);
+        assert!(!resp.text.contains("help you"), "{}", resp.text);
+        let bytes: usize = resp.text.split("bytes=").nth(1).unwrap()[..7]
+            .parse()
+            .unwrap();
+        assert!(bytes > 1_000_000);
+    }
+
+    #[test]
+    fn agy_argv_never_uses_dash_p_dash() {
+        let e = SubprocessEngine::new(CliKind::Agy).unwrap();
+        let (a, stdin) = e.turn_args(&TurnRequest::default());
+        assert!(
+            !a.contains(&"-p".into()) && !a.contains(&"-".into()),
+            "{a:?}"
+        );
+        assert!(a
+            .join(" ")
+            .contains("--input-format stream-json --output-format stream-json"));
+        assert!(stdin
+            .unwrap()
+            .starts_with(r#"{"event":"user","message":{"content":"#));
+    }
+
+    #[tokio::test]
+    async fn agy_structured_reads_the_stream_result_response() {
+        let (_d, e) = mock(
+            CliKind::Agy,
+            r#"cat >/dev/null
+echo '{"event":"step_update","step_update":{"step_type":"agent_response"}}'
+echo '{"event":"result","result":{"status":"SUCCESS","response":"{\"n\":7}"}}'"#,
+        );
+        let out: StructuredOutput<Out> = e
+            .complete_structured(StructuredRequest::default(), CancellationToken::new())
+            .await
+            .unwrap();
+        assert_eq!(out.value, Out { n: 7 });
+    }
+
+    #[test]
+    fn agy_real_json_response_is_read_and_result_stays_a_fallback() {
+        let real = include_str!("fixtures/agy_json.txt").trim();
+        assert_eq!(
+            deltas(CliKind::Agy, real).unwrap(),
+            vec![StreamDelta::Text("How can I help you today?\n".into())]
+        );
+        assert_eq!(
+            deltas(CliKind::Agy, r#"{"result":"old"}"#).unwrap(),
+            vec![StreamDelta::Text("old".into())]
+        );
+        let stream = r#"{"event":"result","result":{"status":"SUCCESS","response":"hi"}}"#;
+        assert_eq!(
+            deltas(CliKind::Agy, stream).unwrap(),
+            vec![StreamDelta::Text("hi".into())]
+        );
+        for ignored in [
+            r#"{"event":"init","conversation_id":"c","init":{"tools":[]}}"#,
+            r#"{"event":"step_update","step_update":{"state":"ACTIVE","text_delta":"OK"}}"#,
+        ] {
+            assert!(deltas(CliKind::Agy, ignored).unwrap().is_empty());
+        }
+    }
+
+    #[test]
+    fn agy_non_success_status_is_a_driver_error() {
+        for line in [
+            r#"{"status":"ERROR","response":"","error":"quota"}"#,
+            r#"{"event":"result","result":{"status":"ERROR","response":"","error":"quota"}}"#,
+        ] {
+            let err = deltas(CliKind::Agy, line).unwrap_err();
+            assert!(
+                matches!(&err, DriverError::Failed(m) if m.contains("quota")),
+                "{err}"
+            );
+        }
+        assert!(matches!(
+            deltas(CliKind::Agy, r#"{"status":"CANCELLED","response":""}"#),
+            Err(DriverError::Failed(m)) if m.contains("CANCELLED")
+        ));
+    }
+
+    #[tokio::test]
+    async fn empty_turn_is_retried_once_then_reported() {
+        let counter = tempfile::NamedTempFile::new().unwrap();
+        let script = format!(
+            "cat >/dev/null; echo x >> {}; echo '{{\"type\":\"result\"}}'",
+            counter.path().display()
+        );
+        let (_d, e) = mock(CliKind::Claude, &script);
+        let (tx, _rx) = mpsc::channel(4);
+        let err = e
+            .stream_turn(TurnRequest::default(), tx, CancellationToken::new())
+            .await
+            .unwrap_err();
+        assert!(matches!(err, DriverError::EmptyResponse), "{err}");
+        assert_eq!(
+            std::fs::read_to_string(counter.path())
+                .unwrap()
+                .lines()
+                .count(),
+            2
+        );
+
+        // First call empty, second answers: the retry rescues the turn.
+        let flag = tempfile::tempdir().unwrap().keep().join("seen");
+        let script = format!(
+            "cat >/dev/null; if [ -e {f} ]; then echo '{{\"type\":\"assistant\",\"message\":{{\"content\":[{{\"type\":\"text\",\"text\":\"back\"}}]}}}}'; else touch {f}; fi",
+            f = flag.display()
+        );
+        let (_d, e) = mock(CliKind::Claude, &script);
+        let (tx, _rx) = mpsc::channel(4);
+        let resp = e
+            .stream_turn(TurnRequest::default(), tx, CancellationToken::new())
+            .await
+            .unwrap();
+        assert_eq!(resp.text, "back");
+    }
+
+    #[tokio::test]
+    async fn raw_turns_are_dumped_redacted_and_private_only_when_enabled() {
+        let line = r#"{"type":"assistant","message":{"content":[{"type":"text","text":"token=sk-abcdefghijklmnop done"}]}}"#;
+        let (_d, mut e) = mock(
+            CliKind::Claude,
+            &format!("cat >/dev/null; cat <<'EOF'\n{line}\nEOF"),
+        );
+        e.role = "teacher".into();
+        let run = |e: SubprocessEngine| async move {
+            let (tx, _rx) = mpsc::channel(4);
+            e.stream_turn(TurnRequest::default(), tx, CancellationToken::new())
+                .await
+                .unwrap();
+        };
+        run(e.clone()).await; // raw_dir None: nothing written anywhere
+        let raw = tempfile::tempdir().unwrap();
+        e.raw_dir = Some(raw.path().join("logs/raw"));
+        run(e.clone()).await;
+        run(e).await;
+        let mut files: Vec<_> = std::fs::read_dir(raw.path().join("logs/raw"))
+            .unwrap()
+            .map(|f| f.unwrap().path())
+            .collect();
+        files.sort();
+        assert_eq!(files.len(), 2);
+        let name = files[0].file_name().unwrap().to_str().unwrap().to_owned();
+        assert!(
+            name.ends_with("-teacher-1.jsonl") || name.contains("-teacher-"),
+            "{name}"
+        );
+        assert!(name.ends_with(".jsonl"));
+        for f in &files {
+            let mode = std::fs::metadata(f).unwrap().permissions().mode() & 0o777;
+            assert_eq!(mode, 0o600);
+            let body = std::fs::read_to_string(f).unwrap();
+            assert!(
+                body.contains("done") && !body.contains("sk-abcdefghijklmnop"),
+                "{body}"
+            );
+        }
+    }
+
+    #[test]
+    fn unclosed_tool_call_from_real_codex_text_is_parsed() {
+        let text = include_str!("fixtures/codex_plan_init_unclosed.txt")
+            .trim()
+            .to_owned();
+        let d = split_calls(text);
+        assert_eq!(d.len(), 1, "{d:?}");
+        let StreamDelta::ToolCall(c) = &d[0] else {
+            panic!("{d:?}")
+        };
+        assert_eq!(c.name, "plan_init");
+        assert!(c.input["mermaid"]
+            .as_str()
+            .unwrap()
+            .contains("cargo --> basics"));
+    }
+
+    #[test]
+    fn tool_call_tags_tolerate_case_whitespace_and_missing_close() {
+        let call = |d: &StreamDelta| match d {
+            StreamDelta::ToolCall(c) => Some(c.name.clone()),
+            _ => None,
+        };
+        for text in [
+            "<TOOL_CALL>{\"name\":\"q\",\"input\":{}}</Tool_Call>  \n",
+            "<tool_call>\n{\"name\":\"q\",\"input\":{}}\n\n</tool_call >",
+            "<tool_call>{\"name\":\"q\",\"input\":{\"s\":\"}\"}}  \n",
+        ] {
+            let d = split_calls(text.into());
+            assert_eq!(
+                d.iter().filter_map(call).collect::<Vec<_>>(),
+                ["q"],
+                "{text:?}"
+            );
+        }
+        // text before an unclosed call and a second call after one are both kept
+        let d = split_calls("hi <tool_call>{\"name\":\"a\"}<tool_call>{\"name\":\"b\"}".into());
+        assert_eq!(d.len(), 3, "{d:?}");
+        assert_eq!(d[0], StreamDelta::Text("hi ".into()));
+    }
+
+    #[test]
+    fn truly_malformed_tool_calls_stay_text() {
+        for text in [
+            r#"<tool_call>{"name":"q","input":{"a":1}"#,
+            r#"<tool_call>{"name":"q"</tool_call>"#,
+            r#"<tool_call>not json</tool_call>"#,
+            r#"<tool_call>{"input":{}}</tool_call>"#,
+            "<tool_call>",
+        ] {
+            assert_eq!(
+                split_calls(text.into()),
+                vec![StreamDelta::Text(text.into())],
+                "{text}"
+            );
+        }
     }
 
     /// The mock records its pid then blocks; the child must be dead after the error.
@@ -903,12 +1260,9 @@ case "$p" in *'<tool_call>'*quiz*) echo '{"type":"assistant","message":{"content
         assert!(a.ends_with("--model m --effort max"), "{a}");
         // agy: a slug that already ends in an effort gets no flag; a bare slug does.
         let a = argv(CliKind::Agy, Some("gemini-4-argon-high"), Some("low"));
-        assert!(a.ends_with("--model gemini-4-argon-high -p -"), "{a}");
+        assert!(a.ends_with("--model gemini-4-argon-high"), "{a}");
         let a = argv(CliKind::Agy, Some("gemini-4-argon"), Some("low"));
-        assert!(
-            a.ends_with("--model gemini-4-argon --effort low -p -"),
-            "{a}"
-        );
+        assert!(a.ends_with("--model gemini-4-argon --effort low"), "{a}");
         assert!(!argv(CliKind::Codex, Some("m"), None).contains("effort"));
     }
 
@@ -951,7 +1305,7 @@ case "$p" in *'<tool_call>'*quiz*) echo '{"type":"assistant","message":{"content
     async fn verbose_stderr_does_not_block_child() {
         let (_d, e) = mock(
             CliKind::Claude,
-            "cat >/dev/null; head -c 300000 /dev/zero | tr '\\0' x >&2; echo '{\"type\":\"result\"}'",
+            "cat >/dev/null; head -c 300000 /dev/zero | tr '\\0' x >&2; echo '{\"type\":\"assistant\",\"message\":{\"content\":[{\"type\":\"text\",\"text\":\"ok\"}]}}'",
         );
         let (tx, _rx) = mpsc::channel(4);
         let r = tokio::time::timeout(

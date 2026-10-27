@@ -77,6 +77,10 @@ pub enum DriverError {
     Exit { code: Option<i32>, stderr: String },
     #[error("bad cli output: {0}")]
     Parse(String),
+    #[error("cli returned an empty turn (no text, no tool calls)")]
+    EmptyResponse,
+    #[error("cli reported failure: {0}")]
+    Failed(String),
     #[error("faux engine has no scripted response left")]
     FauxExhausted,
 }

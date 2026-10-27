@@ -124,6 +124,14 @@ impl Session {
         }
     }
 
+    /// Ids of the workbench jobs queued by tools and not yet launched.
+    pub fn requests_ids(&self) -> Vec<String> {
+        self.requests
+            .iter()
+            .map(|r| crate::workbench::job_id(&self.id, &r.call_id))
+            .collect()
+    }
+
     pub(crate) fn queue_steer(&mut self, id: String, text: String) {
         self.steers.push((id, text));
     }
