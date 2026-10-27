@@ -64,8 +64,45 @@ async fn distills_and_drops_invented_commit_shas() {
     assert_eq!(real[0].basis, DecisionBasis::Stated);
     let invented = go("deadbeef").await.unwrap();
     assert_eq!(invented[0].commit_sha, None);
-    // same session + title upserts one row
+}
+
+#[tokio::test]
+async fn rerun_with_a_reworded_title_upserts_and_late_text_is_distilled() {
+    let (_d, store) = stores();
+    let engine = FauxEngine::new();
+    let go = |title: &'static str, sess: CodingSession| {
+        let (engine, store) = (&engine, &store);
+        async move {
+            let mut d = decision("abc123");
+            d["title"] = json!(title);
+            engine.faux_structured(json!({"decisions": [d]}));
+            distill_session(
+                engine,
+                store,
+                &sess,
+                &[commit("abc123")],
+                CancellationToken::new(),
+            )
+            .await
+            .unwrap()
+        }
+    };
+    go("Snapshot copy", session()).await;
+    go("Copy the db first", session()).await;
     assert_eq!(store.decisions().unwrap().len(), 1);
+
+    // a transcript longer than one window makes one call per window
+    let mut long = session();
+    long.id = "claude:long".into();
+    long.transcript = "x".repeat(TRANSCRIPT_CAP + 10);
+    for _ in 0..2 {
+        engine.faux_structured(json!({"decisions": [decision("abc123")]}));
+    }
+    let recs = distill_session(&engine, &store, &long, &[], CancellationToken::new())
+        .await
+        .unwrap();
+    assert_eq!(recs.len(), 2);
+    assert_ne!(recs[0].id, recs[1].id);
 }
 
 #[tokio::test]

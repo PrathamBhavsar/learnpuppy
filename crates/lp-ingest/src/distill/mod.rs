@@ -6,7 +6,6 @@ pub use cards::{generate_book_cards, generate_decision_cards, ingest_book, CardR
 pub use seed::seed_rust_sysdesign;
 
 use crate::git::GitCommit;
-use crate::transcript::clip;
 use lp_agent::extract::{ExtractError, Pipeline, SourceMessage};
 use lp_cli_driver::engine::{DriverError, LlmEngine, StructuredRequest};
 use lp_core::ports::{
@@ -69,14 +68,14 @@ pub(crate) fn short_hash(parts: &[&str]) -> String {
     hex::encode(&h.finalize()[..6])
 }
 
-fn prompt(session: &CodingSession, commits: &[GitCommit]) -> String {
+fn prompt(transcript: &str, commits: &[GitCommit]) -> String {
     let mut p = String::from(
         "Distill the design decisions made in this coding session. Each needs a concrete title, \
          `what` (1-2 sentences naming real files/types/functions), `why` (the tradeoff), \
          basis `stated` if the transcript says so or `inferred` if only the diff shows it, \
          rejected alternatives, a risk, touched files, and the commit sha if one matches.\n\nSESSION\n",
     );
-    p.push_str(&clip(&session.transcript, TRANSCRIPT_CAP));
+    p.push_str(transcript);
     for c in commits {
         p.push_str(&format!(
             "\n\nCOMMIT {}\n{}\n{}\nfiles: {}\n{}",
@@ -90,8 +89,10 @@ fn prompt(session: &CodingSession, commits: &[GitCommit]) -> String {
     p
 }
 
-/// Distills one session (plus its matched commits) into stored `DecisionRecord`s.
+/// Distills one session (plus its matched commits) into stored `DecisionRecord`s, one model
+/// call per `TRANSCRIPT_CAP` window so late decisions are not lost.
 /// A `commit_sha` the model invented, i.e. not among `commits`, is dropped.
+/// Ids hash (session, files, commit), not the model's title, so reruns upsert.
 pub async fn distill_session<E: LlmEngine>(
     engine: &E,
     store: &dyn TrackerStore,
@@ -99,42 +100,70 @@ pub async fn distill_session<E: LlmEngine>(
     commits: &[GitCommit],
     cancel: CancellationToken,
 ) -> Result<Vec<DecisionRecord>, DistillError> {
-    let out = engine
-        .complete_structured::<Distilled>(
-            StructuredRequest {
-                prompt: prompt(session, commits),
-                model: None,
-            },
-            cancel,
-        )
-        .await?
-        .value;
-    let mut records = vec![];
-    for d in out.decisions {
-        let rec = DecisionRecord {
-            id: format!("d_{}", short_hash(&[&session.id, &d.title])).into(),
-            session_id: session.id.clone(),
-            title: d.title,
-            what: d.what,
-            why: d.why,
-            basis: match d.basis {
-                Basis::Stated => DecisionBasis::Stated,
-                Basis::Inferred => DecisionBasis::Inferred,
-            },
-            alternatives: d
-                .alternatives
-                .into_iter()
-                .map(|a| Alternative {
-                    option: a.option,
-                    rejected_because: a.rejected_because,
+    let chars: Vec<char> = session.transcript.chars().collect();
+    let mut records: Vec<DecisionRecord> = vec![];
+    let windows: Vec<String> = match chars.is_empty() {
+        true => vec![String::new()],
+        false => chars
+            .chunks(TRANSCRIPT_CAP)
+            .map(|w| w.iter().collect())
+            .collect(),
+    };
+    for window in windows {
+        let out = engine
+            .complete_structured::<Distilled>(
+                StructuredRequest {
+                    prompt: prompt(&window, commits),
+                    model: None,
+                },
+                cancel.clone(),
+            )
+            .await?
+            .value;
+        for d in out.decisions {
+            let commit_sha = d.commit_sha.filter(|s| commits.iter().any(|c| &c.sha == s));
+            let key = format!(
+                "{}|{}",
+                d.files.join(","),
+                commit_sha.as_deref().unwrap_or("")
+            );
+            // Decisions sharing files and commit are told apart by their order.
+            let n = records
+                .iter()
+                .filter(|r| {
+                    format!(
+                        "{}|{}",
+                        r.files.join(","),
+                        r.commit_sha.as_deref().unwrap_or("")
+                    ) == key
                 })
-                .collect(),
-            risk: d.risk,
-            files: d.files,
-            commit_sha: d.commit_sha.filter(|s| commits.iter().any(|c| &c.sha == s)),
-        };
-        store.upsert_decision(&rec)?;
-        records.push(rec);
+                .count()
+                .to_string();
+            let rec = DecisionRecord {
+                id: format!("d_{}", short_hash(&[&session.id, &key, &n])).into(),
+                session_id: session.id.clone(),
+                title: d.title,
+                what: d.what,
+                why: d.why,
+                basis: match d.basis {
+                    Basis::Stated => DecisionBasis::Stated,
+                    Basis::Inferred => DecisionBasis::Inferred,
+                },
+                alternatives: d
+                    .alternatives
+                    .into_iter()
+                    .map(|a| Alternative {
+                        option: a.option,
+                        rejected_because: a.rejected_because,
+                    })
+                    .collect(),
+                risk: d.risk,
+                files: d.files,
+                commit_sha,
+            };
+            store.upsert_decision(&rec)?;
+            records.push(rec);
+        }
     }
     Ok(records)
 }

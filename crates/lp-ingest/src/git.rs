@@ -7,6 +7,7 @@ use std::process::Command;
 const BEFORE_MS: i64 = 5 * 60_000;
 const AFTER_MS: i64 = 30 * 60_000;
 const DIFF_CAP: usize = 6000;
+const MAX_COMMITS: &str = "--max-count=50";
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct GitCommit {
@@ -46,7 +47,17 @@ pub fn commits_for_session(
         "--until=@{}",
         (end_ms.max(session.started_at) + AFTER_MS) / 1000
     );
-    let shas = git(repo, &["log", &since, &until, "--no-merges", "--format=%H"]);
+    let shas = git(
+        repo,
+        &[
+            "log",
+            &since,
+            &until,
+            "--no-merges",
+            MAX_COMMITS,
+            "--format=%H",
+        ],
+    );
     shas.lines()
         .map(|sha| {
             let meta = git(
@@ -65,6 +76,8 @@ pub fn commits_for_session(
                     "--format=",
                     "--unified=2",
                     "--no-color",
+                    "--no-ext-diff",
+                    "--no-textconv",
                     "--end-of-options",
                     sha,
                 ],

@@ -86,13 +86,13 @@ fn ts_ms(v: &Value) -> Option<i64> {
 
 fn for_each_line(path: &Path, mut f: impl FnMut(Value)) -> std::io::Result<()> {
     let mut reader = std::io::BufReader::new(std::fs::File::open(path)?);
-    let mut buf = String::new();
+    let mut buf = Vec::new();
     loop {
         buf.clear();
-        if reader.read_line(&mut buf)? == 0 {
+        if reader.read_until(b'\n', &mut buf)? == 0 {
             return Ok(());
         }
-        if let Ok(v) = serde_json::from_str(&buf) {
+        if let Ok(v) = serde_json::from_str(&String::from_utf8_lossy(&buf)) {
             f(v);
         }
     }

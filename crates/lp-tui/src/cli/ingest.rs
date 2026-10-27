@@ -21,15 +21,7 @@ pub struct Args {
 }
 
 fn since_ms(spec: &str, now: i64) -> anyhow::Result<i64> {
-    let (n, unit) = spec.split_at(spec.len().saturating_sub(1));
-    let n: i64 = n.parse().with_context(|| format!("bad --since `{spec}`"))?;
-    let hours = match unit {
-        "h" => 1,
-        "d" => 24,
-        "w" => 24 * 7,
-        _ => bail!("bad --since `{spec}`: use <n>h, <n>d or <n>w"),
-    };
-    Ok(now - n * hours * 3_600_000)
+    lp_ingest::since_ms(spec, now).map_err(|e| anyhow::anyhow!(e))
 }
 
 pub fn run(

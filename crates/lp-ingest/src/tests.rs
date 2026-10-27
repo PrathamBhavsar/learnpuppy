@@ -1,4 +1,5 @@
 use super::*;
+use crate::agy::parse_agy;
 use lp_core::ports::*;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -320,4 +321,105 @@ fn commit_diffs_are_redacted() {
     let commits = commits_for_session(&session, T0_MS, &[r.to_path_buf()]);
     assert!(commits[0].diff.contains("API_TOKEN=[REDACTED]"));
     assert!(!commits[0].diff.contains("abc123secret"));
+}
+
+#[test]
+fn widening_since_or_the_allowlist_rereads_skipped_sessions() {
+    let e = env();
+    let store = Mem::default();
+    let roots = Roots::from_home(e.home.path());
+    let allow = [e.repo.clone()];
+    assert_eq!(ingest(&store, &roots, &allow, T0_MS + 1).sessions, 0);
+    assert_eq!(ingest(&store, &roots, &allow, 0).sessions, 4);
+
+    let other = Mem::default();
+    assert_eq!(
+        ingest(&other, &roots, &[PathBuf::from("/nope")], 0).sessions,
+        0
+    );
+    assert_eq!(ingest(&other, &roots, &allow, 0).sessions, 4);
+}
+
+#[test]
+fn since_spec_parses_without_panicking() {
+    assert_eq!(
+        since_ms("2d", 1_000_000_000),
+        Ok(1_000_000_000 - 48 * 3_600_000)
+    );
+    assert!(since_ms("7天", 0).is_err());
+    assert!(since_ms("", 0).is_err());
+    assert!(since_ms("9223372036854775807w", 0).is_err());
+}
+
+#[test]
+fn invalid_utf8_line_does_not_abort_the_transcript() {
+    let e = env();
+    let cwd = e.repo.to_str().unwrap();
+    let mut bytes = claude_fixture(cwd).into_bytes();
+    bytes.extend_from_slice(b"\n{\"type\":\"user\",\"x\":\"\xff\xfe\"}\n");
+    let p = e.home.path().join(".claude/projects/p/bad.jsonl");
+    std::fs::write(&p, bytes).unwrap();
+    let store = Mem::default();
+    let rep = ingest(
+        &store,
+        &Roots::from_home(e.home.path()),
+        std::slice::from_ref(&e.repo),
+        0,
+    );
+    assert_eq!(rep.errors, Vec::<String>::new());
+    assert!(store
+        .sessions
+        .lock()
+        .unwrap()
+        .iter()
+        .any(|s| s.id == "claude:bad"));
+}
+
+#[test]
+fn agy_artifacts_are_redacted_before_clipping() {
+    let e = env();
+    let root = e.home.path().join(".gemini/antigravity-cli");
+    // the key sits across the 1500-char clip boundary
+    let md = format!("{}OPENAI_API_KEY=sk-abcdefghijklmnop", "a".repeat(1490));
+    write(&root.join("brain/c1/plan.md"), &md);
+    let s = &parse_agy(&root).unwrap()[0];
+    assert!(!s.transcript.contains("sk-abc"), "{}", s.transcript);
+}
+
+#[test]
+fn git_helpers_never_run_repo_configured_diff_programs() {
+    let repo = tempfile::tempdir().unwrap();
+    let r = repo.path();
+    git(r, "2026-05-01T10:00:00Z", &["init", "-q"]);
+    let marker = r.join("ran");
+    let tool = r.join("ext.sh");
+    write(&tool, &format!("#!/bin/sh\ntouch {}\n", marker.display()));
+    git(
+        r,
+        "2026-05-01T10:00:00Z",
+        &["config", "diff.x.textconv", tool.to_str().unwrap()],
+    );
+    git(
+        r,
+        "2026-05-01T10:00:00Z",
+        &["config", "core.hooksPath", "/dev/null"],
+    );
+    Command::new("chmod").arg("+x").arg(&tool).status().unwrap();
+    write(&r.join(".gitattributes"), "*.txt diff=x\n");
+    write(&r.join("a.txt"), "x\n");
+    git(r, "2026-05-01T10:20:00Z", &["add", "."]);
+    git(r, "2026-05-01T10:20:00Z", &["commit", "-q", "-m", "one"]);
+    write(&r.join("a.txt"), "y\n");
+    git(r, "2026-05-01T10:21:00Z", &["commit", "-qam", "two"]);
+    let s = CodingSession {
+        id: "claude:s".into(),
+        source: "claude".into(),
+        cwd: r.to_string_lossy().into_owned(),
+        git_branch: None,
+        started_at: T0_MS,
+        transcript: String::new(),
+    };
+    let commits = commits_for_session(&s, T0_MS, &[r.to_path_buf()]);
+    assert_eq!(commits.len(), 2);
+    assert!(!marker.exists());
 }
