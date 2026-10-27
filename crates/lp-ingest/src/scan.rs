@@ -69,14 +69,24 @@ pub fn ingest(
     since_ms: i64,
 ) -> IngestReport {
     let mut rep = IngestReport::default();
-    let save = |rep: &mut IngestReport, sessions: Vec<CodingSession>| -> Result<(), String> {
-        for s in sessions.iter().filter(|s| {
-            s.started_at >= since_ms && allow.iter().any(|a| Path::new(&s.cwd).starts_with(a))
-        }) {
-            store.upsert_session(s).map_err(|e| e.to_string())?;
-            rep.sessions += 1;
+    // Ok(false): a session fell outside `since`, so the file must be re-read when the window widens.
+    let save = |rep: &mut IngestReport, sessions: Vec<CodingSession>| -> Result<bool, String> {
+        let mut complete = true;
+        for s in &sessions {
+            if s.started_at < since_ms {
+                complete = false;
+            } else if allow.iter().any(|a| Path::new(&s.cwd).starts_with(a)) {
+                store.upsert_session(s).map_err(|e| e.to_string())?;
+                rep.sessions += 1;
+            }
         }
-        Ok(())
+        Ok(complete)
+    };
+    // Cursors are keyed on the allowlist too, so adding a repo re-reads files skipped for it.
+    let scope = {
+        let mut a: Vec<_> = allow.iter().map(|p| p.to_string_lossy()).collect();
+        a.sort();
+        crate::distill::short_hash(&a.iter().map(|p| &**p).collect::<Vec<_>>())
     };
     let mut jsonl: Vec<(&str, PathBuf, Parser)> = vec![];
     for dir in &roots.claude {
@@ -94,7 +104,7 @@ pub fn ingest(
     for (source, path, parse) in jsonl {
         let Some(cur) = stamp(
             std::slice::from_ref(&path),
-            format!("{source}:{}", path.display()),
+            format!("{source}:{}#{scope}", path.display()),
         ) else {
             continue;
         };
@@ -109,7 +119,7 @@ pub fn ingest(
     let db = roots.agy.join("conversation_summaries.db");
     let live = [db.clone(), roots.agy.join("conversation_summaries.db-wal")].to_vec();
     if db.exists() {
-        if let Some(cur) = stamp(&live, format!("agy:{}", db.display())) {
+        if let Some(cur) = stamp(&live, format!("agy:{}#{scope}", db.display())) {
             if !matches!(store.cursor(&cur.source_key), Ok(Some(prev)) if prev == cur) {
                 let res = parse_agy(&roots.agy).and_then(|s| save(&mut rep, s));
                 finish(store, &mut rep, &db, cur, res);
@@ -124,10 +134,27 @@ fn finish(
     rep: &mut IngestReport,
     path: &Path,
     cur: IngestCursor,
-    res: Result<(), String>,
+    res: Result<bool, String>,
 ) {
-    match res.and_then(|()| store.set_cursor(&cur).map_err(|e| e.to_string())) {
+    let set = |complete| match complete {
+        true => store.set_cursor(&cur).map_err(|e| e.to_string()),
+        false => Ok(()),
+    };
+    match res.and_then(set) {
         Ok(()) => rep.files += 1,
         Err(e) => rep.errors.push(format!("{}: {e}", path.display())),
     }
+}
+
+/// Start of a `--since` window: `<n>h`, `<n>d` or `<n>w` before `now_ms`.
+pub fn since_ms(spec: &str, now_ms: i64) -> Result<i64, String> {
+    let bad = || format!("bad --since `{spec}`: use <n>h, <n>d or <n>w");
+    let (n, hours) = [("h", 1), ("d", 24), ("w", 24 * 7)]
+        .iter()
+        .find_map(|(u, h)| spec.strip_suffix(u).map(|n| (n, *h)))
+        .ok_or_else(bad)?;
+    let n: i64 = n.parse().map_err(|_| bad())?;
+    n.checked_mul(hours * 3_600_000)
+        .and_then(|d| now_ms.checked_sub(d))
+        .ok_or_else(bad)
 }

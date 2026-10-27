@@ -7,7 +7,7 @@ mod scan;
 mod transcript;
 
 pub use git::{commits_for_session, GitCommit};
-pub use scan::{ingest, IngestReport, Roots};
+pub use scan::{ingest, since_ms, IngestReport, Roots};
 
 #[cfg(test)]
 mod tests;

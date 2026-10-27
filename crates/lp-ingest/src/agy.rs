@@ -36,11 +36,14 @@ pub(crate) fn parse_agy(root: &Path) -> Result<Vec<CodingSession>, String> {
         let uris: Vec<String> = serde_json::from_str(&uris).unwrap_or_default();
         let cwd = uris
             .first()
-            .map(|u| u.trim_start_matches("file://").to_string())
+            .map(|u| redact(u.trim_start_matches("file://")))
             .unwrap_or_default();
         let mut transcript = format!(
             "U: {}\n",
-            clip(if preview.is_empty() { &title } else { &preview }, 500)
+            clip(
+                &redact(if preview.is_empty() { &title } else { &preview }),
+                500
+            )
         );
         let mut arts: Vec<_> = std::fs::read_dir(root.join("brain").join(&id))
             .into_iter()
@@ -53,7 +56,7 @@ pub(crate) fn parse_agy(root: &Path) -> Result<Vec<CodingSession>, String> {
         for p in arts.iter().take(4) {
             if let Ok(text) = std::fs::read_to_string(p) {
                 let name = p.file_name().unwrap_or_default().to_string_lossy();
-                transcript.push_str(&format!("A: {name}: {}\n", clip(&text, 1500)));
+                transcript.push_str(&format!("A: {name}: {}\n", clip(&redact(&text), 1500)));
             }
         }
         out.push(CodingSession {
