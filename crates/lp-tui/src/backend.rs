@@ -6,14 +6,14 @@
 use std::collections::HashSet;
 use std::future::Future;
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
-use std::time::Instant;
+use std::time::{Instant, SystemTime};
 
 use anyhow::anyhow;
-use async_trait::async_trait;
 use lp_agent::extract::{Pipeline, SourceMessage};
 use lp_agent::loops::{Kind, Session};
-use lp_agent::workbench::{Hit, Pdf, Web, Workbench};
+use lp_agent::workbench::{HttpWeb, PdftotextPdf, Workbench};
 use lp_cli_driver::accounts::{AccountHealth, AccountPool};
 use lp_cli_driver::engine::{LlmEngine, StreamDelta};
 use lp_core::fsrs;
@@ -48,27 +48,6 @@ pub const DEFAULT_PIN: &str = "claude:auto";
 /// Bounded stream channel capacity (PLAN 3.1).
 const STREAM_DELTA_CAP: usize = 512;
 
-/// Web search and PDF extraction are not configured yet: jobs finish with this error, which the
-/// teacher is told about, rather than never finishing.
-struct Unconfigured;
-
-#[async_trait]
-impl Web for Unconfigured {
-    async fn search(&self, _: &str) -> Result<Vec<Hit>, String> {
-        Err("web access is not configured".into())
-    }
-    async fn fetch(&self, _: &str) -> Result<String, String> {
-        Err("web access is not configured".into())
-    }
-}
-
-impl Pdf for Unconfigured {
-    fn pages(&self, _: &str) -> Result<Vec<String>, String> {
-        Err("pdf extraction is not configured".into())
-    }
-}
-
-/// Keeps the value, or the default plus a message the UI shows (a corrupt store must not look empty).
 fn keep<T: Default, X: std::fmt::Display>(r: Result<T, X>, errs: &mut Vec<String>) -> T {
     r.unwrap_or_else(|e| {
         errs.push(e.to_string());
@@ -105,6 +84,39 @@ struct Inner<E> {
     shutdown: CancellationToken,
     wb: Arc<Workbench<E, FsJobStore>>,
     graph: Mutex<GraphData>,
+    /// Last store scan; `Refresh` reuses it until a store file (or the minute) changes.
+    scan: Mutex<Option<Scan>>,
+    scans: AtomicUsize,
+}
+
+struct Scan {
+    key: ScanKey,
+    graph: GraphSnapshot,
+    digest: DigestData,
+    errs: Vec<String>,
+}
+
+/// `(minute, [(file, mtime, len)])` of the graph and tracker store dirs: the cheap change detector.
+type ScanKey = (i64, Vec<(std::ffi::OsString, Option<SystemTime>, u64)>);
+
+fn scan_key(root: &std::path::Path) -> ScanKey {
+    let mut files = Vec::new();
+    for dir in ["graph", "tracker"] {
+        for e in std::fs::read_dir(root.join(dir))
+            .into_iter()
+            .flatten()
+            .flatten()
+        {
+            let m = e.metadata().ok();
+            files.push((
+                e.path().into_os_string(),
+                m.as_ref().and_then(|m| m.modified().ok()),
+                m.map_or(0, |m| m.len()),
+            ));
+        }
+    }
+    files.sort();
+    (now_ms() / 60_000, files)
 }
 
 pub struct Backend<E> {
@@ -138,8 +150,8 @@ impl<E: LlmEngine + 'static> Backend<E> {
         let wb = Workbench::new(
             engine_for("teacher", DEFAULT_PIN),
             stores.jobs.clone(),
-            Arc::new(Unconfigured),
-            Arc::new(Unconfigured),
+            Arc::new(HttpWeb::default()),
+            Arc::new(PdftotextPdf),
             root.join("artifacts"),
         );
         if let Err(e) = wb.recover() {
@@ -163,6 +175,8 @@ impl<E: LlmEngine + 'static> Backend<E> {
                 shutdown: CancellationToken::new(),
                 wb,
                 graph: Mutex::new(GraphData::default()),
+                scan: Mutex::new(None),
+                scans: AtomicUsize::new(0),
             }),
             rt: Handle::current(),
         }
@@ -335,9 +349,25 @@ impl<E: LlmEngine + 'static> DataSource for Backend<E> {
                 })
                 .collect()
         };
-        let mut errs = Vec::new();
+        let key = scan_key(&i.root);
+        let (snap, digest, errs) = {
+            let mut scan = i.scan.lock();
+            if scan.as_ref().is_none_or(|s| s.key != key) {
+                i.scans.fetch_add(1, Ordering::Relaxed);
+                let mut errs = Vec::new();
+                let graph = i.graph_snapshot(&mut errs);
+                let digest = digest(i, &mut errs);
+                *scan = Some(Scan {
+                    key,
+                    graph,
+                    digest,
+                    errs,
+                });
+            }
+            let s = scan.as_ref().expect("scan was just filled");
+            (s.graph.clone(), s.digest.clone(), s.errs.clone())
+        };
         let graph = {
-            let snap = i.graph_snapshot(&mut errs);
             let mut cache = i.graph.lock();
             if cache.snap != snap {
                 *cache = GraphData::new(snap);
@@ -355,7 +385,6 @@ impl<E: LlmEngine + 'static> DataSource for Backend<E> {
             }
             cl
         };
-        let digest = digest(i, &mut errs);
         let mut classroom = classroom;
         classroom
             .transcript
@@ -724,6 +753,34 @@ mod tests {
             Kind::Teach
         );
         assert!(!b.snapshot_transcript().is_empty());
+    }
+
+    #[test]
+    fn refresh_rescans_the_stores_only_when_they_change() {
+        use lp_core::graph::GraphNode;
+        let d = tempfile::tempdir().unwrap();
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let _g = rt.enter();
+        let b = backend(d.path(), Arc::new(FauxEngine::new()));
+        let scans = || b.inner.scans.load(Ordering::Relaxed);
+        b.snapshot();
+        b.apply(Command::Refresh);
+        b.snapshot();
+        assert_eq!(scans(), 1, "unchanged stores must reuse the last scan");
+        b.inner
+            .stores
+            .graph
+            .append_node(&GraphNode {
+                id: "n_a".into(),
+                name: "a".into(),
+                statement: "a".into(),
+                aliases: vec![],
+                created_at: chrono::DateTime::UNIX_EPOCH,
+                provenance: vec![],
+            })
+            .unwrap();
+        assert_eq!(b.snapshot().graph.snap.nodes.len(), 1);
+        assert_eq!(scans(), 2);
     }
 
     #[test]

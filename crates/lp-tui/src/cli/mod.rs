@@ -50,12 +50,29 @@ fn pool(home: &std::path::Path, settings: &Settings) -> Arc<AccountPool> {
     Arc::new(AccountPool::new(discover(&roots), Strategy::Priority))
 }
 
+fn home() -> anyhow::Result<PathBuf> {
+    Ok(PathBuf::from(
+        std::env::var_os("HOME").context("HOME is not set")?,
+    ))
+}
+
+impl Cli {
+    /// The state directory: `--root`, else `$LEARNPUPPY_HOME`, else `~/.learnpuppy`.
+    pub fn state_root(&self) -> anyhow::Result<PathBuf> {
+        match self
+            .root
+            .clone()
+            .or_else(|| std::env::var_os("LEARNPUPPY_HOME").map(PathBuf::from))
+        {
+            Some(r) => Ok(r),
+            None => Ok(home()?.join(".learnpuppy")),
+        }
+    }
+}
+
 pub async fn run(cli: Cli) -> anyhow::Result<()> {
-    let home = PathBuf::from(std::env::var_os("HOME").context("HOME is not set")?);
-    let root = cli
-        .root
-        .or_else(|| std::env::var_os("LEARNPUPPY_HOME").map(PathBuf::from))
-        .unwrap_or_else(|| home.join(".learnpuppy"));
+    let home = home()?;
+    let root = cli.state_root()?;
     let stores = Stores::open(&root)?;
     let mut settings = Settings::load(&root)?;
     let device = settings.ensure_device(&root)?.to_owned();

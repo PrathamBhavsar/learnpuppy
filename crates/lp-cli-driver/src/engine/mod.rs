@@ -1,6 +1,7 @@
 //! `LlmEngine` port, its request/response types, and the engines behind it.
 
 mod faux;
+mod http;
 mod subprocess;
 
 use std::time::Duration;
@@ -13,6 +14,7 @@ use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 
 pub use faux::{FauxEngine, FauxStreamControl};
+pub use http::HttpApiEngine;
 pub use subprocess::{CliKind, SubprocessEngine};
 
 #[derive(Debug, Clone, PartialEq)]

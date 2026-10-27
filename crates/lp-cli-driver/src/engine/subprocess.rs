@@ -267,7 +267,7 @@ impl Proc {
 }
 
 /// Appends the text/JSON tool-call protocol and the tool list to the prompt.
-fn with_tools(prompt: &str, tools: &[super::ToolDecl]) -> String {
+pub(super) fn with_tools(prompt: &str, tools: &[super::ToolDecl]) -> String {
     if tools.is_empty() {
         return prompt.into();
     }
@@ -283,7 +283,7 @@ fn with_tools(prompt: &str, tools: &[super::ToolDecl]) -> String {
 }
 
 /// Splits `<tool_call>{json}</tool_call>` blocks out of model text; malformed blocks stay as text.
-fn split_calls(text: String) -> Vec<StreamDelta> {
+pub(super) fn split_calls(text: String) -> Vec<StreamDelta> {
     static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
     let (mut out, mut rest) = (Vec::new(), text.as_str());
     while let Some(start) = rest.find(CALL_OPEN) {
