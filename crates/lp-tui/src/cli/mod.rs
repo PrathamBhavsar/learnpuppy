@@ -2,6 +2,7 @@
 
 mod auth;
 mod chat;
+mod config;
 mod graph;
 mod ingest;
 mod review;
@@ -36,6 +37,8 @@ enum Cmd {
     Chat(chat::Cmd),
     #[command(subcommand)]
     Graph(graph::Cmd),
+    #[command(subcommand)]
+    Config(config::Cmd),
     Ingest(ingest::Args),
     Review(review::Args),
 }
@@ -80,17 +83,17 @@ pub async fn run(cli: Cli) -> anyhow::Result<()> {
     let pool = pool(&home, &settings);
     let mut out = std::io::stdout();
     let engine_for = {
-        let (pool, pins) = (pool.clone(), settings.pins.clone());
+        let (pool, settings) = (pool.clone(), settings.clone());
         move |role: &str| {
-            let pin = pins.get(role).map_or(DEFAULT_PIN, String::as_str);
-            Arc::new(CliPoolEngine::new(pool.clone(), pin))
+            let pin = settings.pins.get(role).map_or(DEFAULT_PIN, String::as_str);
+            Arc::new(CliPoolEngine::for_role(pool.clone(), &settings, role, pin))
         }
     };
     match cli.cmd {
         None => {
-            let (p, cwd) = (pool.clone(), std::env::current_dir()?);
-            let backend = Backend::new(root, cwd, stores, settings, pool, move |_, pin| {
-                Arc::new(CliPoolEngine::new(p.clone(), pin))
+            let (p, cwd, st) = (pool.clone(), std::env::current_dir()?, settings.clone());
+            let backend = Backend::new(root, cwd, stores, settings, pool, move |role, pin| {
+                Arc::new(CliPoolEngine::for_role(p.clone(), &st, role, pin))
             });
             crate::app::run(Arc::new(backend)).await?;
         }
@@ -106,6 +109,7 @@ pub async fn run(cli: Cli) -> anyhow::Result<()> {
         Some(Cmd::Auth(auth::Cmd::AddClaude { path })) => {
             auth::add_claude(&root, &home, &mut settings, &path, &mut out)?;
         }
+        Some(Cmd::Config(cmd)) => config::run(&root, &mut settings, cmd, &mut out)?,
         Some(Cmd::Chat(cmd)) => {
             let cwd = std::env::current_dir()?;
             chat::run(stores.chats.as_ref(), &engine_for, &cwd, cmd, &mut out).await?;

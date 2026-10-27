@@ -355,6 +355,7 @@ pub async fn run_turn<E: LlmEngine>(
         let req = TurnRequest {
             prompt: render_prompt(agent.as_ref(), s),
             model: None,
+            effort: None,
             tools: agent
                 .tools()
                 .iter()
