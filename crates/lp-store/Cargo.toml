@@ -1,0 +1,11 @@
+[package]
+name = "lp-store"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+lp-core = { path = "../lp-core" }
+
+[lints]
+workspace = true
