@@ -9,3 +9,8 @@ target/
 brain/viz.html
 brain/graph.mmd
 .reports/
+node_modules/
+.e2e/
+package-lock.json
+pnpm-lock.yaml
+
