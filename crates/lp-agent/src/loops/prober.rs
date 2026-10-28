@@ -36,7 +36,7 @@ impl Agent for ProberAgent {
             "probe" => tools::probe(call),
             "recall" => tools::recall(call),
             "ask_user_question" => tools::ask(call),
-            "probe_done" => tools::probe_done(s),
+            "probe_done" => tools::probe_done(s, call),
             _ => workbench::exec(s, call)
                 .or_else(|| tools::file_tool(&self.root, call))
                 .unwrap_or_else(|| Err(format!("unknown tool `{}`", call.name))),

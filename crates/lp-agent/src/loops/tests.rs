@@ -105,7 +105,6 @@ async fn probe_handoff_plan_teach_lifecycle() {
     let id = last_call_id(&s);
     s.answer(&id, "selected: a; confidence: 4");
     rig.engine.faux_tool_call("probe_done", json!({}));
-    rig.engine.faux_text("Probe wrapped up.");
     rig.turn(&mut s).await.unwrap();
     assert_eq!(s.phase(), Phase::Plan);
     assert!(s.messages.iter().any(|m| matches!(
@@ -370,4 +369,84 @@ async fn probe_done_is_forced_after_the_question_cap() {
     assert!(!out.pending_question);
     assert_eq!(s.phase(), Phase::Plan);
     assert!(s.wake());
+}
+
+fn teach_session() -> Session {
+    let mut s = Session::new("t1", Kind::Teach);
+    s.plan = Some(lp_core::plan::parse_plan(PLAN, 1).unwrap());
+    for (i, n) in ["probe_done", "plan_init"].into_iter().enumerate() {
+        s.messages.push(Msg::ToolResult {
+            call_id: format!("x{i}"),
+            name: n.into(),
+            ok: true,
+            text: String::new(),
+        });
+    }
+    s
+}
+
+#[tokio::test]
+async fn teach_turn_without_a_tool_call_is_reprompted_once() {
+    let rig = Rig::new();
+    let mut s = teach_session();
+    rig.engine.faux_text("Let me explain ownership.");
+    rig.engine
+        .faux_tool_call("quiz", quiz_args(json!({"type": "check", "nodeId": "own"})));
+    let out = rig.turn(&mut s).await.unwrap();
+    assert!(out.pending_question);
+    assert!(s.messages.iter().any(|m| matches!(
+        m, Msg::Steer { text, .. } if text.contains("no tool call") && text.contains("`own`"))));
+}
+
+#[tokio::test]
+async fn teach_turn_fails_clearly_when_the_reprompt_is_ignored() {
+    let rig = Rig::new();
+    let mut s = teach_session();
+    rig.engine.faux_text("prose");
+    rig.engine.faux_text("more prose");
+    assert!(matches!(
+        rig.turn(&mut s).await,
+        Err(TurnError::NoTeachingCall)
+    ));
+}
+
+#[tokio::test]
+async fn probe_handoff_carries_missed_answers_and_ends_the_turn() {
+    let rig = Rig::new();
+    let mut s = Session::new("c9", Kind::Teach);
+    s.push_user("teach me rust");
+    // A wrong multiple-choice answer is caught mechanically.
+    rig.engine.faux_tool_call("probe", quiz_args(json!({})));
+    rig.turn(&mut s).await.unwrap();
+    let id = last_call_id(&s);
+    s.answer(&id, "selected: b; confidence: 4/5");
+    // A wrong free-text answer is reported by the prober.
+    rig.engine.faux_tool_call(
+        "recall",
+        json!({"question": "Does async speed up CPU work?", "modelAnswer": "No"}),
+    );
+    rig.turn(&mut s).await.unwrap();
+    let id = last_call_id(&s);
+    s.answer(&id, "answer: yes, it spreads work over cores");
+    rig.engine.faux_tool_call(
+        "probe_done",
+        json!({"missed": [{"question": "Does async speed up CPU work?", "learnerAnswer": "yes", "correct": "No, it only overlaps I/O waits"}]}),
+    );
+    // Only probe_done is scripted: the turn must end there rather than call the model again.
+    rig.turn(&mut s).await.unwrap();
+    assert!(s.wake());
+    let Some(Msg::Steer { text, .. }) = s.messages.last() else {
+        panic!("no handoff steer")
+    };
+    assert!(text.starts_with(HANDOFF_TEXT));
+    assert!(
+        text.contains("learner answered: Two owners | correct: One owner"),
+        "{text}"
+    );
+    assert!(
+        text.contains(
+            "Does async speed up CPU work? | learner answered: yes | correct: No, it only"
+        ),
+        "{text}"
+    );
 }

@@ -13,7 +13,10 @@ use std::path::Path;
 
 use lp_cli_driver::engine::{DriverError, LlmEngine, StreamDelta, TurnRequest};
 use lp_core::fsrs::{compaction_cut, CompactMsg, MsgKind};
-use lp_core::plan::{heal_encoded_arguments, phase_at_3, Phase, PlanTree, ToolOutcome};
+use lp_core::plan::{
+    derive_plan_statuses, heal_encoded_arguments, phase_at_3, Phase, PlanTree, ToolCall,
+    ToolOutcome,
+};
 use lp_core::ports::{ChatRecord, ChatStore, StoreError, StoreResult};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -165,6 +168,19 @@ impl Session {
         phase_at_3(&self.outcomes())
     }
 
+    /// The plan node the teacher should work on next, if a plan exists.
+    fn next_node(&self) -> Option<String> {
+        let calls: Vec<ToolCall> = self
+            .calls()
+            .map(|c| ToolCall {
+                name: c.name.clone(),
+                args: c.args.clone(),
+            })
+            .collect();
+        let st = derive_plan_statuses(self.plan.as_ref()?, &calls);
+        st.current.or_else(|| st.upcoming.into_iter().next())
+    }
+
     fn calls(&self) -> impl Iterator<Item = &Call> {
         self.messages.iter().flat_map(|m| match m {
             Msg::Assistant { calls, .. } => calls.as_slice(),
@@ -309,6 +325,8 @@ pub enum TurnError {
     TooManyInvalid,
     #[error("turn exceeded {MAX_STEPS} steps")]
     StepLimit,
+    #[error("teacher ended its turn twice without a quiz or explain call")]
+    NoTeachingCall,
 }
 
 #[derive(Debug, PartialEq)]
@@ -367,6 +385,7 @@ pub async fn run_turn<E: LlmEngine>(
     cancel: &CancellationToken,
 ) -> Result<TurnOutcome, TurnError> {
     let mut invalid = 0;
+    let mut nudged = false;
     if s.kind == Kind::Teach
         && s.phase() == Phase::Probe
         && !s.pending_question()
@@ -374,7 +393,7 @@ pub async fn run_turn<E: LlmEngine>(
     {
         // Cap reached: end the probe ourselves; the caller's wake delivers the handoff steer.
         let id = format!("probe_done_forced#{}", s.messages.len());
-        if let Ok(Effect::Ack(text)) = tools::probe_done(s) {
+        if let Ok(Effect::End(text)) = tools::probe_done_with(s, Vec::new()) {
             s.messages.push(Msg::Assistant {
                 text: String::new(),
                 calls: vec![Call {
@@ -431,6 +450,29 @@ pub async fn run_turn<E: LlmEngine>(
             text: resp.text.clone(),
             calls: calls.clone(),
         });
+        if calls.is_empty()
+            && s.kind == Kind::Teach
+            && s.phase() != Phase::Probe
+            && !s.pending_question()
+        {
+            // A teaching turn must end with a tool call, or nothing is assessed.
+            if nudged {
+                return Err(TurnError::NoTeachingCall);
+            }
+            nudged = true;
+            let want = match s.next_node() {
+                Some(n) => format!("a `quiz` or `explain` call for node `{n}`"),
+                None => "`plan_init`".to_string(),
+            };
+            tracing::info!(reason = "no tool call", "teach turn re-prompted once");
+            s.messages.push(Msg::Steer {
+                id: format!("teach_retry#{}", s.messages.len()),
+                text: format!(
+                    "Your last reply had no tool call. Reply now with {want} and no prose."
+                ),
+            });
+            continue;
+        }
         let mut stop = calls.is_empty();
         for c in &calls {
             let (ok, text) = match agent.exec(s, c) {
@@ -447,6 +489,9 @@ pub async fn run_turn<E: LlmEngine>(
                 Err(e) => (false, e),
             };
             invalid = if ok { 0 } else { invalid + 1 };
+            if !ok {
+                tracing::info!(tool = %c.name, consecutive = invalid, reason = %text, "tool call rejected, re-prompting the model");
+            }
             s.messages.push(Msg::ToolResult {
                 call_id: c.id.clone(),
                 name: c.name.clone(),

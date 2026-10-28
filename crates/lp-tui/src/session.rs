@@ -122,6 +122,11 @@ pub fn classroom_view(s: &Session, streaming: &str) -> Classroom {
                 let (_, body) = text.split_once('\n')?;
                 Some(format!("**Diagram:**\n```\n{body}\n```"))
             }
+            // Job notices are their own line, never part of a question.
+            Msg::ToolResult { name, text, .. } if text.starts_with("dispatched as ") => {
+                let job = text["dispatched as ".len()..].split_whitespace().next()?;
+                Some(format!("_{name} running in the background ({job})_"))
+            }
             Msg::ToolResult { .. } | Msg::Steer { .. } => None,
         })
         .filter(|t| !t.trim().is_empty())
@@ -180,6 +185,33 @@ mod tests {
         let t = classroom_view(&s, "").transcript;
         assert_eq!(t.len(), 1);
         assert!(t[0].contains("[a]-[b]") && t[0].contains("```"));
+    }
+
+    #[test]
+    fn job_notice_is_its_own_transcript_line() {
+        let mut s = Session::new("c1", Kind::Teach);
+        s.messages.push(Msg::ToolResult {
+            call_id: "v#0".into(),
+            name: "visual".into(),
+            ok: true,
+            text: "dispatched as job_1 \u{2014} continue your turn".into(),
+        });
+        s.messages.push(Msg::Assistant {
+            text: String::new(),
+            calls: vec![Call {
+                id: "q#1".into(),
+                name: "quiz".into(),
+                args: json!({"question": "Who owns it?"}),
+            }],
+        });
+        let cl = classroom_view(&s, "");
+        assert_eq!(
+            cl.transcript,
+            ["_visual running in the background (job_1)_"]
+        );
+        assert!(
+            matches!(&cl.prompt, Some(Prompt::Free { question, .. }) if question == "Who owns it?")
+        );
     }
 
     #[tokio::test]
