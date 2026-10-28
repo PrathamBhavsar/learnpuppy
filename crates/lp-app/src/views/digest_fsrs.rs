@@ -1165,7 +1165,7 @@ pub fn DigestFsrsView() -> Element {
                                                                     "border: 1px solid var(--border); background-color: var(--background);"
                                                                 }
                                                             } else if is_selected {
-                                                                "border: 1.5px solid var(--primary); background-color: var(--accent);"
+                                                                "border: 1.5px solid var(--primary); background-color: color-mix(in oklch, var(--primary) 22%, var(--background));"
                                                             } else {
                                                                 "border: 1px solid var(--border); background-color: var(--background);"
                                                             };
@@ -1584,7 +1584,7 @@ pub fn DigestFsrsView() -> Element {
                                                             .map(|c| c.session.id == item.session.id)
                                                             .unwrap_or(false);
                                                         let card_border = if is_selected {
-                                                            "border: 1.5px solid var(--primary); background-color: var(--accent);"
+                                                            "border: 1.5px solid var(--primary); background-color: color-mix(in oklch, var(--primary) 22%, var(--background));"
                                                         } else {
                                                             "border: 1px solid var(--border); background-color: var(--card);"
                                                         };

@@ -122,7 +122,7 @@ pub fn CodeBlock(props: CodeBlockProps) -> Element {
                             let line_no = props.start_line.saturating_add(idx);
                             let is_highlighted = props.highlight_lines.contains(&line_no);
                             let row_style = if is_highlighted {
-                                "background-color: var(--accent);"
+                                "background-color: color-mix(in oklch, var(--primary) 22%, var(--background));"
                             } else {
                                 ""
                             };

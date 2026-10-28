@@ -774,7 +774,7 @@ pub fn ClassroomView() -> Element {
                                             "aria-label": "Select session {item.title}",
                                             "aria-current": if is_selected { "true" } else { "false" },
                                             style: if is_selected {
-                                                "width: 100%; text-align: left; padding: 0.5rem 0.625rem; border-radius: 0.375rem; border: 1px solid var(--primary); background: var(--accent); color: var(--foreground); cursor: pointer;"
+                                                "width: 100%; text-align: left; padding: 0.5rem 0.625rem; border-radius: 0.375rem; border: 1px solid var(--primary); background: color-mix(in oklch, var(--primary) 22%, var(--background)); color: var(--foreground); cursor: pointer;"
                                             } else {
                                                 "width: 100%; text-align: left; padding: 0.5rem 0.625rem; border-radius: 0.375rem; border: 1px solid var(--border); background: transparent; color: var(--foreground); cursor: pointer;"
                                             },
@@ -1223,7 +1223,7 @@ pub fn ClassroomView() -> Element {
                                                                         "data-option-key": "{key_str}",
                                                                         "data-option-value": "{opt_val}",
                                                                         style: if is_chosen {
-                                                                            "display: flex; align-items: flex-start; gap: 0.625rem; width: 100%; text-align: left; padding: 0.625rem 0.75rem; border-radius: var(--radius); border: 1.5px solid var(--primary); background: var(--accent); color: var(--foreground); cursor: pointer;"
+                                                                            "display: flex; align-items: flex-start; gap: 0.625rem; width: 100%; text-align: left; padding: 0.625rem 0.75rem; border-radius: var(--radius); border: 1.5px solid var(--primary); background: color-mix(in oklch, var(--primary) 22%, var(--background)); color: var(--foreground); cursor: pointer;"
                                                                         } else {
                                                                             "display: flex; align-items: flex-start; gap: 0.625rem; width: 100%; text-align: left; padding: 0.625rem 0.75rem; border-radius: var(--radius); border: 1px solid var(--border); background: var(--background); color: var(--foreground); cursor: pointer;"
                                                                         },
