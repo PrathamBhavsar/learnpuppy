@@ -51,7 +51,7 @@ pub const LP_THEME_CSS: &str = r#"
   --mastery-learning: oklch(0.841717 0.128566 86.282);
   --mastery-mastered: oklch(0.810467 0.108339 154.727);
   --radius: 0.625rem;
-  --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Inter", system-ui, sans-serif;
+  --font-sans: "Geist Mono", "SF Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
   --font-mono: "Geist Mono", "SF Mono", "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   --font-heading: var(--font-mono);
 }
@@ -100,7 +100,7 @@ pub const LP_THEME_CSS: &str = r#"
   --mastery-learning: oklch(0.841717 0.128566 86.282);
   --mastery-mastered: oklch(0.810467 0.108339 154.727);
   --radius: 0.625rem;
-  --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Inter", system-ui, sans-serif;
+  --font-sans: "Geist Mono", "SF Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
   --font-mono: "Geist Mono", "SF Mono", "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   --font-heading: var(--font-mono);
 }
@@ -306,13 +306,80 @@ html, body {
 }
 "#;
 
+/// Lyra look (base-lyra preset): Geist Mono everywhere, compact controls,
+/// square cards/popovers with a faint foreground ring. Appended after `LP_THEME_CSS`.
+pub const LP_LYRA_CSS: &str = r#"
+button, input, textarea, select { font-family: inherit; }
+.font-mono { font-family: var(--font-mono); }
+.rounded-none { border-radius: 0; }
+.rounded-md { border-radius: calc(var(--radius) - 2px); }
+.rounded-full { border-radius: 9999px; }
+.ring-1 { box-shadow: 0 0 0 1px var(--ring-color, var(--border)); }
+.ring-foreground\/10 { --ring-color: color-mix(in oklch, var(--foreground) 10%, transparent); }
+.text-xs { font-size: 0.75rem; line-height: 1rem; }
+.text-sm { font-size: 0.8125rem; line-height: 1.25rem; }
+.p-\[3px\] { padding: 3px; }
+.h-7 { height: 1.75rem; }
+.h-8 { height: 2rem; }
+.w-7 { width: 1.75rem; }
+
+h1, h2, h3, h4, h5, h6, .lp-card-title { font-family: var(--font-heading); }
+.lp-btn { height: 1.75rem; padding: 0 0.625rem; font-size: 0.75rem; border-radius: calc(var(--radius) - 2px); gap: 0.375rem; }
+.lp-btn-xs { height: 1.5rem; padding: 0 0.5rem; font-size: 0.6875rem; }
+.lp-btn-sm { height: 1.75rem; padding: 0 0.625rem; font-size: 0.75rem; }
+.lp-btn-default { height: 1.75rem; padding: 0 0.75rem; font-size: 0.75rem; }
+.lp-btn-lg { height: 2rem; padding: 0 1rem; font-size: 0.8125rem; }
+.lp-btn-icon { height: 1.75rem; width: 1.75rem; padding: 0; }
+.lp-badge { font-size: 0.6875rem; border-radius: calc(var(--radius) - 2px); }
+.lp-card { border-radius: 0; box-shadow: 0 0 0 1px color-mix(in oklch, var(--foreground) 10%, transparent); }
+.lp-card-title { font-size: 0.875rem; font-weight: 500; }
+.lp-card-description { font-size: 0.75rem; }
+.lp-code-block { border-radius: 0; }
+"#;
+
+static THEME_CSS: std::sync::LazyLock<String> = std::sync::LazyLock::new(|| {
+    format!("{}\n{LP_THEME_CSS}\n{LP_LYRA_CSS}", geist_mono_font_face())
+});
+
+fn base64(bytes: &[u8]) -> String {
+    const T: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut out = String::with_capacity(bytes.len().div_ceil(3) * 4);
+    for c in bytes.chunks(3) {
+        let n = (u32::from(c[0]) << 16)
+            | (u32::from(*c.get(1).unwrap_or(&0)) << 8)
+            | u32::from(*c.get(2).unwrap_or(&0));
+        for i in 0..4 {
+            if i <= c.len() {
+                out.push(T[((n >> (18 - 6 * i)) & 63) as usize] as char);
+            } else {
+                out.push('=');
+            }
+        }
+    }
+    out
+}
+
+/// `@font-face` rule embedding Geist Mono as a base64 data URI.
+fn geist_mono_font_face() -> String {
+    format!(
+        "@font-face {{ font-family: \"Geist Mono\"; font-style: normal; font-weight: 100 900; font-display: swap; src: url(data:font/woff2;base64,{}) format(\"woff2\"); }}",
+        base64(crate::fonts::GEIST_MONO_WOFF2)
+    )
+}
+
+/// Full stylesheet: embedded Geist Mono `@font-face` + tokens + lyra component rules.
+/// Computed once.
+pub fn theme_css() -> &'static str {
+    THEME_CSS.as_str()
+}
+
 /// Injects the embedded `LP_THEME_CSS` dark-first OKLCH stylesheet into the document.
 #[component]
 pub fn ThemeStylesheet() -> Element {
     rsx! {
         style {
             "data-testid": "lp-theme-stylesheet",
-            "{LP_THEME_CSS}"
+            "{theme_css()}"
         }
     }
 }
@@ -401,6 +468,18 @@ mod tests {
             !LP_THEME_CSS.contains('#'),
             "raw hex colors must not remain"
         );
+    }
+
+    #[test]
+    fn theme_css_embeds_geist_mono_font_face() {
+        let css = theme_css();
+        assert!(css.contains("@font-face"));
+        assert!(css.contains("font-family: \"Geist Mono\""));
+        assert!(css.contains("data:font/woff2;base64,d09GMg"));
+        assert!(css.contains(".ring-foreground\\/10"));
+        assert_eq!(base64(b"Ma"), "TWE=");
+        assert_eq!(base64(b"M"), "TQ==");
+        assert_eq!(base64(b"Man"), "TWFu");
     }
 
     #[test]

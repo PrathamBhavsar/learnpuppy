@@ -11,7 +11,12 @@ pub mod views;
 
 pub fn app() -> Element {
     let backend = use_hook(|| Arc::new(DesktopBackend::from_env()) as BackendHandle);
-    rsx! { AppWithBackend { backend } }
+    let initial_view = std::env::var("LP_INITIAL_VIEW")
+        .ok()
+        .and_then(|id| View::ALL.into_iter().find(|v| v.id() == id))
+        .unwrap_or_default();
+    let accounts_open = std::env::var("LP_ACCOUNTS_OPEN").is_ok_and(|v| v == "1");
+    rsx! { AppWithBackend { backend, initial_view, accounts_open } }
 }
 
 #[derive(Props, Clone)]
@@ -36,7 +41,7 @@ pub fn AppWithBackend(props: AppWithBackendProps) -> Element {
     AppState::use_provider(props.initial_view, props.accounts_open);
     use_context_provider(|| props.backend.clone());
     rsx! {
-        style { {lp_ui::theme::LP_THEME_CSS} }
+        style { {lp_ui::theme::theme_css()} }
         shell::Shell {}
     }
 }
