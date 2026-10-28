@@ -351,8 +351,9 @@ fn learnpuppy_app_process_smoke_serves_e2e_liveview_over_tcp() {
     while Instant::now() < deadline {
         if let Ok(mut stream) = TcpStream::connect(("127.0.0.1", port)) {
             let _ = stream.set_read_timeout(Some(Duration::from_secs(2)));
-            let _ =
-                stream.write_all(b"GET / HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n");
+            let request =
+                format!("GET / HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nConnection: close\r\n\r\n");
+            let _ = stream.write_all(request.as_bytes());
             let _ = stream.read_to_string(&mut response);
             if response.starts_with("HTTP/1.1 200") {
                 break;

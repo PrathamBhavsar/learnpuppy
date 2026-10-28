@@ -29,7 +29,33 @@ fn serve_e2e(port: u16) {
         .enable_all()
         .build()
         .expect("create E2E runtime")
-        .block_on(e2e_router().start(([127, 0, 0, 1], port)));
+        .block_on(e2e_router_for(port).start(([127, 0, 0, 1], port)));
+}
+
+/// Rejects non-loopback Host (DNS rebinding) and cross-origin requests (WebSocket hijack by a web page).
+fn loopback_only(port: u16, host: Option<&str>, origin: Option<&str>) -> bool {
+    let local = |h: &str| h == format!("127.0.0.1:{port}") || h == format!("localhost:{port}");
+    host.is_some_and(local) && origin.is_none_or(|o| o.strip_prefix("http://").is_some_and(local))
+}
+
+fn e2e_router_for(port: u16) -> dioxus::server::axum::Router {
+    use dioxus::server::axum::{
+        extract::Request,
+        http::StatusCode,
+        middleware::{from_fn, Next},
+        response::Response,
+    };
+    e2e_router().layer(from_fn(move |req: Request, next: Next| async move {
+        let ok = {
+            let header = |n| req.headers().get(n).and_then(|v| v.to_str().ok());
+            loopback_only(port, header("host"), header("origin"))
+        };
+        if ok {
+            Ok(next.run(req).await)
+        } else {
+            Err::<Response, _>(StatusCode::FORBIDDEN)
+        }
+    }))
 }
 
 fn e2e_router() -> dioxus::server::axum::Router {
@@ -74,7 +100,7 @@ fn e2e_port(
 
 #[cfg(test)]
 mod tests {
-    use super::{e2e_port, e2e_router};
+    use super::{e2e_port, e2e_router, loopback_only};
 
     #[tokio::test]
     async fn e2e_root_serves_the_liveview_mount_instead_of_a_wildcard_404() {
@@ -128,5 +154,22 @@ mod tests {
         ] {
             assert!(e2e_port(args.into_iter().map(str::to_owned), None).is_err());
         }
+    }
+
+    #[test]
+    fn loopback_gate_blocks_foreign_host_and_origin() {
+        assert!(loopback_only(9, Some("127.0.0.1:9"), None));
+        assert!(loopback_only(
+            9,
+            Some("localhost:9"),
+            Some("http://localhost:9")
+        ));
+        assert!(!loopback_only(9, Some("evil.com:9"), None));
+        assert!(!loopback_only(
+            9,
+            Some("127.0.0.1:9"),
+            Some("http://evil.com")
+        ));
+        assert!(!loopback_only(9, None, None));
     }
 }
