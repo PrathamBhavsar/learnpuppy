@@ -1,13 +1,29 @@
 [advisories]
 version = 2
 # paste is unmaintained (RUSTSEC-2024-0436); only reachable via ratatui 0.29, no fix upstream yet.
-ignore = ["RUSTSEC-2024-0436"]
+# proc-macro-error (RUSTSEC-2024-0370) and fxhash (RUSTSEC-2025-0057) are transitive via dioxus-desktop 0.7 (wry/tao/gtk), no safe upgrade upstream yet.
+ignore = ["RUSTSEC-2024-0370", "RUSTSEC-2024-0436", "RUSTSEC-2025-0057"]
 
 [licenses]
 version = 2
 # MPL-2.0 (scraper's cssparser/selectors): file-level weak copyleft, used unmodified.
 # CDLA-Permissive-2.0: webpki-roots CA data.
-allow = ["Apache-2.0", "BSD-2-Clause", "BSD-3-Clause", "CDLA-Permissive-2.0", "ISC", "MIT", "MPL-2.0", "Unicode-3.0", "Zlib"]
+# Apache-2.0 WITH LLVM-exception, BSL-1.0, CC0-1.0, NCSA: permissive licenses in dioxus-desktop 0.7 transitive deps.
+allow = [
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "BSL-1.0",
+    "CC0-1.0",
+    "CDLA-Permissive-2.0",
+    "ISC",
+    "MIT",
+    "MPL-2.0",
+    "NCSA",
+    "Unicode-3.0",
+    "Zlib",
+]
 confidence-threshold = 0.8
 
 [bans]
