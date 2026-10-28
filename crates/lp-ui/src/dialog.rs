@@ -232,13 +232,13 @@ pub fn Dialog(props: DialogProps) -> Element {
                             class: "lp-dialog-header flex flex-col space-y-1.5 pb-4",
                             h2 {
                                 id: "{labelledby}",
-                                class: "lp-dialog-title text-lg font-semibold leading-none tracking-tight text-foreground",
+                                class: "lp-dialog-title font-mono text-sm font-medium leading-none text-foreground",
                                 "{title_text}"
                             }
                             if let Some(desc_text) = &props.description {
                                 p {
                                     id: "{describedby}",
-                                    class: "lp-dialog-description text-sm text-muted-foreground",
+                                    class: "lp-dialog-description text-xs text-muted-foreground",
                                     "{desc_text}"
                                 }
                             }
@@ -445,7 +445,7 @@ pub fn DialogTitle(props: DialogTitleProps) -> Element {
         .map(|c| c.title_id())
         .unwrap_or_else(|| "dialog-title".to_string());
     let cls = join_classes(&[
-        "lp-dialog-title text-lg font-semibold leading-none tracking-tight text-foreground",
+        "lp-dialog-title font-mono text-sm font-medium leading-none text-foreground",
         props.class.as_deref().unwrap_or(""),
     ]);
 
@@ -484,7 +484,7 @@ pub fn DialogDescription(props: DialogDescriptionProps) -> Element {
         .map(|c| c.description_id())
         .unwrap_or_else(|| "dialog-description".to_string());
     let cls = join_classes(&[
-        "lp-dialog-description text-sm text-muted-foreground",
+        "lp-dialog-description text-xs text-muted-foreground",
         props.class.as_deref().unwrap_or(""),
     ]);
 
