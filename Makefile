@@ -1,4 +1,5 @@
 SHELL := /bin/zsh
+export INSTA_WORKSPACE_ROOT := $(CURDIR)
 export PATH := /opt/homebrew/bin:/opt/homebrew/opt/rustup/bin:$(HOME)/.cargo/bin:$(PATH)
 CARGO ?= /opt/homebrew/opt/rustup/bin/cargo
 
