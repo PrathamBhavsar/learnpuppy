@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/lp-core", "crates/lp-store", "crates/lp-cli-driver", "crates/lp-agent", "crates/lp-ingest", "crates/lp-tui"]
+members = ["crates/lp-core", "crates/lp-store", "crates/lp-cli-driver", "crates/lp-agent", "crates/lp-ingest", "crates/lp-ui", "crates/lp-app", "crates/lp-tui"]
 
 [workspace.package]
 edition = "2021"
@@ -17,6 +17,7 @@ all = { level = "deny", priority = -1 }
 disallowed_methods = "deny"
 
 [workspace.dependencies]
+dioxus = { version = "0.7", default-features = false, features = ["lib", "launch"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 schemars = { version = "0.8", features = ["derive", "uuid1", "chrono"] }
