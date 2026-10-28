@@ -450,3 +450,28 @@ async fn probe_handoff_carries_missed_answers_and_ends_the_turn() {
         "{text}"
     );
 }
+
+#[test]
+fn teacher_prompt_tells_it_to_acknowledge_side_requests() {
+    let s = Session::new("c9", Kind::Teach);
+    let role = TeacherAgent { root: ".".into() }.role_prompt(&s);
+    assert!(role.contains("both answers your question and asks for something else"));
+    assert!(role.contains("acknowledge that request"));
+}
+
+#[test]
+fn extra_turn_reason_names_the_cause() {
+    let mut s = Session::new("c9", Kind::Teach);
+    s.messages.push(Msg::ToolResult {
+        call_id: "x".into(),
+        name: "quiz".into(),
+        ok: false,
+        text: "bad".into(),
+    });
+    assert!(extra_turn_reason(&s).contains("rejected"));
+    s.messages.push(Msg::Steer {
+        id: "teach_retry#3".into(),
+        text: String::new(),
+    });
+    assert!(extra_turn_reason(&s).contains("no tool call"));
+}

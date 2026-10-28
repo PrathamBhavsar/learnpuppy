@@ -42,6 +42,21 @@ pub enum CliKind {
     Agy,
 }
 
+/// Short stable log label for an account id like `claude:me@example.com`: provider plus 6 hex chars
+/// of an FNV-1a hash, so the id itself never reaches the log.
+pub fn account_label(id: &str) -> String {
+    let provider = id.split_once(':').map_or(id, |(p, _)| p);
+    let provider = if provider.len() == id.len() {
+        "acct"
+    } else {
+        provider
+    };
+    let hash = id.bytes().fold(0xcbf2_9ce4_8422_2325_u64, |h, b| {
+        (h ^ u64::from(b)).wrapping_mul(0x0100_0000_01b3)
+    });
+    format!("{provider}-{:06x}", hash & 0xff_ffff)
+}
+
 /// Drives one agent CLI (`claude -p`, `codex exec`, `agy -p`) as a child process.
 #[derive(Debug, Clone)]
 pub struct SubprocessEngine {
@@ -104,7 +119,7 @@ impl SubprocessEngine {
         tracing::info!(
             role = %self.role,
             provider = ?self.kind,
-            account = %self.account,
+            account = %account_label(&self.account),
             model = %flag(["-m", "--model"]),
             effort = %flag(["--effort", "-c"]),
             argv = ?argv,
@@ -122,7 +137,7 @@ impl SubprocessEngine {
         tracing::info!(
             role = %self.role,
             provider = ?self.kind,
-            account = %self.account,
+            account = %account_label(&self.account),
             duration_ms = u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX),
             status = %status,
             "cli turn end"
@@ -719,6 +734,19 @@ mod tests {
     use std::os::unix::fs::PermissionsExt;
 
     use super::*;
+
+    #[test]
+    fn account_label_is_provider_plus_short_hash_without_the_id() {
+        let l = account_label("claude:me@example.com");
+        assert!(
+            l.starts_with("claude-") && l.len() == "claude-".len() + 6,
+            "{l}"
+        );
+        assert!(!l.contains("example") && !l.contains('@'));
+        assert_eq!(l, account_label("claude:me@example.com"));
+        assert_ne!(l, account_label("claude:you@example.com"));
+        assert_eq!(account_label("agy:default").split('-').next(), Some("agy"));
+    }
 
     /// Writes an executable mock CLI and an engine pointing at it.
     fn mock(kind: CliKind, script: &str) -> (tempfile::TempDir, SubprocessEngine) {

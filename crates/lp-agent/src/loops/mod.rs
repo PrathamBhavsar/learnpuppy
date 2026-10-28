@@ -376,6 +376,18 @@ fn render_prompt(agent: &dyn Agent, s: &Session) -> String {
     out
 }
 
+/// Why the model is called again within one learner-visible turn, from what the transcript ends with.
+fn extra_turn_reason(s: &Session) -> &'static str {
+    match s.messages.last() {
+        Some(Msg::Steer { id, .. }) if id.starts_with("teach_retry") => {
+            "teach turn had no tool call, re-prompted"
+        }
+        Some(Msg::ToolResult { ok: false, .. }) => "tool call rejected, model must correct it",
+        Some(Msg::ToolResult { .. }) => "tool result returned to the model, turn continues",
+        _ => "turn continues",
+    }
+}
+
 /// Run one learner-visible turn: model steps and tool calls until a question, a conclusion or plain text.
 pub async fn run_turn<E: LlmEngine>(
     engine: &E,
@@ -415,7 +427,14 @@ pub async fn run_turn<E: LlmEngine>(
             });
         }
     }
-    for _ in 0..MAX_STEPS {
+    for step in 0..MAX_STEPS {
+        if step > 0 {
+            tracing::info!(
+                phase = ?s.phase(),
+                reason = extra_turn_reason(s),
+                "learner message triggered another model turn in the same phase"
+            );
+        }
         let agent = s.agent(root);
         let req = TurnRequest {
             prompt: render_prompt(agent.as_ref(), s),
