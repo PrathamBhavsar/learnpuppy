@@ -357,3 +357,227 @@ async fn ingest_distill_cards_then_fsrs_review() {
     assert_eq!(digest.streak, 1);
     assert_eq!(stores.tracker.reviews().unwrap().len(), 1);
 }
+
+/// A tempdir home with one Claude account and a mock `claude` on PATH that replays `replies`
+/// (one stream-json message per model turn) and counts its invocations.
+struct MockHome {
+    dir: tempfile::TempDir,
+}
+
+impl MockHome {
+    fn new(replies: &[&str]) -> Self {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().unwrap();
+        let h = dir.path();
+        write(
+            &h.join(".claude.json"),
+            r#"{"oauthAccount":{"emailAddress":"a@x.com"}}"#,
+        );
+        write(&h.join(".claude/.keep"), "");
+        let claude = h.join("bin/claude");
+        write(
+            &claude,
+            "#!/bin/sh\ncat >/dev/null\nn=$(cat \"$HOME/mock/count\" 2>/dev/null || echo 0)\nn=$((n+1))\necho $n > \"$HOME/mock/count\"\ncat \"$HOME/mock/$n.json\"\n",
+        );
+        std::fs::set_permissions(&claude, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let m = Self { dir };
+        m.script(replies);
+        m
+    }
+
+    /// Queues more replies after the ones already consumed or queued.
+    fn script(&self, replies: &[&str]) {
+        let mock = self.dir.path().join("mock");
+        let from = std::fs::read_dir(&mock).map_or(0, |d| d.count());
+        for (i, text) in replies.iter().enumerate() {
+            let line =
+                json!({"type":"assistant","message":{"content":[{"type":"text","text":text}]}});
+            write(
+                &mock.join(format!("{}.json", from + i + 1)),
+                &line.to_string(),
+            );
+        }
+    }
+
+    fn turns(&self) -> u32 {
+        std::fs::read_to_string(self.dir.path().join("mock/count"))
+            .map_or(0, |c| c.trim().parse().unwrap())
+    }
+
+    fn run(&self, args: &[&str]) -> String {
+        let h = self.dir.path();
+        let out = Command::new(env!("CARGO_BIN_EXE_learnpuppy"))
+            .args(args)
+            .env("HOME", h)
+            .env("LEARNPUPPY_HOME", h.join("lp"))
+            .env("PATH", format!("{}:/usr/bin:/bin", h.join("bin").display()))
+            .env_remove("CLAUDE_CONFIG_DIR")
+            .stdin(Stdio::null())
+            .output()
+            .unwrap();
+        assert!(
+            out.status.success(),
+            "{args:?}: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        String::from_utf8(out.stdout).unwrap()
+    }
+
+    /// Starts a chat whose first turn asks the 4-option probe; returns the chat id.
+    fn start(&self) -> String {
+        let out = self.run(&["chat", "new", "ownership", "--wait-jobs", "0"]);
+        out.lines()
+            .find_map(|l| l.strip_prefix("chat "))
+            .unwrap()
+            .to_owned()
+    }
+}
+
+fn probe_call() -> String {
+    let call = json!({"name": "probe", "input": {
+        "question": "What happens when you use a moved String?",
+        "options": [
+            {"label": "Move error", "value": "move_err"},
+            {"label": "Copy error", "value": "copy_err"},
+            {"label": "Prints ok", "value": "prints_ok"},
+            {"label": "Panic error", "value": "panic_err"}
+        ],
+        "correctAnswer": "move_err",
+        "explanation": "The value was moved, so the compiler rejects the use."
+    }});
+    format!("<tool_call>{call}</tool_call>")
+}
+
+/// The letter the options list prints for `label`.
+fn letter_of(text: &str, label: &str) -> String {
+    text.lines()
+        .find_map(|l| {
+            l.trim()
+                .strip_suffix(&format!(". {label}"))
+                .map(str::to_owned)
+        })
+        .unwrap_or_else(|| panic!("no option {label:?} in:\n{text}"))
+}
+
+#[test]
+fn chat_quiz_answered_by_letter_is_graded_and_the_teacher_continues() {
+    let m = MockHome::new(&[&probe_call(), "Right, the move rule."]);
+    let id = m.start();
+    let shown = m.run(&["chat", "show", &id]);
+    let right = letter_of(&shown, "Move error");
+    let out = m.run(&[
+        "chat",
+        "step",
+        &id,
+        &right.to_lowercase(),
+        "--confidence",
+        "4",
+    ]);
+    assert!(out.starts_with("**Correct.**"), "{out}");
+    assert!(out.contains("Confidence 4/5: well calibrated."), "{out}");
+    assert!(out.contains("compiler rejects the use"), "{out}");
+    assert!(out.contains("Right, the move rule."), "{out}");
+    assert_eq!(m.turns(), 2);
+    // The raw letter never becomes the stored answer text.
+    let chat = std::fs::read_dir(m.dir.path().join("lp/chats"))
+        .unwrap()
+        .map(|e| std::fs::read_to_string(e.unwrap().path()).unwrap())
+        .collect::<String>();
+    assert!(
+        chat.contains("selected: move_err; confidence: 4/5"),
+        "{chat}"
+    );
+}
+
+#[test]
+fn chat_quiz_wrong_letter_with_confidence_5_prints_calibration_then_the_teacher() {
+    let m = MockHome::new(&[&probe_call(), "Let us look at why it moved."]);
+    let id = m.start();
+    let shown = m.run(&["chat", "show", &id]);
+    let (wrong, right) = (
+        letter_of(&shown, "Copy error"),
+        letter_of(&shown, "Move error"),
+    );
+    let out = m.run(&[
+        "chat",
+        "step",
+        &id,
+        &format!("{wrong})"),
+        "--confidence",
+        "5",
+    ]);
+    assert!(out.starts_with("**Incorrect.**"), "{out}");
+    assert!(
+        out.contains(&format!("The right answer: {right}. Move error.")),
+        "{out}"
+    );
+    assert!(out.contains("Confidence 5/5: overconfident."), "{out}");
+    let verdict = out.find("**Incorrect.**").unwrap();
+    assert!(
+        out.find("Let us look at why it moved.").unwrap() > verdict,
+        "{out}"
+    );
+}
+
+#[test]
+fn chat_quiz_answered_by_label_in_any_case() {
+    let m = MockHome::new(&[&probe_call(), "Yes."]);
+    let id = m.start();
+    let out = m.run(&["chat", "step", &id, "move ERROR"]);
+    assert!(out.starts_with("**Correct.**"), "{out}");
+}
+
+#[test]
+fn chat_quiz_unmatched_or_ambiguous_answer_reasks_without_a_model_turn() {
+    let m = MockHome::new(&[&probe_call(), "Yes."]);
+    let id = m.start();
+    for bad in ["zzz", "p", "E"] {
+        let out = m.run(&["chat", "step", &id, bad]);
+        assert!(out.contains("not one of the options"), "{bad}: {out}");
+        assert!(
+            out.contains("Move error") && out.contains("Panic error"),
+            "{out}"
+        );
+        assert!(
+            !out.contains("**Correct.**") && !out.contains("**Incorrect."),
+            "{out}"
+        );
+    }
+    assert_eq!(m.turns(), 1, "no model turn was spent");
+    // Still pending, and a valid choice now goes through.
+    assert!(m
+        .run(&["chat", "show", &id])
+        .contains("pending: What happens"));
+    assert!(m.run(&["chat", "step", &id, "1"]).contains("**"));
+    assert_eq!(m.turns(), 2);
+}
+
+#[test]
+fn chat_show_lists_the_current_question_with_lettered_options() {
+    let m = MockHome::new(&[
+        &probe_call(),
+        &probe_call().replace("moved String", "borrowed Vec"),
+    ]);
+    let id = m.start();
+    let first = m.run(&["chat", "show", &id]);
+    assert!(
+        first.contains("pending: What happens when you use a moved String?"),
+        "{first}"
+    );
+    for label in ["Move error", "Copy error", "Prints ok", "Panic error"] {
+        letter_of(&first, label);
+    }
+    let letters: Vec<String> = first
+        .lines()
+        .filter_map(|l| l.trim().split_once(". ").map(|(a, _)| a.to_owned()))
+        .filter(|a| a.len() == 1)
+        .collect();
+    assert_eq!(letters[..4], ["A", "B", "C", "D"]);
+    m.run(&["chat", "step", &id, "A"]);
+    let second = m.run(&["chat", "show", &id]);
+    assert!(
+        second.contains("pending: What happens when you use a borrowed Vec?"),
+        "{second}"
+    );
+    assert!(!second.contains("moved String?"), "{second}");
+}

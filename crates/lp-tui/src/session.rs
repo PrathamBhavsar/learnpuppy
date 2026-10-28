@@ -6,7 +6,9 @@ use std::sync::Arc;
 
 use lp_agent::loops::{run_turn, Call, Kind, Msg, Session, TurnError};
 use lp_cli_driver::engine::{LlmEngine, StreamDelta};
-use lp_core::plan::{derive_plan_statuses, Phase, PlanStatuses, QuizInput, ToolCall};
+use lp_core::plan::{
+    derive_plan_statuses, shuffle_options, Phase, PlanStatuses, QuizInput, QuizOption, ToolCall,
+};
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 
@@ -136,16 +138,71 @@ fn transcript_item(m: &Msg) -> Option<String> {
     }
 }
 
+fn letter(i: usize) -> char {
+    char::from(b'A' + i as u8)
+}
+
+/// The options as the learner sees them (shuffled per call, as in the dock), one `A. label` per line.
+pub fn option_lines(q: &QuizInput, call_id: &str) -> String {
+    let mut out: String = shuffle_options(&q.options, call_id)
+        .iter()
+        .enumerate()
+        .map(|(i, o)| format!("  {}. {}\n", letter(i), o.label))
+        .collect();
+    out.push_str("  I. I don't know\n");
+    out
+}
+
+/// The option value (or `IDK`) a typed answer names: its letter (`b`, `B)`, `b.`), 1-based number,
+/// exact value, label, or a unique prefix of a label or value. `None` when it names none or several.
+pub fn resolve_option(q: &QuizInput, call_id: &str, input: &str) -> Option<String> {
+    let t = input.trim();
+    let key = t.strip_suffix([')', '.']).unwrap_or(t).trim();
+    let shown = shuffle_options(&q.options, call_id);
+    let n = shown.len();
+    let by_index = |i: usize| (i < n).then(|| shown[i].value.clone());
+    if let [c] = key.as_bytes() {
+        let i = usize::from(c.to_ascii_uppercase().wrapping_sub(b'A'));
+        if i < n {
+            return by_index(i);
+        }
+        if c.eq_ignore_ascii_case(&b'i') {
+            return Some(IDK.to_owned());
+        }
+    }
+    if let Some(i) = key.parse::<usize>().ok().and_then(|k| k.checked_sub(1)) {
+        return by_index(i);
+    }
+    if key.eq_ignore_ascii_case("i don't know") {
+        return Some(IDK.to_owned());
+    }
+    let exact = |f: fn(&QuizOption) -> &str| shown.iter().find(|o| f(o).eq_ignore_ascii_case(t));
+    if let Some(o) = exact(|o| &o.value).or_else(|| exact(|o| &o.label)) {
+        return Some(o.value.clone());
+    }
+    let low = t.to_ascii_lowercase();
+    let mut hits = shown.iter().filter(|o| {
+        !low.is_empty()
+            && (o.label.to_ascii_lowercase().starts_with(&low)
+                || o.value.to_ascii_lowercase().starts_with(&low))
+    });
+    match (hits.next(), hits.next()) {
+        (Some(o), None) => Some(o.value.clone()),
+        _ => None,
+    }
+}
+
 /// The graded answer to a quiz: correct or not, the right option, the call's rationale and the
 /// confidence calibration. `None` when the answer carries no selected option.
-pub fn verdict(q: &QuizInput, answer: &str) -> Option<String> {
+pub fn verdict(q: &QuizInput, call_id: &str, answer: &str) -> Option<String> {
     let picked = answer.strip_prefix("selected: ")?.split(';').next()?.trim();
     let right = q.correct_answer.values();
+    let shown = shuffle_options(&q.options, call_id);
     let label = |v: &str| {
-        q.options
-            .iter()
-            .find(|o| o.value == v)
-            .map_or_else(|| v.to_owned(), |o| format!("{} ({v})", o.label))
+        shown.iter().position(|o| o.value == v).map_or_else(
+            || v.to_owned(),
+            |i| format!("{}. {}", letter(i), shown[i].label),
+        )
     };
     let mut picks: Vec<&str> = picked.split(',').map(str::trim).collect();
     picks.sort_unstable();
@@ -192,7 +249,7 @@ pub fn classroom_view(s: &Session, streaming: &str) -> Classroom {
                 Msg::Answer { call_id, text } => calls(s)
                     .find(|c| c.id == *call_id)
                     .and_then(|c| serde_json::from_value::<QuizInput>(c.args.clone()).ok())
-                    .and_then(|q| verdict(&q, text)),
+                    .and_then(|q| verdict(&q, call_id, text)),
                 _ => None,
             };
             transcript_item(m).into_iter().chain(verdict)
@@ -380,7 +437,7 @@ mod tests {
         assert!(t[0].starts_with("**You answered:**"));
         assert_eq!(
             t[1],
-            "**Incorrect.** The right answer: One (a). Confidence 5/5: overconfident."
+            "**Incorrect.** The right answer: B. One. Confidence 5/5: overconfident."
         );
     }
 }

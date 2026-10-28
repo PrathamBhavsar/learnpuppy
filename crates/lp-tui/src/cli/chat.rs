@@ -16,7 +16,9 @@ use lp_store::FsJobStore;
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 
-use crate::session::{classroom_view, pending_call, render_answer, run_to_rest, verdict};
+use crate::session::{
+    classroom_view, option_lines, pending_call, render_answer, resolve_option, run_to_rest, verdict,
+};
 use crate::state::now_ms;
 use crate::views::classroom::{Answer, Prompt};
 
@@ -105,6 +107,7 @@ async fn run_with<E: LlmEngine + 'static>(
         }
         Cmd::New { wait, .. } | Cmd::Step { wait, .. } => wait.wait_jobs,
     };
+    let mut printed = None;
     let mut s = match &cmd {
         Cmd::New { topic, mode, .. } => {
             let kind = if mode.practice {
@@ -129,26 +132,38 @@ async fn run_with<E: LlmEngine + 'static>(
             let mut s = Session::load(chats, id).with_context(|| format!("chat {id}"))?;
             if let Some(call) = pending_call(&s).cloned() {
                 let call_id = call.id;
-                // An answer naming an option (by value or label) is that selection; anything else is free text.
-                let quiz = serde_json::from_value::<QuizInput>(call.args).ok();
-                let value = quiz
-                    .as_ref()
-                    .and_then(|q| {
-                        q.options.iter().find(|o| {
-                            o.value.eq_ignore_ascii_case(answer.trim())
-                                || o.label.eq_ignore_ascii_case(answer.trim())
-                        })
-                    })
-                    .map(|o| o.value.clone())
-                    .unwrap_or_default();
+                // A pending quiz needs one of its options; only other questions take free text.
+                let quiz = (matches!(call.name.as_str(), "probe" | "quiz"))
+                    .then(|| serde_json::from_value::<QuizInput>(call.args).ok())
+                    .flatten();
+                let value = match &quiz {
+                    Some(q) => match resolve_option(q, &call_id, answer) {
+                        Some(v) => v,
+                        None => {
+                            writeln!(
+                                out,
+                                "'{answer}' is not one of the options of the pending question:\n\n? {}\n{}\nanswer with a letter (A, B, ...), a number, or the option text",
+                                q.question,
+                                option_lines(q, &call_id)
+                            )?;
+                            return Ok(());
+                        }
+                    },
+                    None => String::new(),
+                };
                 let text = render_answer(&Answer {
                     value,
                     confidence: (*confidence).clamp(1, 5),
                     reading_thinking: String::new(),
-                    thinking: answer.clone(),
+                    thinking: if quiz.is_some() {
+                        String::new()
+                    } else {
+                        answer.clone()
+                    },
                 });
-                if let Some(v) = quiz.and_then(|q| verdict(&q, &text)) {
+                if let Some(v) = quiz.and_then(|q| verdict(&q, &call_id, &text)) {
                     writeln!(out, "{v}\n")?;
+                    printed = Some(v);
                 }
                 s.answer(&call_id, text);
             } else if matches!(
@@ -193,15 +208,22 @@ async fn run_with<E: LlmEngine + 'static>(
         write!(out, ", probe question {}/{max}", s.probe_questions())?;
     }
     writeln!(out)?;
-    if let Some(last) = view.transcript.last() {
-        writeln!(out, "{last}")?;
+    // The verdict is already out; show what the teacher said after it (or the last item).
+    let from = printed
+        .as_ref()
+        .and_then(|v| view.transcript.iter().rposition(|t| t == v))
+        .map_or(view.transcript.len().saturating_sub(1), |i| i + 1);
+    for t in &view.transcript[from..] {
+        writeln!(out, "{t}")?;
     }
     match view.prompt {
-        Some(Prompt::Quiz { input, .. }) => {
-            writeln!(out, "\n? {}", input.question)?;
-            for o in input.options {
-                writeln!(out, "  {} ({})", o.label, o.value)?;
-            }
+        Some(Prompt::Quiz { call_id, input }) => {
+            writeln!(
+                out,
+                "\n? {}\n{}",
+                input.question,
+                option_lines(&input, &call_id)
+            )?;
         }
         Some(Prompt::Free { question, .. }) => writeln!(out, "\n? {question}")?,
         None => {}
@@ -291,7 +313,14 @@ fn show(s: &Session, title: &str, jobs: &[JobRecord], out: &mut dyn Write) -> an
         }
     }
     match view.prompt {
-        Some(Prompt::Quiz { input, .. }) => writeln!(out, "pending: {}", input.question)?,
+        Some(Prompt::Quiz { call_id, input }) => {
+            writeln!(
+                out,
+                "pending: {}\n{}",
+                input.question,
+                option_lines(&input, &call_id)
+            )?;
+        }
         Some(Prompt::Free { question, .. }) => writeln!(out, "pending: {question}")?,
         None => writeln!(out, "pending: none")?,
     }
@@ -419,7 +448,7 @@ mod tests {
         let r = Rig::new();
         r.faux.faux_tool_call("probe", quiz());
         let text = r.go(new_cmd(5)).await.unwrap();
-        assert!(text.contains("? Who owns it?") && text.contains("One (a)"));
+        assert!(text.contains("? Who owns it?") && text.contains(". One\n"));
         assert!(text.contains("phase Probe, probe question 1/8"), "{text}");
         let id = r.id();
         assert_eq!(r.chats.load_chat(&id).unwrap().title, "ownership");
@@ -452,7 +481,7 @@ mod tests {
         };
         let text = r.go(cmd).await.unwrap();
         assert!(
-            text.starts_with("**Incorrect.** The right answer: One (a). One owner."),
+            text.starts_with("**Incorrect.** The right answer: A. One. One owner."),
             "{text}"
         );
         assert!(text.contains("Confidence 5/5: overconfident."), "{text}");
