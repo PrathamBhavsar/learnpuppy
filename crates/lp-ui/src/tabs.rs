@@ -278,7 +278,7 @@ pub fn TabsList(props: TabsListProps) -> Element {
     let orientation_str = orientation.as_str();
 
     let cls = join_classes(&[
-        "lp-tabs-list inline-flex items-center justify-start rounded-lg bg-muted p-1 text-muted-foreground",
+        "lp-tabs-list inline-flex items-center justify-start rounded-none bg-muted p-[3px] text-muted-foreground",
         match orientation {
             TabsOrientation::Horizontal => "flex-row h-9",
             TabsOrientation::Vertical => "flex-col h-auto items-stretch",

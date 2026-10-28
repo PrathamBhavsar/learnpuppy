@@ -201,7 +201,10 @@ fn join_class(base: &str, extra: &str) -> String {
 #[component]
 pub fn Card(props: CardSectionProps) -> Element {
     let tid = props.test_id.as_deref().unwrap_or("lp-card");
-    let class = join_class("lp-card bg-card text-card-foreground", &props.class);
+    let class = join_class(
+        "lp-card rounded-none bg-card text-card-foreground ring-1 ring-foreground/10",
+        &props.class,
+    );
 
     rsx! {
         div {
@@ -236,7 +239,7 @@ pub fn CardHeader(props: CardSectionProps) -> Element {
 #[component]
 pub fn CardTitle(props: CardSectionProps) -> Element {
     let tid = props.test_id.as_deref().unwrap_or("lp-card-title");
-    let class = join_class("lp-card-title", &props.class);
+    let class = join_class("lp-card-title font-mono", &props.class);
 
     rsx! {
         h3 {
