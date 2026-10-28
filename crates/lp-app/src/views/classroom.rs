@@ -976,8 +976,8 @@ pub fn ClassroomView() -> Element {
                                 class: "h-full",
                                 div {
                                     "data-testid": "lesson-stream",
-                                    class: "flex flex-col",
-                                    style: "padding: 0.5rem 0.75rem 1.25rem 0.5rem; gap: 1rem;",
+                                    class: "flex flex-col min-w-0",
+                                    style: "min-width: 0; padding: 0.5rem 0.75rem 1.25rem 0.5rem; gap: 1rem;",
 
                                     // Streaming turn status / error banner from Backend::turn
                                     if !turn_stream_text().is_empty() {
@@ -1032,10 +1032,14 @@ pub fn ClassroomView() -> Element {
                                                     style: "margin: 0;",
                                                     "In LearnPuppy, neither ProberAgent nor TeacherAgent persists mutable state in RAM across turns. Every session phase (`PROBE`, `PLAN`, `TEACH`) and every Plan DAG node status (`Current`, `Visited`, `Upcoming`) is folded deterministically from the append-only transcript."
                                                 }
+                                                div {
+                                                    "data-testid": "lesson-table-wrapper",
+                                                    class: "lp-table-scroll min-w-0",
+                                                    style: "max-width: 100%; overflow-x: auto;",
                                                 table {
                                                     "data-testid": "lesson-table",
                                                     "aria-label": "Phase and tool invariants table",
-                                                    style: "width: 100%; border-collapse: collapse; font-size: 0.8rem;",
+                                                    style: "width: 100%; min-width: max-content; border-collapse: collapse; font-size: 0.8rem;",
                                                     thead {
                                                         tr {
                                                             style: "border-bottom: 1px solid var(--border); text-align: left;",
@@ -1063,6 +1067,7 @@ pub fn ClassroomView() -> Element {
                                                             td { style: "padding: 0.375rem 0.5rem;", "derive_plan_statuses over calls" }
                                                         }
                                                     }
+                                                }
                                                 }
                                             }
                                         }
@@ -1807,6 +1812,9 @@ mod tests {
         assert!(html.contains(r#"data-testid="lesson-stream""#));
         assert!(html.contains(r#"data-testid="lesson-markdown""#));
         assert!(html.contains(r#"data-testid="lesson-table""#));
+        assert!(html.contains(r#"data-testid="lesson-table-wrapper""#));
+        assert!(html.contains("lp-table-scroll"));
+        assert!(html.contains("overflow-x: auto"));
         assert!(html.contains(r#"data-testid="lesson-code-block""#));
         assert!(html.contains(r#"data-testid="lesson-diagram-svg""#));
 
