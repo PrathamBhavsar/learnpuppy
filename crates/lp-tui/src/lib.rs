@@ -5,6 +5,7 @@ pub mod backend;
 pub mod cli;
 pub mod engine;
 pub mod logging;
+pub mod markdown;
 pub mod review;
 pub mod session;
 pub mod state;

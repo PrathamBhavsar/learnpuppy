@@ -5,7 +5,7 @@ use lp_core::plan::{shuffle_options, Phase, PlanStatuses, PlanTree, QuizInput, Q
 use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, Borders, Paragraph};
+use ratatui::widgets::{Block, Borders, Padding, Paragraph};
 use ratatui::Frame;
 
 use crate::app::{Action, Command};
@@ -237,23 +237,6 @@ impl Dock {
 
 // ---------------------------------------------------------------- rendering
 
-const MATH: [(&str, &str); 9] = [
-    ("\\Rightarrow", "⟹"),
-    ("\\land", "∧"),
-    ("\\to", "→"),
-    ("\\leq", "≤"),
-    ("\\geq", "≥"),
-    ("\\neq", "≠"),
-    ("\\alpha", "α"),
-    ("\\lambda", "λ"),
-    ("\\sum", "∑"),
-];
-
-fn math(s: &str) -> String {
-    MATH.iter()
-        .fold(s.replace('$', ""), |acc, (tex, uni)| acc.replace(tex, uni))
-}
-
 fn wrap(s: &str, width: usize) -> Vec<String> {
     let chars: Vec<char> = s.chars().collect();
     if chars.is_empty() {
@@ -268,25 +251,7 @@ fn wrap(s: &str, width: usize) -> Vec<String> {
 fn transcript_lines(msgs: &[String], width: usize) -> Vec<Line<'static>> {
     let mut out = Vec::new();
     for msg in msgs {
-        let mut code = false;
-        for raw in msg.lines() {
-            if raw.trim_start().starts_with("```") {
-                code = !code;
-                continue;
-            }
-            let (text, style) = if code {
-                (raw.to_owned(), Style::new().fg(Color::Yellow))
-            } else if let Some(h) = raw.strip_prefix("# ") {
-                (math(h), Style::new().add_modifier(Modifier::BOLD))
-            } else {
-                (math(raw), Style::new())
-            };
-            out.extend(
-                wrap(&text, width)
-                    .into_iter()
-                    .map(|l| Line::styled(l, style)),
-            );
-        }
+        out.extend(crate::markdown::render(msg, width));
         out.push(Line::raw(""));
     }
     out
@@ -299,10 +264,11 @@ fn tail<T: Clone>(v: &[T], n: usize) -> Vec<T> {
 pub fn render(f: &mut Frame, area: Rect, cl: &Classroom, dock: &Dock) {
     let block = Block::new()
         .borders(Borders::ALL)
+        .padding(Padding::horizontal(1))
         .title(format!("Classroom [{}]", cl.badge()));
     let inner = block.inner(area);
     f.render_widget(block, area);
-    let lines = dock_lines(cl, dock, usize::from(inner.width.saturating_sub(2)));
+    let lines = dock_lines(cl, dock, usize::from(inner.width.saturating_sub(4)));
     let dock_h = if lines.is_empty() {
         0
     } else {
@@ -313,7 +279,10 @@ pub fn render(f: &mut Frame, area: Rect, cl: &Classroom, dock: &Dock) {
     let t = transcript_lines(&cl.transcript, usize::from(text.width));
     f.render_widget(Paragraph::new(tail(&t, usize::from(text.height))), text);
     if dock_h > 0 {
-        let b = Block::new().borders(Borders::ALL).title("Question");
+        let b = Block::new()
+            .borders(Borders::ALL)
+            .padding(Padding::horizontal(1))
+            .title("Question");
         let body = b.inner(bottom);
         f.render_widget(b, bottom);
         f.render_widget(Paragraph::new(tail(&lines, usize::from(body.height))), body);
@@ -327,7 +296,7 @@ fn dock_lines(cl: &Classroom, dock: &Dock, width: usize) -> Vec<Line<'static>> {
     match &cl.prompt {
         None => {}
         Some(Prompt::Quiz { call_id, input }) => {
-            out.extend(wrap(&input.question, width).into_iter().map(Line::from));
+            out.extend(crate::markdown::render(&input.question, width));
             let opts: Vec<QuizOption> = shuffle_options(&input.options, call_id);
             let n = opts.len();
             let rows = opts
@@ -371,19 +340,19 @@ fn dock_lines(cl: &Classroom, dock: &Dock, width: usize) -> Vec<Line<'static>> {
         }
         Some(Prompt::Free { label, question }) => {
             out.push(Line::styled(
-                format!("{label}: {question}"),
+                format!("{label}:"),
                 Style::new().add_modifier(Modifier::BOLD),
             ));
+            out.extend(crate::markdown::render(question, width));
+            out.push(Line::raw(""));
             for l in dock.thinking.split('\n') {
                 out.extend(wrap(l, width).into_iter().map(Line::from));
             }
             if let Some(last) = out.last_mut() {
                 last.spans.push(Span::raw("_"));
             }
-            out.push(Line::styled(
-                format!("Ctrl+H hint (R{})  Ctrl+S submit  Enter newline", dock.rung),
-                dim,
-            ));
+            let hint = format!("Ctrl+H hint (R{})  Ctrl+S submit  Enter newline", dock.rung);
+            out.extend(wrap(&hint, width).into_iter().map(|l| Line::styled(l, dim)));
         }
     }
     out
