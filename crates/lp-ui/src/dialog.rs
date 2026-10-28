@@ -226,8 +226,8 @@ pub fn Dialog(props: DialogProps) -> Element {
                 },
                 if let Some(title_text) = &props.title {
                     div {
-                        class: "lp-dialog-panel w-full rounded-xl border border-border bg-card p-6 text-card-foreground shadow-2xl",
-                        style: "background: var(--card, oklch(0.205 0.015 260)); color: var(--card-foreground, oklch(0.985 0 0)); border: 1px solid var(--border, oklch(1 0 0 / 12%)); border-radius: 0.75rem; padding: 1.5rem;",
+                        class: "lp-dialog-panel w-full rounded-none border border-border bg-card p-6 text-card-foreground shadow-2xl",
+                        style: "background: var(--card, oklch(0.205 0.015 260)); color: var(--card-foreground, oklch(0.985 0 0)); border: 1px solid var(--border, oklch(1 0 0 / 12%)); border-radius: 0; padding: 1.5rem;",
                         div {
                             class: "lp-dialog-header flex flex-col space-y-1.5 pb-4",
                             h2 {
@@ -336,7 +336,7 @@ pub struct DialogContentProps {
 pub fn DialogContent(props: DialogContentProps) -> Element {
     let mut ctx = try_use_context::<DialogCtx>();
     let cls = join_classes(&[
-        "lp-dialog-content relative grid w-full max-w-lg gap-4 rounded-xl border border-border bg-card p-6 text-card-foreground shadow-2xl outline-none",
+        "lp-dialog-content relative grid w-full max-w-lg gap-4 rounded-none border border-border bg-card p-6 text-card-foreground shadow-2xl outline-none",
         props.class.as_deref().unwrap_or(""),
     ]);
     let close_test_id = format!("{}-close", props.test_id);
@@ -344,7 +344,7 @@ pub fn DialogContent(props: DialogContentProps) -> Element {
     rsx! {
         div {
             class: "{cls}",
-            style: "position: relative; width: 100%; background: var(--card, oklch(0.205 0.015 260)); color: var(--card-foreground, oklch(0.985 0 0)); border: 1px solid var(--border, oklch(1 0 0 / 12%)); border-radius: 0.75rem; padding: 1.5rem; box-shadow: 0 24px 48px oklch(0 0 0 / 0.55);",
+            style: "position: relative; width: 100%; background: var(--card, oklch(0.205 0.015 260)); color: var(--card-foreground, oklch(0.985 0 0)); border: 1px solid var(--border, oklch(1 0 0 / 12%)); border-radius: 0; padding: 1.5rem; box-shadow: 0 24px 48px oklch(0 0 0 / 0.55);",
             "data-state": "open",
             "data-testid": "{props.test_id}",
             aria_label: props.aria_label.as_deref().unwrap_or("Dialog content"),
