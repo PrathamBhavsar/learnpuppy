@@ -19,7 +19,7 @@ Use this skill whenever creating or modifying code in `crates/lp-ui` or `crates/
 3. **Component Architecture (`lp-ui`)**:
    - Follow the `DioxusLabs/components` (`dioxus-primitives`) and `shadcn/ui` dark-mode token architecture (`--background`, `--foreground`, `--card`, `--primary`, `--muted`, `--accent`, `--border`, `--ring`).
    - Use strongly-typed Rust enums for variants and sizes (`ButtonVariant`, `ButtonSize`, `BadgeVariant`) with `#[props(extends = GlobalAttributes)]` for clean attribute forwarding.
-   - Use inline SVG icon components (`crates/lp-ui/src/icons.rs`, Lucide paths) with `width`/`height`/`stroke="currentColor"`.
+   - Use inline SVG icon components (`crates/lp-ui/src/icons.rs`, Hugeicons paths) with `width`/`height`/`stroke="currentColor"`.
 4. **Interactive SVG Viewport for Knowledge Graph & Plan DAG**:
    - Render the Knowledge Graph and Plan DAG using a pure-Rust interactive `<svg>` canvas (`onwheel` zoom, `onmousedown`/`onmousemove`/`onmouseup` pan, `onclick` node selection, cubic-bezier edges, cluster hulls, mastery rings).
 5. **Dual-Target Dev & E2E Harness (`LP_E2E_PORT`)**:

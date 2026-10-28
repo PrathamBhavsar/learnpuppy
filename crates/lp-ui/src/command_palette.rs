@@ -528,7 +528,7 @@ pub fn CommandPalette(props: CommandPaletteProps) -> Element {
             // Palette Surface
             div {
                 class: "lp-command-palette-panel relative z-10 flex w-full max-w-xl flex-col overflow-hidden rounded-none border border-border bg-popover text-popover-foreground ring-1 ring-foreground/10 shadow-2xl",
-                style: "position: relative; z-index: 10; width: 100%; max-width: 36rem; background: var(--popover, oklch(0.21 0.015 260)); color: var(--popover-foreground, oklch(0.985 0 0)); border: 1px solid var(--border, oklch(1 0 0 / 14%)); border-radius: 0.75rem; overflow: hidden; box-shadow: 0 24px 48px oklch(0 0 0 / 0.6);",
+                style: "position: relative; z-index: 10; width: 100%; max-width: 36rem; background: var(--popover, oklch(0.21 0.015 260)); color: var(--popover-foreground, oklch(0.985 0 0)); border: 1px solid var(--border, oklch(1 0 0 / 14%)); overflow: hidden; box-shadow: 0 24px 48px oklch(0 0 0 / 0.6);",
                 onclick: move |evt: MouseEvent| evt.stop_propagation(),
 
                 // Search Form (strictly calls evt.prevent_default() on onsubmit)

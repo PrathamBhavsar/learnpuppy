@@ -26,7 +26,7 @@ To keep **100% Rust** as the centerpiece of this portfolio project while deliver
 3. **`crates/lp-ui` — Our Own Pure-Rust `shadcn/ui` + `dioxus-primitives` Component Engine**:
    - We cloned and audited both `DioxusLabs/components` (`dioxus-primitives`) and `rust-ui/dioxus-ui`.
    - **Critical Finding**: `rust-ui/dioxus-ui` has great OKLCH Tailwind dark-mode tokens (`tailwind.css`), **but** its interactive components (`Dialog`, `DropdownMenu`, `Sheet`, etc.) inject raw `<script>` tags with `setTimeout(setupDialog, 50)` DOM polling and depend on `wasm-bindgen`/`web-sys`/`gloo-timers`, which **do not compile on native macOS desktop (`aarch64-apple-darwin`)** and break when Dioxus re-renders!
-   - **Our Solution (`lp-ui`)**: We combine `dioxus-primitives`'s pure-Rust `Signal<T>` / `Memo<T>` / ARIA state patterns with `rust-ui/dioxus-ui`'s OKLCH dark-mode design tokens and Lucide SVG icons in a 100% pure-Rust, desktop-native crate (`crates/lp-ui`).
+   - **Our Solution (`lp-ui`)**: We combine `dioxus-primitives`'s pure-Rust `Signal<T>` / `Memo<T>` / ARIA state patterns with `rust-ui/dioxus-ui`'s OKLCH dark-mode design tokens and Hugeicons SVG icons in a 100% pure-Rust, desktop-native crate (`crates/lp-ui`).
 4. **`crates/lp-app` — Native macOS Visual Learning App (`learnpuppy-app`)**:
    - Launches a native macOS `WKWebView` window (`dioxus::desktop`) with a sleek dark-mode icon rail, an interactive `<svg>` Knowledge Graph Canvas (smooth wheel zoom, drag pan, cubic-bezier edges, birth-session cluster hulls, clickable node provenance drawer), a split-screen Visual Classroom (Mermaid Plan DAG viewport, interactive Question Dock with `1..5` confidence slider), and a visual FSRS 4-Choice Flashcard & CLI Decision Digest deck.
    - Includes a dual-mode `--e2e-port` (`LP_E2E_PORT`) local web harness so `tester-army/e2e` (`@e2e-dev/web` + Playwright + AI agent steps) can test every visual screen end-to-end.
@@ -61,7 +61,7 @@ learnpuppy/
 
 ```mermaid
 flowchart TD
-    APP["lp-app (bin: learnpuppy-app)\nDioxus 0.7 macOS Desktop + E2E Web Harness"] --> UI["lp-ui\nPure-Rust shadcn/dioxus-primitives Components & Lucide SVG Icons"]
+    APP["lp-app (bin: learnpuppy-app)\nDioxus 0.7 macOS Desktop + E2E Web Harness"] --> UI["lp-ui\nPure-Rust shadcn/dioxus-primitives Components & Hugeicons SVG Icons"]
     APP --> AGENT["lp-agent\nProber/Teacher/Practice, Sub-Agents, 3-Stage Graph Pipeline"]
     APP --> INGEST["lp-ingest\nClaude/Codex/AGY Transcript + Git Diff Ingestor & FSRS CardGen"]
     APP --> DRIVER["lp-cli-driver\nMulti-Account CLI Pool (claude 1..N, codex, agy) + FauxEngine"]
@@ -122,7 +122,7 @@ We leverage the distinct strengths of all three CLI ecosystems installed on this
 |---|---|---|---|---|---|
 | **Chief Orchestrator, Planner & Final Auditor** | `agy` (or `claude`) | `claude-opus-4-6-thinking` (`opus`) | `high` (`max` on `D60`) | `agy --model claude-opus-4-6-thinking --effort high --dangerously-skip-permissions --mode auto -p "..."` | Unmatched at cross-crate architecture, catching subtle state/concurrency bugs, and auditing full spec parity. |
 | **Rust Systems, Cargo & SVG Geometry Specialist** | `codex` | `gpt-5.4` / `gpt-6-luna` | `high` | `codex exec --dangerously-bypass-approvals-and-sandbox -c model_reasoning_effort="high" -C <wt> "..."` | Best at Cargo dependency resolution (`D00`), async backend bridging (`D20`), and deterministic 2D SVG graph/bezier math (`D22`). |
-| **Dioxus 0.7 Component & Visual Screen Specialist** | `agy` (or `claude`) | `claude-sonnet-4-6` (`sonnet`) | `high` | `agy --model claude-sonnet-4-6 --effort high --dangerously-skip-permissions --mode auto -p "..."` | Best at crafting polished `shadcn/ui` CSS/OKLCH themes, Lucide SVG icons, `lp-ui` primitives (`D10`, `D11`), Classroom UI (`D21`), and FSRS/Digest UI (`D23`). |
+| **Dioxus 0.7 Component & Visual Screen Specialist** | `agy` (or `claude`) | `claude-sonnet-4-6` (`sonnet`) | `high` | `agy --model claude-sonnet-4-6 --effort high --dangerously-skip-permissions --mode auto -p "..."` | Best at crafting polished `shadcn/ui` CSS/OKLCH themes, Hugeicons SVG icons, `lp-ui` primitives (`D10`, `D11`), Classroom UI (`D21`), and FSRS/Digest UI (`D23`). |
 | **E2E (`tester-army/e2e`) & Code Review (`ocr`) Runner** | `agy` | `gemini-3.1-pro-high` | `high` | `agy --model gemini-3.1-pro-high --effort high --dangerously-skip-permissions --mode auto -p "..."` | Fast, reliable harness wiring for `tester-army/e2e`, Playwright/SSR assertions (`D30`), and `alibaba/open-code-review` (`ocr`) remediation (`D60`). |
 
 ---
@@ -131,7 +131,7 @@ We leverage the distinct strengths of all three CLI ecosystems installed on this
 
 ```mermaid
 flowchart TD
-    D00["D00 (Codex High)\nWorkspace Cargo.toml + lp-ui & lp-app Scaffolds"] --> D10["D10 (Sonnet 4.6 High)\nlp-ui Theme, Lucide Icons, Button, Badge, Card, Progress, MasteryRing, CodeBlock"]
+    D00["D00 (Codex High)\nWorkspace Cargo.toml + lp-ui & lp-app Scaffolds"] --> D10["D10 (Sonnet 4.6 High)\nlp-ui Theme, Hugeicons Icons, Button, Badge, Card, Progress, MasteryRing, CodeBlock"]
     D00 --> D11["D11 (Sonnet 4.6 High)\nlp-ui Dialog, Tabs, Tooltip, Slider, Switch, ScrollArea, SplitPane, CommandPalette"]
     D10 --> D20["D20 (Codex High)\nlp-app DesktopBackend Bridge, AppState Signals, Icon Rail Shell & Accounts Modal"]
     D11 --> D20
@@ -156,7 +156,7 @@ flowchart TD
   - **Disjoint Files**: `crates/lp-ui/src/{theme.rs, icons.rs, primitives.rs, code_block.rs}`.
   - **Scope**:
     - `theme.rs`: Complete OKLCH dark-mode stylesheet (`LP_THEME_CSS`) with shadcn variables, utility classes, mastery ring colors, custom thin scrollbars, and shimmer animations.
-    - `icons.rs`: 20+ pure-Rust Lucide SVG icon components (`IconGraph`, `IconClassroom`, `IconDigest`, `IconSparkles`, `IconCheck`, `IconX`, `IconChevronRight`, `IconChevronDown`, `IconSearch`, `IconSettings`, `IconTerminal`, `IconBook`, `IconBrain`, `IconRefresh`, `IconPlay`, `IconShield`, `IconPlus`, `IconTrash`, `IconZoomIn`, `IconZoomOut`, `IconMaximize`).
+    - `icons.rs`: 20+ pure-Rust Hugeicons SVG icon components (`IconGraph`, `IconClassroom`, `IconDigest`, `IconSparkles`, `IconCheck`, `IconX`, `IconChevronRight`, `IconChevronDown`, `IconSearch`, `IconSettings`, `IconTerminal`, `IconBook`, `IconBrain`, `IconRefresh`, `IconPlay`, `IconShield`, `IconPlus`, `IconTrash`, `IconZoomIn`, `IconZoomOut`, `IconMaximize`).
     - `primitives.rs`: `Button` (`Primary`, `Secondary`, `Outline`, `Ghost`, `Destructive`, `Link`; sizes `Xs..Lg`, `Icon`), `Badge`, `Card` (`CardHeader`, `CardTitle`, `CardDescription`, `CardContent`, `CardFooter`), `Separator`, `Progress`, and SVG `MasteryRing` (0..100% circular ring).
     - `code_block.rs`: Markdown + `syntect` syntax-highlighted block renderer with language header and copy button.
   - **Tests**: `dioxus-ssr` unit tests verifying rendered HTML, classes, ARIA attributes, and SVG paths for every component.

@@ -29,6 +29,35 @@ export function hexToOklch(hex: string, lift = 0, alpha = 1): string {
   return `oklch(${number(lightness)} ${number(chroma)} ${number(hue, 3)}${alpha === 1 ? "" : ` / ${number(alpha * 100)}%`})`;
 }
 
+function hexToOklchParts(hex: string): { l: number; c: number; h: number } {
+  const [l, c, h] = hexToOklch(hex).match(/[\d.]+/g)!.map(Number);
+  return { l, c, h };
+}
+
+/** Lower OKLCH lightness (keeping chroma and hue) until the color reaches `min` WCAG contrast on white. */
+export function darkenForWhite(hex: string, min = 3.2): string {
+  const base = hexToOklchParts(hex);
+  const toLin = (L: number, C: number, H: number) => {
+    const a = C * Math.cos((H * Math.PI) / 180);
+    const b = C * Math.sin((H * Math.PI) / 180);
+    const l = (L + 0.3963377774 * a + 0.2158037573 * b) ** 3;
+    const m = (L - 0.1055613458 * a - 0.0638541728 * b) ** 3;
+    const s = (L - 0.0894841775 * a - 1.291485548 * b) ** 3;
+    const r = 4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s;
+    const g = -1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s;
+    const bl = -0.0041960863 * l - 0.7034186147 * m + 1.707614701 * s;
+    return [r, g, bl].map((v) => Math.min(1, Math.max(0, v)));
+  };
+  const contrast = (L: number) => {
+    const [r, g, b] = toLin(L, base.c, base.h);
+    return 1.05 / (0.2126 * r + 0.7152 * g + 0.0722 * b + 0.05);
+  };
+  let L = base.l;
+  while (L > 0.2 && contrast(L) < min) L -= 0.005;
+  const n = (v: number, d = 6) => Number(v.toFixed(d));
+  return `oklch(${n(L)} ${n(base.c)} ${n(base.h, 3)})`;
+}
+
 /** Torlink hex values from docs/DESIGN_SYSTEM_PLAN.md; preset neutral light surfaces. */
 export function themeTokens(): string {
   const color = hexToOklch;
@@ -82,8 +111,8 @@ export function themeTokens(): string {
     "sidebar-foreground": foreground,
     "sidebar-primary": primary,
     "sidebar-primary-foreground": background,
-    "sidebar-accent": accent,
-    "sidebar-accent-foreground": background,
+    "sidebar-accent": muted,
+    "sidebar-accent-foreground": foreground,
     "sidebar-border": color("#6b6577", 0, 0.3),
     "sidebar-ring": primary,
     ...shared,
@@ -98,26 +127,38 @@ export function themeTokens(): string {
     popover: color("#ffffff"),
     "popover-foreground": color("#0a0a0a"),
     primary: lightPrimary,
-    "primary-foreground": color("#fafafa"),
+    "primary-foreground": "oklch(0.985 0 0)",
     secondary: color("#f5f5f5"),
     "secondary-foreground": color("#171717"),
     muted: color("#f5f5f5"),
     "muted-foreground": color("#737373"),
-    accent: color("#f5f5f5"),
-    "accent-foreground": color("#171717"),
-    destructive: color("#e7000b"),
+    accent: "oklch(0.205 0 0)",
+    "accent-foreground": "oklch(0.985 0 0)",
+    destructive: "oklch(0.577 0.245 27.325)",
     "destructive-foreground": color("#fafafa"),
     border: color("#e5e5e5"),
     input: color("#e5e5e5"),
     ring: lightPrimary,
     sidebar: color("#fafafa"),
     "sidebar-foreground": color("#0a0a0a"),
-    "sidebar-primary": lightPrimary,
-    "sidebar-primary-foreground": color("#fafafa"),
-    "sidebar-accent": color("#f5f5f5"),
-    "sidebar-accent-foreground": color("#171717"),
+    "sidebar-primary": "oklch(0.205 0 0)",
+    "sidebar-primary-foreground": "oklch(0.985 0 0)",
+    "sidebar-accent": "oklch(0.97 0 0)",
+    "sidebar-accent-foreground": "oklch(0.205 0 0)",
     "sidebar-border": color("#e5e5e5"),
-    "sidebar-ring": lightPrimary,
+    "sidebar-ring": "oklch(0.708 0 0)",
+    // Darker light-mode variants: >=3:1 on white.
+    success: darkenForWhite("#86d6a2"),
+    warning: darkenForWhite("#f0c560"),
+    info: darkenForWhite("#7db8f0"),
+    "chart-1": darkenForWhite("#a78bfa"),
+    "chart-2": darkenForWhite("#d8b4fe"),
+    "chart-3": darkenForWhite("#5fd0c5"),
+    "chart-4": darkenForWhite("#f6a55c"),
+    "chart-5": darkenForWhite("#86d6a2"),
+    "mastery-novice": darkenForWhite("#ee7d92"),
+    "mastery-learning": darkenForWhite("#f0c560"),
+    "mastery-mastered": darkenForWhite("#86d6a2"),
   };
   const block = (selector: string, scheme: string, tokens: Record<string, string>) =>
     `${selector} {\n  color-scheme: ${scheme};\n${Object.entries(tokens).map(([name, value]) => `  --${name}: ${value};`).join("\n")}\n}`;

@@ -527,7 +527,7 @@ pub fn Slider(props: SliderProps) -> Element {
                 "data-testid": "{track_test_id}",
                 div {
                     class: "lp-slider-track relative h-1 w-full overflow-hidden rounded-none bg-muted",
-                    style: "position: relative; height: 0.5rem; width: 100%; border-radius: 9999px; background: var(--secondary, oklch(0.269 0.015 260));",
+                    style: "position: relative; width: 100%; background: var(--secondary, oklch(0.269 0.015 260));",
                     div {
                         class: "lp-slider-range h-full bg-primary transition-all",
                         style: "height: 100%; width: {fill_pct:.1}%; background: var(--primary, oklch(0.72 0.16 250));",
