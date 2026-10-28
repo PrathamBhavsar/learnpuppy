@@ -27,7 +27,7 @@ To make LearnPuppy a standout Rust portfolio piece, the UI is split into two foc
 Synthesizes the best parts of `DioxusLabs/components` (`dioxus-primitives` controlled/uncontrolled signal patterns and ARIA attributes) and `rust-ui/dioxus-ui` (OKLCH dark-mode design tokens and shadcn class ergonomics) while eliminating all inline-JS and `wasm-bindgen` anti-patterns:
 
 - **`theme.rs`**: Injects the embedded dark-first OKLCH stylesheet (`LP_THEME_CSS`) defining `--background`, `--foreground`, `--card`, `--popover`, `--primary`, `--secondary`, `--muted`, `--accent`, `--destructive`, `--success`, `--warning`, `--info`, `--border`, `--ring`, and mastery ring tokens (`--mastery-novice`, `--mastery-learning`, `--mastery-mastered`).
-- **`icons.rs`**: Zero-dependency pure-Rust SVG icon components (`IconGraph`, `IconClassroom`, `IconDigest`, `IconSparkles`, `IconCheck`, `IconX`, `IconChevronRight`, `IconChevronDown`, `IconSearch`, `IconSettings`, `IconTerminal`, `IconBook`, `IconBrain`, `IconRefresh`, `IconPlay`, `IconShield`, `IconPlus`, `IconTrash`) rendering crisp 24x24 `stroke="currentColor"` Lucide paths.
+- **`icons.rs`**: Zero-dependency pure-Rust SVG icon components (`IconGraph`, `IconClassroom`, `IconDigest`, `IconSparkles`, `IconCheck`, `IconX`, `IconChevronRight`, `IconChevronDown`, `IconSearch`, `IconSettings`, `IconTerminal`, `IconBook`, `IconBrain`, `IconRefresh`, `IconPlay`, `IconShield`, `IconPlus`, `IconTrash`) rendering crisp 24x24 `stroke="currentColor"` Hugeicons paths.
 - **Primitive & Composite Components**:
   1. `Button` (`ButtonVariant::{Primary, Secondary, Outline, Ghost, Destructive, Link}`, `ButtonSize::{Xs, Sm, Default, Lg, Icon}`)
   2. `Badge` (`BadgeVariant::{Default, Secondary, Success, Warning, Destructive, Outline, Phase}`)
