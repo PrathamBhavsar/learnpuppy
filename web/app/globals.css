@@ -140,14 +140,19 @@
 
 :root {
   --primary: oklch(0.569 0.18 291.77);
-  --primary-foreground: oklch(0.928 0.023 299.35);
+  --primary-foreground: oklch(0.985 0 0);
   --ring: oklch(0.569 0.18 291.77);
-  --success: oklch(0.81 0.108 154.73);
-  --warning: oklch(0.842 0.129 86.28);
-  --info: oklch(0.764 0.102 248.02);
-  --mastery-novice: oklch(0.722 0.14 9.42);
-  --mastery-learning: oklch(0.842 0.129 86.28);
-  --mastery-mastered: oklch(0.81 0.108 154.73);
+  --chart-1: oklch(0.663969 0.159168 293.541);
+  --chart-2: oklch(0.661759 0.108229 306.383);
+  --chart-3: oklch(0.639104 0.104304 186.702);
+  --chart-4: oklch(0.657566 0.130895 61.053);
+  --chart-5: oklch(0.635467 0.108339 154.727);
+  --success: oklch(0.635467 0.108339 154.727);
+  --warning: oklch(0.651717 0.128566 86.282);
+  --info: oklch(0.648768 0.101546 248.024);
+  --mastery-novice: oklch(0.666853 0.139819 9.424);
+  --mastery-learning: oklch(0.651717 0.128566 86.282);
+  --mastery-mastered: oklch(0.635467 0.108339 154.727);
 }
 
 .dark {

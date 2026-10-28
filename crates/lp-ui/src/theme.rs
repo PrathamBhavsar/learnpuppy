@@ -30,8 +30,8 @@ pub const LP_THEME_CSS: &str = r#"
   --sidebar-foreground: oklch(0.927775 0.023393 299.352);
   --sidebar-primary: oklch(0.708969 0.159168 293.541);
   --sidebar-primary-foreground: oklch(0.141628 0.017782 296.098);
-  --sidebar-accent: oklch(0.826759 0.108229 306.383);
-  --sidebar-accent-foreground: oklch(0.141628 0.017782 296.098);
+  --sidebar-accent: oklch(0.221628 0.017782 296.098);
+  --sidebar-accent-foreground: oklch(0.927775 0.023393 299.352);
   --sidebar-border: oklch(0.518659 0.028864 300.595 / 30%);
   --sidebar-ring: oklch(0.708969 0.159168 293.541);
   --destructive: oklch(0.721853 0.139819 9.424);
@@ -51,7 +51,7 @@ pub const LP_THEME_CSS: &str = r#"
   --mastery-learning: oklch(0.841717 0.128566 86.282);
   --mastery-mastered: oklch(0.810467 0.108339 154.727);
   --radius: 0.625rem;
-  --font-sans: "Geist Mono", "SF Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Inter", system-ui, sans-serif;
   --font-mono: "Geist Mono", "SF Mono", "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   --font-heading: var(--font-mono);
 }
@@ -65,42 +65,42 @@ pub const LP_THEME_CSS: &str = r#"
   --popover: oklch(1 0 0);
   --popover-foreground: oklch(0.144788 0 0);
   --primary: oklch(0.569023 0.179504 291.767);
-  --primary-foreground: oklch(0.985104 0 0);
+  --primary-foreground: oklch(0.985 0 0);
   --secondary: oklch(0.970151 0 0);
   --secondary-foreground: oklch(0.204627 0 0);
   --muted: oklch(0.970151 0 0);
   --muted-foreground: oklch(0.555527 0 0);
-  --accent: oklch(0.970151 0 0);
-  --accent-foreground: oklch(0.204627 0 0);
+  --accent: oklch(0.205 0 0);
+  --accent-foreground: oklch(0.985 0 0);
   --border: oklch(0.921906 0 0);
   --input: oklch(0.921906 0 0);
   --ring: oklch(0.569023 0.179504 291.767);
   --sidebar: oklch(0.985104 0 0);
   --sidebar-foreground: oklch(0.144788 0 0);
-  --sidebar-primary: oklch(0.569023 0.179504 291.767);
-  --sidebar-primary-foreground: oklch(0.985104 0 0);
-  --sidebar-accent: oklch(0.970151 0 0);
-  --sidebar-accent-foreground: oklch(0.204627 0 0);
+  --sidebar-primary: oklch(0.205 0 0);
+  --sidebar-primary-foreground: oklch(0.985 0 0);
+  --sidebar-accent: oklch(0.97 0 0);
+  --sidebar-accent-foreground: oklch(0.205 0 0);
   --sidebar-border: oklch(0.921906 0 0);
-  --sidebar-ring: oklch(0.569023 0.179504 291.767);
-  --destructive: oklch(0.583043 0.238666 28.476);
+  --sidebar-ring: oklch(0.708 0 0);
+  --destructive: oklch(0.577 0.245 27.325);
   --destructive-foreground: oklch(0.985104 0 0);
-  --success: oklch(0.810467 0.108339 154.727);
+  --success: oklch(0.635467 0.108339 154.727);
   --success-foreground: oklch(0.141628 0.017782 296.098);
-  --warning: oklch(0.841717 0.128566 86.282);
+  --warning: oklch(0.651717 0.128566 86.282);
   --warning-foreground: oklch(0.141628 0.017782 296.098);
-  --info: oklch(0.763768 0.101546 248.024);
+  --info: oklch(0.648768 0.101546 248.024);
   --info-foreground: oklch(0.141628 0.017782 296.098);
-  --chart-1: oklch(0.708969 0.159168 293.541);
-  --chart-2: oklch(0.826759 0.108229 306.383);
-  --chart-3: oklch(0.789104 0.104304 186.702);
-  --chart-4: oklch(0.787566 0.130895 61.053);
-  --chart-5: oklch(0.810467 0.108339 154.727);
-  --mastery-novice: oklch(0.721853 0.139819 9.424);
-  --mastery-learning: oklch(0.841717 0.128566 86.282);
-  --mastery-mastered: oklch(0.810467 0.108339 154.727);
+  --chart-1: oklch(0.663969 0.159168 293.541);
+  --chart-2: oklch(0.661759 0.108229 306.383);
+  --chart-3: oklch(0.639104 0.104304 186.702);
+  --chart-4: oklch(0.657566 0.130895 61.053);
+  --chart-5: oklch(0.635467 0.108339 154.727);
+  --mastery-novice: oklch(0.666853 0.139819 9.424);
+  --mastery-learning: oklch(0.651717 0.128566 86.282);
+  --mastery-mastered: oklch(0.635467 0.108339 154.727);
   --radius: 0.625rem;
-  --font-sans: "Geist Mono", "SF Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Inter", system-ui, sans-serif;
   --font-mono: "Geist Mono", "SF Mono", "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   --font-heading: var(--font-mono);
 }
@@ -319,18 +319,19 @@ button, input, textarea, select { font-family: inherit; }
 .text-xs { font-size: 0.75rem; line-height: 1rem; }
 .text-sm { font-size: 0.8125rem; line-height: 1.25rem; }
 .p-\[3px\] { padding: 3px; }
+.h-1 { height: 0.25rem; }
 .h-7 { height: 1.75rem; }
 .h-8 { height: 2rem; }
 .w-7 { width: 1.75rem; }
 
 h1, h2, h3, h4, h5, h6, .lp-card-title { font-family: var(--font-heading); }
-.lp-btn { height: 1.75rem; padding: 0 0.625rem; font-size: 0.75rem; border-radius: calc(var(--radius) - 2px); gap: 0.375rem; }
+.lp-btn { height: 1.75rem; padding: 0 0.625rem; font-size: 0.75rem; border-radius: 0; gap: 0.375rem; }
 .lp-btn-xs { height: 1.5rem; padding: 0 0.5rem; font-size: 0.6875rem; }
 .lp-btn-sm { height: 1.75rem; padding: 0 0.625rem; font-size: 0.75rem; }
 .lp-btn-default { height: 1.75rem; padding: 0 0.75rem; font-size: 0.75rem; }
 .lp-btn-lg { height: 2rem; padding: 0 1rem; font-size: 0.8125rem; }
 .lp-btn-icon { height: 1.75rem; width: 1.75rem; padding: 0; }
-.lp-badge { font-size: 0.6875rem; border-radius: calc(var(--radius) - 2px); }
+.lp-badge { font-size: 0.6875rem; border-radius: 0; }
 .lp-card { border-radius: 0; box-shadow: 0 0 0 1px color-mix(in oklch, var(--foreground) 10%, transparent); }
 .lp-card-title { font-size: 0.875rem; font-weight: 500; }
 .lp-card-description { font-size: 0.75rem; }
@@ -468,6 +469,58 @@ mod tests {
             !LP_THEME_CSS.contains('#'),
             "raw hex colors must not remain"
         );
+    }
+
+    /// Key tokens must match the web preset (`web/app/globals.css`), the source of truth.
+    #[test]
+    fn key_tokens_match_web_palette() {
+        let decls = |selector: &str| -> std::collections::BTreeMap<String, String> {
+            let block = LP_THEME_CSS
+                .split_once(selector)
+                .expect("selector")
+                .1
+                .split_once('}')
+                .expect("close")
+                .0;
+            block
+                .lines()
+                .filter_map(|l| l.trim().trim_end_matches(';').split_once(':'))
+                .map(|(k, v)| (k.to_string(), v.trim().to_string()))
+                .collect()
+        };
+        let dark = decls(":root, .dark {");
+        let light = decls(".light {");
+        // (selector, token, web value)
+        let expected_dark = [
+            ("--primary", "oklch(0.708969 0.159168 293.541)"),
+            ("--sidebar-accent", "oklch(0.221628 0.017782 296.098)"),
+            ("--sidebar-ring", "oklch(0.708969 0.159168 293.541)"),
+        ];
+        for (k, v) in expected_dark {
+            assert_eq!(dark[k], v, "dark {k}");
+        }
+        let expected_light = [
+            ("--primary", "oklch(0.569023 0.179504 291.767)"),
+            ("--primary-foreground", "oklch(0.985 0 0)"),
+            ("--accent", "oklch(0.205 0 0)"),
+            ("--destructive", "oklch(0.577 0.245 27.325)"),
+            ("--sidebar-primary", "oklch(0.205 0 0)"),
+            ("--sidebar-ring", "oklch(0.708 0 0)"),
+            ("--ring", "oklch(0.569023 0.179504 291.767)"),
+        ];
+        for (k, v) in expected_light {
+            assert_eq!(light[k], v, "light {k}");
+        }
+        for k in ["--chart-1", "--chart-5", "--success", "--warning", "--info"] {
+            let l: f64 = light[k]
+                .trim_start_matches("oklch(")
+                .split_whitespace()
+                .next()
+                .unwrap()
+                .parse()
+                .unwrap();
+            assert!(l < 0.7, "light {k} must be darker for contrast on white");
+        }
     }
 
     #[test]
