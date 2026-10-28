@@ -32,7 +32,7 @@ pub(super) const ASK: ToolSpec = ToolSpec {
 };
 pub(super) const PROBE_DONE: ToolSpec = ToolSpec {
     name: "probe_done",
-    usage: "end the probe once no question is unanswered. {}",
+    usage: "end the probe once no question is unanswered. {missed?:[{question,learnerAnswer,correct}]} list every answer that was wrong or missed, including free-text recalls",
 };
 pub(super) const PLAN_INIT: ToolSpec = ToolSpec {
     name: "plan_init",
@@ -147,11 +147,86 @@ pub(super) fn ask(call: &Call) -> Result<Effect, String> {
     check(problems)
 }
 
-pub(super) fn probe_done(s: &mut Session) -> Result<Effect, String> {
+#[derive(Default, Deserialize)]
+struct ProbeDone {
+    #[serde(default)]
+    missed: Vec<Missed>,
+}
+
+/// A probe answer the learner got wrong or missed.
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(super) struct Missed {
+    question: String,
+    learner_answer: String,
+    correct: String,
+}
+
+/// Wrong `probe` answers, judged mechanically against the committed `correctAnswer`.
+fn wrong_choices(s: &Session) -> Vec<Missed> {
+    let label = |args: &serde_json::Value, v: &str| {
+        let opt = args["options"]
+            .as_array()
+            .and_then(|o| o.iter().find(|o| o["value"] == v));
+        opt.and_then(|o| o["label"].as_str())
+            .unwrap_or(v)
+            .to_string()
+    };
+    let mut out = Vec::new();
+    for c in s.calls().filter(|c| c.name == "probe") {
+        let Some(Msg::Answer { text, .. }) = s
+            .messages
+            .iter()
+            .find(|m| matches!(m, Msg::Answer { call_id, .. } if *call_id == c.id))
+        else {
+            continue;
+        };
+        let (Some(right), Some(sel)) = (
+            c.args["correctAnswer"].as_str(),
+            text.strip_prefix("selected: ")
+                .and_then(|r| r.split(';').next()),
+        ) else {
+            continue;
+        };
+        if sel != right {
+            out.push(Missed {
+                question: c.args["question"].as_str().unwrap_or_default().to_string(),
+                learner_answer: label(&c.args, sel),
+                correct: label(&c.args, right),
+            });
+        }
+    }
+    out
+}
+
+pub(super) fn probe_done(s: &mut Session, call: &Call) -> Result<Effect, String> {
+    let given: ProbeDone = parse(call)?;
+    probe_done_with(s, given.missed)
+}
+
+/// Ends the probe and queues the handoff steer, carrying every missed answer to the teacher.
+pub(super) fn probe_done_with(s: &mut Session, mut missed: Vec<Missed>) -> Result<Effect, String> {
     probe_done_check(s.pending_question(), &s.outcomes()).map_err(|e| e.to_string())?;
-    s.steers
-        .push((format!("steer_probe_{}", s.id), HANDOFF_TEXT.to_string()));
-    Ok(Effect::Ack(PROBE_DONE_ACK_TEXT.to_string()))
+    for w in wrong_choices(s) {
+        if !missed.iter().any(|m| m.question == w.question) {
+            missed.push(w);
+        }
+    }
+    let mut text = HANDOFF_TEXT.to_string();
+    if !missed.is_empty() {
+        text.push_str(
+            "\nThe learner missed or got wrong these probe answers. Correct each one at the plan node it belongs to (explain or quiz it there) before moving on:",
+        );
+        for m in &missed {
+            text.push_str(&format!(
+                "\n- question: {} | learner answered: {} | correct: {}",
+                m.question, m.learner_answer, m.correct
+            ));
+        }
+    }
+    s.steers.push((format!("steer_probe_{}", s.id), text));
+    // The turn ends here; the caller's wake delivers the handoff and the teacher starts fresh.
+    Ok(Effect::End(PROBE_DONE_ACK_TEXT.to_string()))
 }
 
 #[derive(Deserialize)]
