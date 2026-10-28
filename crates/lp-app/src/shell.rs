@@ -102,7 +102,7 @@ pub fn Shell() -> Element {
                     }
                 }
                 main { "aria-label": view.label(), "data-testid": "main-view",
-                    style: "flex: 1; min-width: 0; min-height: 0; overflow: auto; padding: 1.5rem;",
+                    style: "flex: 1; min-width: 0; min-height: 0; overflow-x: hidden; overflow-y: auto; padding: 1.5rem;",
                     match view {
                         View::Graph => rsx! { GraphCanvasView {} },
                         View::Classroom | View::Plan => rsx! { ClassroomView {} },
