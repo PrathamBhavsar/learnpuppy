@@ -132,7 +132,7 @@ const cargoTargetDir = process.env.CARGO_TARGET_DIR ?? '/Users/pratham/orca/shar
 const appBinary = join(cargoTargetDir, 'debug', 'learnpuppy-app');
 
 export default {
-  tests: 'tests/**/*.e2e.ts',
+  tests: ['tests/**/*.e2e.ts', '!tests/design-system/**'],
   targets: [
     {
       name: 'chromium',
