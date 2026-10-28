@@ -1,65 +1,71 @@
-# LearnPuppy (`learnpuppy`) — Master Architecture & Phase-Wise Execution Plan
+# LearnPuppy (`learnpuppy`) — Master Architecture & Multi-Worktree Execution Plan (Dioxus 0.7 + `lp-ui` Visual Desktop)
 
 **Project Path**: `/Users/pratham/code/learnpuppy`  
-**Reference Codebases**:
+**Isolated Legacy TUI/CLI Branch**: `legacy/tui-cli` (preserves the complete 6-crate Ratatui CLI/TUI build)  
+**Target Platform Rollout Order**:
+1. **macOS Native Desktop (`aarch64-apple-darwin` via Dioxus 0.7 `WKWebView`)** — **Active Deliverable (`Phase D`)**
+2. **Windows Native Desktop (`x86_64-pc-windows-msvc` via WebView2)** — **Next (`TODO: T70`)**
+3. **iOS & Android Mobile Companion (`dioxus` `mobile` + LAN/file FSRS & Graph sync)** — **Last (`TODO: T80`)**
+
+**Reference Codebases & Installed Tooling**:
 - [`amosblomqvist/learnharness`](https://github.com/amosblomqvist/learnharness.git) (Reverse-engineered via [`morluto/rea`](https://github.com/morluto/rea) in [`docs/REVERSE_ENGINEERING.md`](./REVERSE_ENGINEERING.md))
-- `/Users/pratham/code/tracker` (Local CLI session ingestion, decision distillation, FSRS spaced-repetition digest)
-- `/Users/pratham/code/bunfiiliate` & [`PrathamBhavsar/perma-brain`](https://github.com/PrathamBhavsar/perma-brain) (OKF brain structure, Orca multi-agent orchestration, Ponytail discipline)
+- `/Users/pratham/code/tracker` (Local CLI session ingestion, decision distillation, FSRS v5 spaced-repetition digest)
+- [`DioxusLabs/components`](https://github.com/DioxusLabs/components) (`/tmp/dioxus-components`) & [`rust-ui/dioxus-ui`](https://github.com/rust-ui/dioxus-ui) (`/tmp/rust-ui-dioxus`) — audited for our pure-Rust `lp-ui` component crate
+- [`humanlayer/skills`](https://github.com/humanlayer/skills) (`/tmp/humanlayer-skills`) — installed in `.claude/skills/` and `.agents/skills/` (`rpi`, `show-me`, `visual-pr`, `improve-claude-md`, `build-iterated-agentic-loop`, `design-control-loop`)
+- [`tester-army/e2e`](https://github.com/tester-army/e2e) (`/tmp/tester-army-e2e`) & [`alibaba/open-code-review`](https://github.com/alibaba/open-code-review) (`ocr`) — E2E verification and automated line-level code review
 
 ---
 
-## 0. Executive Summary & Product Vision
+## 0. Executive Summary: Why We Pivoted the UI to Dioxus 0.7 + `lp-ui`
 
-**LearnPuppy** is a pure-Rust, zero-Electron, single-binary CLI + 60fps Terminal User Interface (`ratatui`) learning harness and spaced-repetition engine. It combines:
-1. **100% of `learnharness`'s cognitive pedagogy**:
-   - **Prober -> Teacher split** (`probe_done` seam tool, strand floor/ceiling assessment).
-   - **Formal Dependency Plan DAG** (`plan_init` Mermaid-subset parser, derived `current`/`visited`/`upcoming` node status from `quiz`/`explain` calls).
-   - **One Reasoning Step + Mandatory Graded Check Rhythm** (`probe`/`recall` and `quiz`/`explain` with seeded Fisher-Yates option shuffling, `1..5` confidence slider, and dual `readingThinking` + `thinking` channels).
-   - **Async "Ack Now, Steer Later" Sub-Agents** (`researcher`, `pdf-reader`, `visual-maker`, `demo-builder` with deterministic `steer_<jobId>` wake delivery and process-wide 3-permit concurrency semaphore).
-   - **Global Cross-Session Knowledge Graph** (3-stage `Extractor -> Verdicts-Only Auditor -> Deterministic Merger` with transitive ancestry-cover `simplify_chains`, birth-session clustering, Braille force-directed Graph Canvas, and 3-level collapsible Chain Table).
-   - **Adaptive Practice Sessions** (`problem`/`conclude` tools, committed `modelSolution`, `R0..R5` hint ladder, miss classification, and retest queue).
-2. **Zero-Config Local CLI Authentication & Multi-Account Pool**:
-   - Automatically detects and uses local CLI logins already active on the machine:
-     - **Claude Code (`claude`)**: Discovers **every distinct Claude subscription account** on disk (`~/.claude`, `~/.claude-accounts/*`, `~/.claude-work`, plus user-configured `CLAUDE_CONFIG_DIR` profiles), reading `.claude.json` (`oauthAccount.accountUuid`, `emailAddress`, `seatTier`, `userRateLimitTier`) and treating each as an **independent rate-limit bucket** with automatic failover, cooldown tracking, and quota telemetry.
-     - **Codex CLI (`codex`)**: Auto-detects `~/.codex/auth.json` (`chatgpt` mode, e.g., `gpt-5.4`) and executes via sandboxed `codex exec`.
-     - **Antigravity CLI (`agy`)**: Auto-detects `~/.gemini/oauth_creds.json` and executes via sandboxed `agy -p --output-format json`.
-     - **Optional BYOK HTTP Fallback**: Direct OpenAI/Anthropic/OpenRouter HTTP streaming via `reqwest` when API keys are configured.
-3. **Learn From Your Own Local CLI History & Codebases (`/Users/pratham/code/tracker` Port)**:
-   - Incrementally ingests local transcripts from Claude (`~/.claude/projects/**/*.jsonl` across all accounts), Codex (`~/.codex/sessions/**/*.jsonl`), and Antigravity (`~/.gemini/antigravity-cli/conversation_summaries.db` via safe temp snapshot copy), joined with Git commits/diffs from allowlisted repos (starting with `/Users/pratham/code/tracker` and `/Users/pratham/code/bunfiiliate` to teach **System Design** and **Rust**).
-   - Distills architectural decisions (`what`, `why`, `basis`, `alternatives`, `risk`), folds them into the Knowledge Graph, and generates self-contained 4-choice FSRS v5 spaced-repetition cards (`why`, `predict`, `bug`, `trace`, `ownership`, `cloze`).
+Visual learning requires **spatial memory, clickable icons, an interactive zoomable Knowledge Graph canvas, visual Mermaid/DAG mastery rings, and instant mouse + keyboard ergonomics**. A terminal-only view (`ratatui`) sacrifices quick icons and visual hierarchy.
+
+To keep **100% Rust** as the centerpiece of this portfolio project while delivering a flagship native desktop UI:
+1. **Legacy CLI/TUI Preserved in Isolation**: The completed 28k-line Ratatui TUI + CLI implementation is frozen on git branch `legacy/tui-cli`.
+2. **Zero Backend Rewrite**: All five core Rust crates (`lp-core`, `lp-store`, `lp-cli-driver`, `lp-agent`, `lp-ingest`) remain 100% intact and power the desktop app directly in-process with zero Electron/Node.js overhead.
+3. **`crates/lp-ui` — Our Own Pure-Rust `shadcn/ui` + `dioxus-primitives` Component Engine**:
+   - We cloned and audited both `DioxusLabs/components` (`dioxus-primitives`) and `rust-ui/dioxus-ui`.
+   - **Critical Finding**: `rust-ui/dioxus-ui` has great OKLCH Tailwind dark-mode tokens (`tailwind.css`), **but** its interactive components (`Dialog`, `DropdownMenu`, `Sheet`, etc.) inject raw `<script>` tags with `setTimeout(setupDialog, 50)` DOM polling and depend on `wasm-bindgen`/`web-sys`/`gloo-timers`, which **do not compile on native macOS desktop (`aarch64-apple-darwin`)** and break when Dioxus re-renders!
+   - **Our Solution (`lp-ui`)**: We combine `dioxus-primitives`'s pure-Rust `Signal<T>` / `Memo<T>` / ARIA state patterns with `rust-ui/dioxus-ui`'s OKLCH dark-mode design tokens and Lucide SVG icons in a 100% pure-Rust, desktop-native crate (`crates/lp-ui`).
+4. **`crates/lp-app` — Native macOS Visual Learning App (`learnpuppy-app`)**:
+   - Launches a native macOS `WKWebView` window (`dioxus::desktop`) with a sleek dark-mode icon rail, an interactive `<svg>` Knowledge Graph Canvas (smooth wheel zoom, drag pan, cubic-bezier edges, birth-session cluster hulls, clickable node provenance drawer), a split-screen Visual Classroom (Mermaid Plan DAG viewport, interactive Question Dock with `1..5` confidence slider), and a visual FSRS 4-Choice Flashcard & CLI Decision Digest deck.
+   - Includes a dual-mode `--e2e-port` (`LP_E2E_PORT`) local web harness so `tester-army/e2e` (`@e2e-dev/web` + Playwright + AI agent steps) can test every visual screen end-to-end.
 
 ---
 
-## 1. System Architecture & Workspace Crate Topology
-
-LearnPuppy is organized as a **6-crate Cargo workspace** enforcing strict hexagonal dependency rules (inner crates never depend on outer crates; `lp-core` has zero IO or async dependencies):
+## 1. Eight-Crate Hexagonal Workspace Architecture
 
 ```
 learnpuppy/
-├── Cargo.toml                  # Workspace root, shared dependencies, lint table, release profile
-├── deny.toml                   # cargo-deny license, advisory, and duplicate-crate policy
-├── Makefile                    # Gate runner: fmt, clippy, test, deny, okf-validate, e2e, ocr
+├── Cargo.toml                  # 8-crate workspace root, shared dependencies, strict clippy lints
+├── CLAUDE.md                   # Rewritten with humanlayer `improve-claude-md` `<important if>` blocks
+├── AGENTS.md                   # Pointer for Codex / AGY workers
+├── Makefile                    # Gate runner: fmt, clippy, test, deny, okf, e2e, ocr
+├── e2e.config.ts               # tester-army/e2e configuration driving learnpuppy-app
+├── tests/                      # tester-army/e2e visual + agentic E2E specs (*.e2e.ts)
+├── .claude/skills/             # Installed humanlayer + e2e + project skills (mirrored in .agents/skills/)
 ├── docs/
 │   ├── PLAN.md                 # This master plan
 │   └── REVERSE_ENGINEERING.md  # Clean-room REA + source spec of learnharness & tracker
-├── brain/                      # OKF v0.1 knowledge bundle (validated with --strict)
+├── brain/                      # OKF v0.1 knowledge bundle (26 files, validated with --strict)
 └── crates/
-    ├── lp-core/                # Pure domain contracts, state machines, parsers, algorithms (0 IO)
-    ├── lp-store/               # Hybrid append-only JSONL + SQLite WAL + FTS5 persistence engine
-    ├── lp-cli-driver/          # Multi-account CLI auth discovery, quota pool, LlmEngine trait + FauxEngine
-    ├── lp-agent/               # Prober/Teacher/Practice loops, Wake pipeline, Extractor->Auditor->Merger
+    ├── lp-core/                # Pure synchronous domain core (0 IO, 0 async)
+    ├── lp-store/               # Hybrid append-only JSONL ledgers + SQLite WAL + FTS5
+    ├── lp-cli-driver/          # Multi-account CLI auth discovery (claude 1..N, codex, agy) + FauxEngine
+    ├── lp-agent/               # Prober/Teacher/Practice loops, Sub-Agents, 3-Stage Graph Extractor/Auditor/Merger
     ├── lp-ingest/              # Claude/Codex/AGY transcript + Git commit ingestor & FSRS card generator
-    └── lp-tui/                 # Ratatui 60fps TUI + clap CLI binary (`learnpuppy`)
+    ├── lp-ui/                  # NEW: Pure-Rust shadcn/Radix-style Dioxus 0.7 component & icon library
+    ├── lp-app/                 # NEW: Native macOS Dioxus 0.7 visual desktop app (`learnpuppy-app`)
+    └── lp-tui/                 # Headless CLI subcommands + legacy TUI (isolated on `legacy/tui-cli`)
 ```
-
-### 1.1 Dependency Graph & Hexagonal Boundaries
 
 ```mermaid
 flowchart TD
-    TUI["lp-tui (bin: learnpuppy)\nRatatui 60fps UI + Clap CLI"] --> AGENT["lp-agent\nTurn Engine, Wake Pump, Sub-Agents, Extractor/Auditor"]
-    TUI --> INGEST["lp-ingest\nClaude/Codex/AGY Transcript + Git Diff Ingestor"]
-    TUI --> DRIVER["lp-cli-driver\nMulti-Account CLI Pool (claude 1..N, codex, agy) + FauxEngine"]
-    TUI --> STORE["lp-store\nHybrid JSONL Ledgers + SQLite WAL + FTS5"]
+    APP["lp-app (bin: learnpuppy-app)\nDioxus 0.7 macOS Desktop + E2E Web Harness"] --> UI["lp-ui\nPure-Rust shadcn/dioxus-primitives Components & Lucide SVG Icons"]
+    APP --> AGENT["lp-agent\nProber/Teacher/Practice, Sub-Agents, 3-Stage Graph Pipeline"]
+    APP --> INGEST["lp-ingest\nClaude/Codex/AGY Transcript + Git Diff Ingestor & FSRS CardGen"]
+    APP --> DRIVER["lp-cli-driver\nMulti-Account CLI Pool (claude 1..N, codex, agy) + FauxEngine"]
+    APP --> STORE["lp-store\nHybrid JSONL Ledgers + SQLite WAL + FTS5"]
     AGENT --> DRIVER
     AGENT --> STORE
     INGEST --> DRIVER
@@ -71,338 +77,146 @@ flowchart TD
     INGEST --> CORE
 ```
 
-### 1.2 Production Code Abstractions (Ports & Traits in `lp-core` and `lp-cli-driver`)
+---
 
-To guarantee deterministic testing, zero vendor lock-in, and clean separation of concerns, every boundary uses explicit Rust traits:
+## 2. In-Depth Dioxus 0.7 & `lp-ui` Guide: How To Use It vs What To Avoid Completely
 
-1. **`LlmEngine` Trait (`lp-cli-driver`)**:
-   ```rust
-   #[async_trait]
-   pub trait LlmEngine: Send + Sync {
-       /// Stream a conversational or tool-calling turn (used by Prober, Teacher, Practice).
-       async fn stream_turn(
-           &self,
-           req: TurnRequest,
-           event_tx: mpsc::Sender<StreamDelta>,
-           cancel: CancellationToken,
-       ) -> Result<TurnResponse, DriverError>;
+Every worker touching `crates/lp-ui` or `crates/lp-app` MUST follow these rules (also codified in `.claude/skills/dioxus-desktop-ui/SKILL.md` and `brain/architecture/dioxus-ui.md`):
 
-       /// Execute a structured JSON-schema completion (used by Extractor, Auditor, Distiller, CardBuilder).
-       async fn complete_structured<T: DeserializeOwned + JsonSchema + Send>(
-           &self,
-           req: StructuredRequest,
-           cancel: CancellationToken,
-       ) -> Result<StructuredOutput<T>, DriverError>;
-   }
-   ```
-   - **Production Implementations**:
-     - `CliPoolEngine`: Routes across discovered `claude` accounts (`CLAUDE_CONFIG_DIR`), `codex`, and `agy` subprocesses with automatic quota failover.
-     - `HttpApiEngine`: Optional BYOK OpenRouter/Anthropic/OpenAI SSE streaming driver.
-   - **Deterministic Test Implementation**:
-     - `FauxEngine`: Scriptable in-memory queue (`faux_text`, `faux_tool_call`, `faux_structured`, `FauxStreamControl` barrier) enabling millisecond-fast unit and E2E tests with zero network/CLI calls.
+### 2.1 How To Use Dioxus 0.7 Properly
+1. **Pure-Rust Reactivity (`Signal<T>`, `Memo<T>`, `use_context`)**:
+   - Store localized UI state in `use_signal(|| ...)` and derived views (such as filtered graph nodes or derived `PlanTree` node statuses) in `use_memo(move || ...)`.
+   - Provide the shared application state (`AppState` + `Arc<DesktopBackend>`) at the root `App` component via `use_context_provider`.
+2. **Typed Props & Attribute Forwarding (`#[derive(Props, Clone, PartialEq)]`)**:
+   - Use strongly-typed enums for variants and sizes (`ButtonVariant`, `ButtonSize`, `BadgeVariant`) with `#[props(default)]`.
+   - Use `#[props(into, optional)] class: Option<String>` and a pure-Rust `cn(&[base, variant, custom])` class joiner to merge utility classes cleanly.
+3. **Non-Blocking Desktop Async (`spawn` + `tokio::task::spawn_blocking`)**:
+   - Dioxus's `VirtualDom` runs on the main OS thread (`!Send`).
+   - Run streaming `LlmEngine` turns inside `spawn(async move { ... })`, updating `Signal`s as deltas arrive.
+   - Wrap synchronous SQLite (`rusqlite`) or filesystem (`std::fs`) calls in `tokio::task::spawn_blocking` so the macOS `WKWebView` stays locked at 60fps.
+4. **Hardware-Accelerated `<svg>` Canvas for the Knowledge Graph & Plan DAG**:
+   - Render the Knowledge Graph (`GraphSnapshot`) and `PlanTree` DAG as native Dioxus `svg { view_box: ..., onwheel: ..., onmousedown: ..., onmousemove: ..., onmouseup: ... }` elements.
+   - Compute 2D coordinates in Rust (`lp-core::graph::settle_positions` for the Knowledge Graph; layered Sugiyama/topological rank layout for the `PlanTree` DAG) and draw cubic-bezier edges (`<path d="M ... C ..."/>`), cluster convex hulls, glowing mastery rings, and clickable `<g>` node groups.
+5. **Accessibility & E2E Testability (`data-testid` + ARIA)**:
+   - Every interactive control in `lp-ui` and `lp-app` must emit semantic HTML roles (`role="dialog"`, `role="tab"`, `role="status"`, `aria-selected`, `aria-label`) and deterministic `data-testid="..."` attributes so `tester-army/e2e` locators and AI agents can inspect the screen with zero ambiguity.
 
-2. **Storage Port Traits (`lp-core::ports`)**:
-   - `ChatStore`: Load/save `ChatRecord`, atomic append to `turns` and `extractions` usage logs, list `ChatSummary` items.
-   - `GraphStore`: Append/read `GraphNode` (`nodes.jsonl`), `GraphChain` (`chains.jsonl`), `CoverageEntry` (`coverage.jsonl`), `SessionCheckpoint` (`sessions.jsonl`), atomic `rewrite_chains`, and FTS5 `search_propositions`.
-   - `JobStore`: Create/update `JobRecord`, atomic `claim_steers(chat_id)`, crash-recovery scan for interrupted jobs.
-   - `TrackerStore`: Incremental cursor store (`ingest_cursors`), `CodingSession`, `DecisionRecord`, `BookChunk`, `FlashCard`, `FsrsReviewLog`, and `sync-<device>.jsonl` replication.
+### 2.2 Things To Avoid Completely (Hard Bans)
+1. **NEVER use `script { dangerous_inner_html: "..." }` or `setTimeout` DOM polling**:
+   - `rust-ui/dioxus-ui` uses inline `<script>` tags that poll `document.querySelector` every 50ms to wire up dialogs and dropdowns. This is a severe anti-pattern in Dioxus: when a signal triggers a VirtualDOM patch, raw JS listeners desync or leak. All open/close/tab/selection state MUST live in Rust `Signal`s.
+2. **NEVER import `wasm_bindgen`, `web_sys`, `js_sys`, or `gloo_timers`**:
+   - Those crates target `wasm32-unknown-unknown` and **fail to compile** on native macOS desktop (`aarch64-apple-darwin`).
+3. **NEVER omit `evt.prevent_default()` on `<form onsubmit>`**:
+   - In Dioxus 0.7 desktop (`wry`), an un-prevented form submission triggers a browser page reload that resets the entire Rust `VirtualDom`.
+4. **NEVER allow root window scrollbars**:
+   - Always style the root container with `h-screen w-screen overflow-hidden select-none flex bg-background text-foreground` and restrict scrolling to internal `ScrollArea` panes (`overflow-y-auto`).
+5. **NEVER mutate a `Signal` inside the body of a component render function or `use_memo`**:
+   - Mutating signals during render causes infinite re-render loops. Only mutate signals inside event handlers (`onclick`, `oninput`, etc.), `use_effect`, or `spawn` futures.
 
 ---
 
-## 2. Multi-Account CLI Authentication & Quota Pool (`lp-cli-driver`)
+## 3. Exact Model Selection & Effort Matrix (`claude`, `codex`, `agy`)
 
-A centerpiece requirement of LearnPuppy is **seamless, zero-config CLI authentication** that automatically picks up active `codex`, `claude`, and `agy` logins on the host computer — and explicitly counts **separate Claude subscription logins as separate Claude accounts** with independent rate limits.
+We leverage the distinct strengths of all three CLI ecosystems installed on this machine:
 
-### 2.1 Auto-Discovery Matrix
-
-On startup (and via `learnpuppy auth status` / `learnpuppy auth scan`), `lp-cli-driver` inspects the local environment without ever prompting for macOS Keychain GUI popups:
-
-| Provider | Discovery Paths | Identity & Metadata Extracted | Subprocess Invocation |
-|---|---|---|---|
-| **Claude Code (Multi-Account)** | 1. `~/.claude` + `~/.claude.json`<br>2. `~/.claude-accounts/*/` (e.g. `account2`)<br>3. `~/.claude-work/`<br>4. `$CLAUDE_CONFIG_DIR`<br>5. Custom paths in `~/.learnpuppy/settings.json` | Reads `<dir>/.claude.json` -> `oauthAccount`: `accountUuid`, `emailAddress` (e.g. `pratham.bhavsar501@gmail.com` vs `q97159745@gmail.com`), `seatTier`, `userRateLimitTier`, `organizationUuid`. Deduplicates by `accountUuid`. | `env -i HOME=$HOME PATH=$PATH CLAUDE_CONFIG_DIR=<dir> claude -p --output-format stream-json --verbose --model <model> --strict-mcp-config` (or `--output-format json --json-schema <schema>` for structured calls). |
-| **Codex CLI** | `~/.codex/auth.json` + `~/.codex/config.toml` | Reads `auth_mode` (`chatgpt`), decodes JWT payload (`email`, `chatgpt_plan_type`, `chatgpt_account_id`), default `model` (`gpt-5.4`). | `codex exec --json --skip-git-repo-check -C /tmp/lp-empty-sandbox -m <model> -` (with `--output-schema <file>` when structured). |
-| **Antigravity (`agy`)** | `~/.gemini/oauth_creds.json` + `~/.gemini/google_accounts.json` | Reads active Google account email, token expiry, and supported models (`claude-opus-4-6-thinking`, `claude-sonnet-4-6`, `gemini-3.1-pro-high`, `gemini-3-flash`). | `agy -p <prompt> --output-format json --json-schema <schema> --effort <level> --sandbox --model <model>`. |
-| **BYOK API Keys (Optional)** | `~/.learnpuppy/auth.json` or `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` / `OPENROUTER_API_KEY` | Key fingerprint + provider catalog. | Direct HTTPS via `reqwest`. |
-
-### 2.2 Per-Account Quota Tracking & Failover Scheduler (`AccountPool`)
-
-Each discovered account is assigned a stable `AccountId` (e.g. `claude:pratham.bhavsar501@gmail.com`, `claude:q97159745@gmail.com`, `codex:yadavkumar49900@gmail.com`, `agy:default`):
-
-```rust
-pub struct AccountState {
-    pub id: AccountId,
-    pub provider: ProviderKind,        // ClaudeCli, CodexCli, AgyCli, ApiKey
-    pub email: Option<String>,
-    pub account_uuid: Option<Uuid>,
-    pub config_dir: Option<PathBuf>,   // e.g. Some("~/.claude-accounts/account2")
-    pub rate_limit_tier: Option<String>,
-    pub health: AccountHealth,         // Healthy | Cooldown { until: Instant, reason: String } | AuthExpired
-    pub window_requests: u32,
-    pub window_input_tokens: u64,
-    pub window_output_tokens: u64,
-    pub last_used_at: Option<Instant>,
-}
-```
-
-- **Intelligent Scheduling & Instant Failover**:
-  - For any role slot (`strong` for Teacher/Auditor/Distiller, `cheap` for Extractor/CardGen/SubAgents, `fast` for Prober), the user can pin a specific provider or `claude:auto` pool.
-  - When `claude:auto` (the default for Claude) is selected and Account 1 (`pratham.bhavsar501@gmail.com`) hits a 5-hour window limit or HTTP 429 / CLI rate-limit message, `AccountPool` parses the reset timestamp (or applies exponential cooldown), marks Account 1 as `Cooldown { until }`, and **transparently retries the turn on Account 2 (`q97159745@gmail.com`)** or falls back to `codex` / `agy` according to the slot's fallback chain!
-  - Account usage and cooldown countdowns are persisted in SQLite (`account_usage_ledger`) and displayed live in the TUI Top Bar and Accounts Modal (`Ctrl+A`).
+| Role & Domain | CLI Tool | Exact Model Name | Effort Level | Exact Invocation Pattern | Why It Excels Here |
+|---|---|---|---|---|---|
+| **Chief Orchestrator, Planner & Final Auditor** | `agy` (or `claude`) | `claude-opus-4-6-thinking` (`opus`) | `high` (`max` on `D60`) | `agy --model claude-opus-4-6-thinking --effort high --dangerously-skip-permissions --mode auto -p "..."` | Unmatched at cross-crate architecture, catching subtle state/concurrency bugs, and auditing full spec parity. |
+| **Rust Systems, Cargo & SVG Geometry Specialist** | `codex` | `gpt-5.4` / `gpt-6-luna` | `high` | `codex exec --dangerously-bypass-approvals-and-sandbox -c model_reasoning_effort="high" -C <wt> "..."` | Best at Cargo dependency resolution (`D00`), async backend bridging (`D20`), and deterministic 2D SVG graph/bezier math (`D22`). |
+| **Dioxus 0.7 Component & Visual Screen Specialist** | `agy` (or `claude`) | `claude-sonnet-4-6` (`sonnet`) | `high` | `agy --model claude-sonnet-4-6 --effort high --dangerously-skip-permissions --mode auto -p "..."` | Best at crafting polished `shadcn/ui` CSS/OKLCH themes, Lucide SVG icons, `lp-ui` primitives (`D10`, `D11`), Classroom UI (`D21`), and FSRS/Digest UI (`D23`). |
+| **E2E (`tester-army/e2e`) & Code Review (`ocr`) Runner** | `agy` | `gemini-3.1-pro-high` | `high` | `agy --model gemini-3.1-pro-high --effort high --dangerously-skip-permissions --mode auto -p "..."` | Fast, reliable harness wiring for `tester-army/e2e`, Playwright/SSR assertions (`D30`), and `alibaba/open-code-review` (`ocr`) remediation (`D60`). |
 
 ---
 
-## 3. Memory Management, Concurrency, & Storage Engineering
-
-Because LearnPuppy is designed as a **flagship Rust systems portfolio project**, its memory, concurrency, and storage subsystems are engineered to production standards:
-
-### 3.1 Memory Management Model
-1. **Lock-Free Read Snapshots via `arc-swap` (`ArcSwap<GraphSnapshot>`)**:
-   - The TUI renders at 60fps (16.6ms frame budget). The render thread **never locks a `Mutex`** to read the Knowledge Graph, Chain Table, or Session list.
-   - Instead, `AppState` holds an `ArcSwap<GraphSnapshot>` and `ArcSwap<SessionView>`. Background extraction merges and layout ticks compute a new immutable `Arc<GraphSnapshot>` on a worker thread and atomically swap the pointer via `rcu`, giving the TUI wait-free, zero-allocation reads on every frame.
-2. **String Interning & Compact Identifiers (`smol_str::SmolStr`)**:
-   - Node IDs (`n_a1b2c3d4e5f6`), chain IDs (`arg_...`), chat IDs, and model names are `SmolStr` (stack-inlined up to 23 bytes — zero heap allocation for all IDs!).
-3. **Bounded Channels & Backpressure (`tokio::sync::mpsc`)**:
-   - Every async channel in the workspace is strictly bounded (`TUI_EVENT_CAP = 256`, `STREAM_DELTA_CAP = 512`, `WAKE_QUEUE_CAP = 64`). Unbounded channels (`mpsc::unbounded_channel`) are banned via `clippy::disallowed_methods` in `Cargo.toml`.
-4. **Streaming JSONL Parsers (`BufReader::read_line` reuse)**:
-   - When ingesting multi-megabyte Claude/Codex JSONL transcripts, `lp-ingest` reuses a single `String` line buffer across iterations (`buf.clear(); reader.read_line(&mut buf)`) and deserializes borrowed slices with `serde_json`, keeping peak RSS under **35 MB** even when scanning 500+ historical CLI sessions.
-5. **Subprocess Lifecycle Hygiene (`kill_on_drop(true)` + Process Groups)**:
-   - Every spawned CLI child (`claude`, `codex`, `agy`) is configured with `Command::kill_on_drop(true)`, runs in an isolated empty temp directory (`/tmp/learnpuppy-sandbox`), has `CLAUDECODE` and recursive hook env vars stripped, and is wrapped in a `CancellationToken` select branch so user `Esc` cancellation or app exit reaps the subprocess immediately with zero zombie processes.
-
-### 3.2 Hybrid Storage Architecture (`~/.learnpuppy/`)
-
-LearnPuppy combines the human-auditable, Git/Syncthing-friendly **append-only JSONL ledgers** of `learnharness` with the transactional speed and full-text search of **SQLite WAL** from `tracker`:
-
-```
-~/.learnpuppy/
-├── settings.json               # Model slot pins, account priorities, allowlisted git repos
-├── auth.json                   # Optional BYOK keys (chmod 0600)
-├── graph/
-│   ├── format.json             # { "version": 1 }
-│   ├── nodes.jsonl             # Append-only GraphNode births + link-appends
-│   ├── chains.jsonl            # Append-only GraphChain assertions (rewritten atomically on simplifyChains)
-│   ├── coverage.jsonl          # Per-message SHA-256 coverage fingerprints
-│   ├── sessions.jsonl          # One-shot file import checkpoints
-│   └── positions.json          # Settled 2D ForceAtlas2 coordinates per node ID
-├── chats/
-│   └── <chat_id>.json          # Atomic write-ahead session records (messages, PlanTree, turns, extractions)
-├── artifacts/
-│   └── <job_id>.{html,svg,md}  # Generated visual/demo/research artifacts
-├── sync/
-│   └── sync-<device_id>.jsonl  # Append-only multi-device FSRS review & card replication log
-└── index.db                    # SQLite (WAL mode, synchronous=NORMAL, foreign_keys=ON)
-```
-
-**What lives in `index.db` (SQLite WAL)**:
-- **FTS5 Virtual Tables**: `propositions_fts` (instant BM25 + prefix search for the Auditor's `find` tool and TUI `Ctrl+K` palette) and `transcripts_fts` (search across teaching sessions and ingested CLI coding sessions).
-- **Tracker & FSRS Tables**: `ingest_cursors` (`source_key`, `mtime_ms`, `size_bytes`), `coding_sessions`, `decisions`, `book_chunks`, `flashcards`, `fsrs_reviews` (append-only review log), and `account_usage_ledger`.
-- **Atomic File Writes**: All JSON and ledger rewrites write to `<path>.tmp.<pid>`, call `File::sync_all()`, and atomically `std::fs::rename` over the target path so a power loss or `SIGKILL` never corrupts a chat or ledger.
-
----
-
-## 4. Curated Rust Crate Stack & Justifications
-
-Every dependency is selected for compile-time reliability, minimal transitive bloat, and idiomatic Rust design:
-
-| Domain | Crate | Version | Why It Is the Best Choice |
-|---|---|---|---|
-| **Async Runtime** | `tokio` (`rt-multi-thread`, `process`, `fs`, `sync`, `time`, `macros`) + `tokio-util` (`CancellationToken`) | `1.43` / `0.7` | Industry-standard async process management, cancellation tokens, and bounded channels. |
-| **Terminal UI** | `ratatui` + `crossterm` + `tui-textarea` | `0.29` / `0.28` / `0.7` | Built-in `widgets::Canvas` with `Marker::Braille` (2x4 sub-cell resolution for the force-directed Knowledge Graph and Plan DAG), zero-flicker diff rendering, and rich multi-line text editing. |
-| **Markdown & Code Highlighting** | `pulldown-cmark` + `syntect` | `0.12` / `5.2` | Fast pull-parser for streaming teacher prose, LaTeX math delimiter normalization (`$...$` / `$$...$$` rendered to clean Unicode math symbols `∫, ∑, ∂, ⇒, ∧, ∀, α..ω, ², ₙ`), and syntax-highlighted Rust/system-design code blocks. |
-| **Serialization & Schemas** | `serde` + `serde_json` + `schemars` | `1.0` / `0.8` | Compile-time JSON Schema generation (`#[derive(JsonSchema)]`) passed directly to `claude --json-schema`, `codex --output-schema`, and `agy --json-schema`. |
-| **Database & Search** | `rusqlite` (`bundled`, `functions`, `vtab`) | `0.33` | Statically links SQLite 3.47+ with FTS5 enabled out of the box; zero external system library dependencies, sub-millisecond queries. |
-| **Memory & Concurrency** | `arc-swap` + `smol_str` + `parking_lot` | `1.7` / `0.3` / `0.12` | Lock-free `ArcSwap` snapshots for the 60fps TUI render loop; 23-byte inline `SmolStr` IDs; fast non-poisoning mutexes where needed. |
-| **PDF & Web Extraction** | `pdf-extract` (or `lopdf`) + `reqwest` + `scraper` | `0.7` / `0.12` / `0.22` | Pure-Rust local PDF text extraction for `pdf-reader` and book ingestion, plus clean HTML readability scraping for `researcher` without needing Playwright or Poppler. |
-| **Hashing & IDs** | `sha2` + `hex` + `rand` (`SmallRng`) | `0.10` / `0.4` / `0.8` | SHA-256 message coverage fingerprints (`coverage.jsonl`) and deterministic seeded Fisher-Yates quiz option shuffling. |
-| **CLI & Diagnostics** | `clap` (`derive`) + `thiserror` + `anyhow` + `tracing` + `tracing-appender` | `4.5` / `2.0` / `1.0` / `0.1` | Structured non-blocking file logging (`~/.learnpuppy/logs/learnpuppy.log` so stdout/stderr never corrupt the TUI alternate screen) and ergonomic CLI subcommands. |
-| **Testing & Verification** | `proptest` + `insta` + `tempfile` + `expectrl` | `1.6` / `1.42` / `3.15` / `0.7` | Property-based fuzzing of `simplify_chains`, FSRS math, and Mermaid DAG parsing; `insta` snapshot testing of Ratatui `TestBackend` buffers; `expectrl` PTY driving for E2E terminal tests. |
-
----
-
-## 5. TUI & CLI User Experience Design (`lp-tui`)
-
-### 5.1 TUI Views & Navigation (`Tab` / `1..5` View Switcher)
-
-1. **`[1] Classroom View` (Teaching & Adaptive Practice)**:
-   - **Left Sidebar (Collapsible `Ctrl+B`)**: Sessions filter (`Teaching | Practice | All`), live phase badge (`PROBE` / `PLAN` / `TEACH` / `PRACTICE`), spinner when turn or compaction is active, and **Background Sub-Agents Dock** showing live activity lines (`research: "Raft leader lease"`).
-   - **Center Main Pane**: Streaming teacher/prober prose with syntax-highlighted code blocks, Unicode math rendering, inline Plan Snapshot cards, and interactive Sub-Agent artifact cards (`Enter` on a demo card opens the interactive TUI parameter explorer or launches the HTML artifact in browser).
-   - **Bottom Question & Thinking Dock**:
-     - When a `probe` / `quiz` is active: displays shuffled options `[A]..[D]` + `[I] I don't know`, **Confidence Bar (`1..5`: `1=Guess .. 5=Certain`)**, and dual tabs for **Reading Notes (`readingThinking`)** and **Answer Reasoning (`thinking`)**.
-     - When `explain` / `recall` / `problem` is active: multi-line `tui-textarea` composer for free-recall or step-by-step problem work (with `Ctrl+H` to request the next `R0..R5` hint rung).
-   - **Right Split Pane (Toggle `Ctrl+P`)**: Persistent **Plan DAG Viewport** rendering the session's dependency tree with live derived node badges (`● Current` in glowing cyan, `✓ Visited` in green, `○ Upcoming` in dim gray).
-
-2. **`[2] Knowledge Graph & Chain Table View`**:
-   - **Sub-mode A: Interactive Braille Graph Canvas (`g` toggle)**:
-     - Renders propositions (`n_...`), implication junctions (`arg_...`), directed edges, and birth-session cluster hulls on a `ratatui::widgets::Canvas` using `Marker::Braille` (`hjkl`/arrows to pan, `+`/`-` to zoom, `/` to fuzzy-jump to any node, `Space` to toggle node into the Practice Selection basket, `Enter` to open the Node Provenance & Aliases Drawer).
-   - **Sub-mode B: Collapsible 3-Level Chain Table (`t` toggle)**:
-     - Mirrors `learnharness`'s Chain Table: `Level 1: Birth-Session Cluster` -> `Level 2: Reasoning Chain (Premise A ∧ Premise B ⟹ Conclusion C)` -> `Level 3: Full Precision Statements & Provenance Links`.
-     - Bottom Selection Action Bar: `s` to start an Adaptive Practice Session on selected chains/nodes, `x` to cascade-delete selected nodes (with blast-radius preview of affected chains).
-
-3. **`[3] Tracker Digest & FSRS Spaced-Repetition View`**:
-   - **Sub-tab A: Daily / Weekly CLI Coding Digest**:
-     - Lists ingested sessions from `claude` (all accounts), `codex`, and `agy`, grouped by project (`tracker`, `bunfiiliate`, `learnpuppy`, etc.), showing distilled architectural `DecisionRecord`s (`What`, `Why`, `Basis: stated|inferred`, `Alternatives Rejected`, `Risk`, `Commit SHA`).
-     - Press `g` on any decision to fold its propositions/chains into the global Knowledge Graph.
-   - **Sub-tab B: FSRS 4-Choice Quiz Queue (`Due Today` / `System Design` / `Rust Ownership & Types`)**:
-     - Presents due self-contained 4-option MC cards (`why`, `predict`, `bug`, `trace`, `ownership`, `cloze`).
-     - After selecting an option (`1..4`), reveals the rationale + source link and grades FSRS retention (`[1] Again  [2] Hard  [3] Good  [4] Easy`), immediately updating the deterministic FSRS schedule and `sync-<device>.jsonl`.
-
-4. **`[4] Accounts & Model Slots View (`Ctrl+A`)**:
-   - Displays all auto-discovered CLI logins (`claude #1: pratham.bhavsar501@gmail.com`, `claude #2: q97159745@gmail.com`, `codex: yadavkumar49900@gmail.com`, `agy: default`) with live health status (`Healthy`, `Cooldown (14m left)`), token/turn telemetry, and role slot pins (`prober`, `teacher`, `practice`, `extractor`, `auditor`, `distiller`).
-
-### 5.2 First-Class Headless CLI Subcommands
-
-Every feature is also scriptable from the terminal without opening the TUI (enabling fast E2E testing and CLI automation):
-- `learnpuppy` (default): Launch the full-screen 60fps TUI.
-- `learnpuppy auth status [--json]`: Discover and verify all `claude` accounts, `codex`, `agy`, and API keys.
-- `learnpuppy auth add-claude <path>`: Register an additional `CLAUDE_CONFIG_DIR` profile in the account pool.
-- `learnpuppy chat new "<topic>" [--teach|--practice]`: Start or step a session from the CLI.
-- `learnpuppy graph stats | search "<query>" | import <file.md|file.pdf>`: Inspect or import notes/books into the Knowledge Graph.
-- `learnpuppy ingest [--since 7d] [--repo /Users/pratham/code/tracker]`: Incrementally ingest local Claude/Codex/AGY transcripts + git commits, distill decisions, and mint FSRS cards.
-- `learnpuppy review [--limit 15]`: Run an interactive CLI FSRS flashcard review session.
-
----
-
-## 6. Multi-Agent Orchestration & Ponytail Discipline
-
-Execution strictly follows `/orchestration` (Orca supervisor + isolated git worktrees) and `/ponytail` (smallest complete change, zero speculative bloat, pre-merge verification gates).
-
-### 6.1 Agent Role Assignments
-- **Planner & Chief Auditor**: **1x Claude Opus High** (`claude-opus-4-6-thinking` / `claude -p --model opus --effort high`) — audits this plan + `brain/` OKF bundle in Phase 0 (`T00-audit`), and performs final architectural sign-off in Phase 6 (`T60`).
-- **Implementation Workers** (spawned via `orca spawn` on isolated worktrees `/Users/pratham/code/learnpuppy-wt-<id>`):
-  - **Claude Sonnet 4.6** (`--cli claude --model sonnet`): Complex stateful agent pipelines (`lp-agent`, `lp-ingest`) and Ratatui UI views (`lp-tui`).
-  - **Codex (`gpt-5.4`)** (`--cli codex`): Pure mathematical & algorithmic core (`lp-core` graph merger, `simplify_chains`, Mermaid DAG parser, FSRS v5, `lp-store` SQLite/JSONL engine).
-  - **Antigravity (`agy`)**: CLI auth discovery & subprocess driver (`lp-cli-driver`), E2E test suites, and documentation/OKF maintenance.
-
-### 6.2 Git Branching & Commit Convention
-- **Branch Topology**: `prod <- staging <- feat/T<XX>-<slug>`
-  - `prod` is frozen until Phase 6 sign-off.
-  - All task branches fork from `staging` (`git worktree add /Users/pratham/code/learnpuppy-wt-T10 -b feat/T10-core-graph staging`) and merge back into `staging` via `git merge --no-ff` only after passing all pre-merge gates.
-- **Commit Messages**: Short, direct, lowercase prefix: `feat: <what you did>`, `fix: <what you did>`, `test: <what you did>`, `docs: <what you did>`.
-
----
-
-## 7. Phase-Wise Task DAG (`T00` – `T60`)
+## 4. Phase D Multi-Worktree Task DAG (`D00` – `D60`, plus `T70` & `T80` Roadmap)
 
 ```mermaid
 flowchart TD
-    T00A["T00-audit: Claude Opus High Plan & OKF Audit"] --> T00["T00: Cargo Workspace & Crate Scaffolds"]
-    T00 --> T01["T01: Makefile, cargo-deny, & Git Hooks"]
-    T01 --> T10["T10: lp-core Graph, Merger & simplify_chains"]
-    T01 --> T11["T11: lp-core Plan DAG, Phases & QuestionCore"]
-    T01 --> T12["T12: lp-core FSRS v5, Compaction & Cost Math"]
-    T01 --> T19["T19: lp-core ports.rs traits (GraphStore/ChatStore/JobStore/TrackerStore/LlmEngine)"]
-    T19 --> T20
-    T10 --> T20["T20: lp-store Hybrid JSONL + SQLite WAL + FTS5"]
-    T11 --> T20
-    T12 --> T20
-    T01 --> T21["T21: lp-cli-driver Multi-Account Discovery & Quota Pool"]
-    T01 --> T22["T22: lp-cli-driver Subprocess Streaming, Schema Runner & FauxEngine"]
-    T20 --> T30["T30: lp-agent Prober, Teacher & Adaptive Practice Engine"]
-    T22 --> T30
-    T30 --> T31["T31: lp-agent Async Sub-Agents (research/pdf/visual/demo) & Wake Pump"]
-    T30 --> T32["T32: lp-agent 3-Stage Knowledge Graph Extraction Pipeline"]
-    T20 --> T40["T40: lp-ingest Claude/Codex/AGY Transcript + Git Commit Ingestor"]
-    T22 --> T40
-    T40 --> T41["T41: lp-ingest Decision Distiller, MC Card Builder & Self-Hosting Seed"]
-    T32 --> T41
-    T10 --> T50["T50: lp-tui App Shell, ArcSwap State, Keymap & Accounts Modal"]
-    T11 --> T50
-    T50 --> T51["T51: lp-tui Classroom View, Question Dock & Plan DAG Pane"]
-    T50 --> T52["T52: lp-tui Braille Force-Directed Graph Canvas & Chain Table"]
-    T50 --> T53["T53: lp-tui Tracker Digest & FSRS 4-Choice Quiz View"]
-    T50 --> T54["T54: lp-tui main.rs backend wiring + headless CLI subcommands"]
-    T54 --> T60
-    T51 --> T60["T60: E2E Suite (tester-army/e2e), Open-Code-Review (ocr) & Opus Sign-Off"]
-    T52 --> T60
-    T53 --> T60
+    D00["D00 (Codex High)\nWorkspace Cargo.toml + lp-ui & lp-app Scaffolds"] --> D10["D10 (Sonnet 4.6 High)\nlp-ui Theme, Lucide Icons, Button, Badge, Card, Progress, MasteryRing, CodeBlock"]
+    D00 --> D11["D11 (Sonnet 4.6 High)\nlp-ui Dialog, Tabs, Tooltip, Slider, Switch, ScrollArea, SplitPane, CommandPalette"]
+    D10 --> D20["D20 (Codex High)\nlp-app DesktopBackend Bridge, AppState Signals, Icon Rail Shell & Accounts Modal"]
+    D11 --> D20
+    D20 --> D21["D21 (Sonnet 4.6 High)\nlp-app Visual Classroom, Question Dock (A-D + Confidence), Plan DAG SVG & Workbench"]
+    D20 --> D22["D22 (Codex High)\nlp-app Interactive SVG Knowledge Graph Canvas (Zoom/Pan/Hulls) & 3-Level Chain Table"]
+    D20 --> D23["D23 (Sonnet 4.6 High)\nlp-app FSRS 4-Choice Visual Deck & Local CLI Transcript Decision Digest"]
+    D21 --> D30["D30 (AGY Gemini 3.1 Pro High)\ntester-army/e2e Suite (e2e.config.ts + tests/*.e2e.ts) & Rust Desktop E2E Harness"]
+    D22 --> D30
+    D23 --> D30
+    D30 --> D60["D60 (Opus 4.6 Thinking High)\nFull make ci, tester-army/e2e, alibaba/open-code-review (ocr) & prod Release"]
+    D60 -.-> T70["T70 (TODO Next)\nWindows Desktop (WebView2) Build & Installer"]
+    T70 -.-> T80["T80 (TODO Last)\niOS & Android Mobile Companion (FSRS & Graph Sync)"]
 ```
 
-### Phase 0 — Plan Audit & Workspace Foundation
-- **`T00-audit` (`Claude Opus High`)**:
-  - **Scope**: Audit `docs/REVERSE_ENGINEERING.md`, `docs/PLAN.md`, and `brain/` OKF bundle for missing edge cases, race conditions, or `learnharness`/`tracker` parity gaps; apply any refinements and re-verify `validate.py brain --strict`.
-- **`T00` (`Codex` / `AGY`)**:
-  - **Scope**: Initialize the 6-crate Cargo workspace (`lp-core`, `lp-store`, `lp-cli-driver`, `lp-agent`, `lp-ingest`, `lp-tui`) with shared dependencies, workspace lints (`unsafe_code = "forbid"`, `clippy::disallowed_methods` banning `unbounded_channel`), and clean compilation.
-  - **Gate**: `cargo check --workspace --all-targets`.
-- **`T01` (`AGY`)**:
-  - **Scope**: Add `deny.toml` (`cargo-deny` license/advisory check), `Makefile` (`make fmt`, `make clippy`, `make test`, `make deny`, `make okf`, `make ci`), and `.gitignore`.
-  - **Gate**: `make ci` exits 0.
+### Wave 1 — Workspace & `lp-ui` / `lp-app` Disjoint Scaffolds (`D00`)
+- **`D00` (`codex` `gpt-5.4` / `gpt-6-luna` `high`)**:
+  - **Scope**: Add `crates/lp-ui` and `crates/lp-app` to root `Cargo.toml` with `dioxus = { version = "0.7", features = ["desktop"] }` and `dioxus-ssr = "0.7"`. Pre-declare disjoint module files in `crates/lp-ui/src/` (`lib.rs`, `theme.rs`, `icons.rs`, `primitives.rs`, `code_block.rs`, `dialog.rs`, `tabs.rs`, `overlays.rs`, `command_palette.rs`) and `crates/lp-app/src/` (`main.rs`, `lib.rs`, `state.rs`, `backend.rs`, `shell.rs`, `views/mod.rs`, `views/classroom.rs`, `views/graph_canvas.rs`, `views/digest_fsrs.rs`, `views/accounts.rs`) so Wave 2 and Wave 4 workers can run in parallel on separate git worktrees with **zero merge conflicts**.
+  - **Gate**: `make gate` passes on `staging`.
 
-### Phase 1 — Pure Domain Core (`lp-core`, Zero IO)
-- **`T10` (`Codex`) — Knowledge Graph, Deterministic Merger & `simplify_chains`**:
-  - **Scope**: Implement `GraphNode`, `GraphChain`, `CoverageEntry`, `SessionFindings`, `AuditVerdicts`, `GraphSnapshot`, `merge_findings`, `simplify_chains` (prefer-fewest-premises + transitive ancestry-cover), `birth_session_partition` (`MIN_CLUSTER_SIZE = 3`), `chains_for_selection`, `resolve_target_id`, `deletion_blast_radius`, and 2D ForceAtlas2 layout settler.
-  - **Tests**: Unit tests + `proptest` suites proving `simplify_chains` idempotency, cycle safety, and transitive ancestry reduction (`[A,B]⟹X` + `[X,C]⟹Y` drops `[A,B,C]⟹Y`).
-- **`T11` (`Codex`) — Plan DAG Parser, 3-Phase State Machine & Question Core**:
-  - **Scope**: Implement Mermaid `graph TD` parser (`plan_init`) with line-numbered errors and cycle path reporting; `derive_plan_statuses` (`current`/`visited`/`upcoming` from `quiz`/`explain` calls); `phase_at_3` (`Probe -> Plan -> Teach`); `probe_done` contract; `quiz_input_problems` & `ask_option_problems`; deterministic seeded Fisher-Yates option shuffler; `heal_encoded_arguments` & `strip_model_value_debris`; and `PracticeGate` (`problem` / `conclude` contracts).
-  - **Tests**: Exhaustive unit + property tests covering malformed Mermaid, cycle detection, consecutive same-node quiz calls, revisited nodes (`a -> b -> a`), and double-encoded JSON tool arguments.
-- **`T12` (`Codex`) — FSRS v5 Engine, 20k-Token Compaction & Cost/Quota Math**:
-  - **Scope**: Implement pure FSRS v5 scheduler + deterministic review-log replay (`request_retention = 0.9`, `enable_fuzz = false`, `enable_short_term = true`); `validate_card_shape` (context-dependent regex guard + `1.6 * mean + 10` option length guard); 20k-token retained-tail compaction cutfinder (preserving `[quiz_call, quiz_answer]` atomicity); and `accumulate_job_usage` / `TurnUsage` cost folds.
-  - **Tests**: Deterministic FSRS replay tests matching `tracker/server/digest/fsrs.ts` outputs and compaction boundary tests.
-
-### Phase 2 — Hybrid Storage & Multi-Account CLI Driver (`lp-store`, `lp-cli-driver`)
-- **`T20` (`Codex`) — Hybrid JSONL Ledgers + SQLite WAL + FTS5 (`lp-store`)**:
-  - **Scope**: Implement `FsGraphStore`, `FsChatStore`, `FsJobStore`, and `SqliteTrackerStore` in `lp-store`. Includes atomic temp-file + `fsync` + rename writes, CRC/corrupt-tail line recovery on JSONL ledgers, SQLite WAL migrations, FTS5 indexing (`propositions_fts`, `transcripts_fts`), `claim_steers` idempotency, and `sync-<device>.jsonl` import/export.
-  - **Tests**: Tempdir crash-simulation tests, concurrent reader/writer tests, and FTS5 ranking tests.
-- **`T21` (`AGY` / `Sonnet`) — Multi-Account CLI Auth Discovery & Quota Pool (`lp-cli-driver`)**:
-  - **Scope**: Auto-discover all local `claude` accounts (`~/.claude`, `~/.claude-accounts/*`, `~/.claude-work`, `$CLAUDE_CONFIG_DIR`), `codex` (`~/.codex/auth.json`), and `agy` (`~/.gemini/oauth_creds.json`). Parse account emails, UUIDs, and tiers without touching macOS Keychain GUI. Implement `AccountPool` with per-account rate-limit windows, 429 cooldown parsing, priority/round-robin selection, and automatic failover across Claude accounts and fallback providers.
-  - **Tests**: Fixture directory tests simulating 3 Claude accounts (1 healthy, 1 rate-limited, 1 expired) + Codex + AGY, verifying automatic failover and cooldown recovery.
-- **`T22` (`Sonnet`) — Subprocess Streaming Driver, Structured Schema Runner & `FauxEngine`**:
-  - **Scope**: Implement `LlmEngine` for `claude -p`, `codex exec`, and `agy -p` with `kill_on_drop(true)`, isolated `/tmp` sandbox working directory, stripped nested env vars, streaming JSON event parsing (`StreamDelta::Text`, `StreamDelta::Thinking`, `StreamDelta::ToolCall`), `--json-schema` / `--output-schema` structured output extraction, optional `reqwest` BYOK driver, and `FauxEngine` for deterministic testing.
-  - **Tests**: `FauxEngine` streaming/barrier tests + mock CLI script subprocess tests verifying timeout, cancellation, and zombie-free cleanup.
-
-### Phase 3 — Agent Loops, Sub-Agents & Knowledge Graph Extraction (`lp-agent`)
-- **`T30` (`Sonnet`) — Stateless Per-Turn Prober, Teacher & Practice Agent Loops**:
-  - **Scope**: Port all prompt fragments from `learnharness/src/agent/prompts/` (`shared`, `prober`, `teacher`, `practice`) into embedded Rust prompt templates (`include_str!`). Implement per-turn agent construction (`ProberAgent`, `TeacherAgent`, `PracticeAgent`), tool registry wiring (`probe`/`recall`, `quiz`/`explain`, `ask_user_question`, `probe_done`, `plan_init`, `problem`/`conclude`, `read`/`ls`/`find`/`grep`), validation-error retry loop, and 20k-token background compaction trigger.
-  - **Tests**: Full multi-turn `Probe -> probe_done -> Handoff Wake -> plan_init -> Teach quiz -> Answer -> Next step` lifecycle tests driven by `FauxEngine`.
-- **`T31` (`Sonnet`) — Async Workbench Sub-Agents & Deterministic Wake Pipeline**:
-  - **Scope**: Implement `bg_llm_semaphore` (3 permits), `run_submit_agent` (max 4 turns with error-back retry), `researcher` (web search + HTML readability), `pdf-reader` (`pdf-extract` page search + read tracking `pagesRead` vs `pagesConsulted`), `visual-maker` (SVG + Unicode box/Braille diagram generator), `demo-builder` (interactive TUI parameter model + standalone HTML artifact), and the Wake Pump (`claim_steers`, idle wake gates, abort steers).
-  - **Tests**: Parallel job dispatch tests, pending-question wake deferral tests, learner job abort tests, and crash recovery tests.
-- **`T32` (`Sonnet`) — 3-Stage Knowledge Graph Extraction Pipeline (`Extractor -> Auditor -> Merger`)**:
-  - **Scope**: Implement per-source serial extraction queue + global FIFO audit-merge mutex; message coverage fingerprinting (`coverage.jsonl`); digest-aware Extractor (`"THE GRAPH SO FAR"`); Verdicts-Only Auditor (`find`, `list_sessions`, `list_propositions` tools -> `{ links }`); deterministic `merge_findings` + `simplify_chains`; and one-shot Markdown/PDF notes import front door (`src_<hash>`).
-  - **Tests**: End-to-end extraction tests verifying cross-batch chain assembly, equivalence linking across two sessions, and transitive chain simplification.
-
-### Phase 4 — Local CLI Transcript & Codebase Learning (`lp-ingest`)
-- **`T40` (`Codex` / `Sonnet`) — Local Claude (Multi-Account), Codex, AGY & Git Commit Ingestor**:
-  - **Scope**: Port and optimize `tracker/server/digest/ingest.ts` in Rust:
-    - Scan `~/.claude/projects/**/*.jsonl`, `~/.claude-accounts/*/projects/**/*.jsonl`, and `~/.claude-work/projects/**/*.jsonl` (skipping `subagents/`).
-    - Scan `~/.codex/sessions/**/*.jsonl`.
-    - Copy `~/.gemini/antigravity-cli/conversation_summaries.db` (+ `-wal`, `-shm`) to a temp snapshot directory (`with_snapshot`) and extract Antigravity sessions + `brain/<id>/*.md` artifacts.
-    - Match sessions against git commits/diffs in allowlisted repos (`/Users/pratham/code/tracker`, `/Users/pratham/code/bunfiiliate`, `/Users/pratham/code/learnpuppy`).
-  - **Tests**: Fixture tests for Claude, Codex, AGY SQLite snapshot, and git commit time-window matching + incremental `mtime+size` fast-skip verification.
-- **`T41` (`Sonnet`) — Decision Distiller, MC Card Generator & Self-Hosting Tracker Seed**:
-  - **Scope**: Implement `distill_session_decisions` (`DecisionRecord` extraction + bridge to emit System Design / Rust propositions and chains into `GraphStore`), `generate_decision_cards`, and `generate_book_cards` (enforcing `validate_card_shape` distractor length and context-independence rules), plus PDF/Markdown book chapter ingestion. Include a built-in seed command (`learnpuppy ingest --seed-rust-sysdesign`) that ingests `/Users/pratham/code/tracker` and `/Users/pratham/code/bunfiiliate` so the user immediately has a rich Rust & System Design curriculum ready to study.
-  - **Tests**: Schema validation tests, distractor length-ratio rejection tests, and end-to-end seed ingestion test.
-
-### Phase 5 — 60fps Ratatui TUI & CLI Commands (`lp-tui`)
-- **`T50` (`Sonnet`) — TUI Application Shell, `ArcSwap` State Loop, Keybindings & Accounts Modal**:
-  - **Scope**: Implement `ratatui` + `crossterm` event loop (60fps render tick decoupled from async worker commands via bounded `mpsc`), `ArcSwap` lock-free view state, global `Ctrl+K` fuzzy command/search palette, `Ctrl+A` Multi-Account & Model Slots dashboard, and all headless CLI subcommands (`auth`, `chat`, `graph`, `ingest`, `review`).
-  - **Tests**: `insta` snapshot tests using `ratatui::backend::TestBackend` (80x24 and 140x40 viewports).
-- **`T51` (`Sonnet`) — Classroom View, Interactive Question Dock & Plan DAG Split Pane**:
-  - **Scope**: Implement streaming Markdown/code/Unicode-math transcript renderer, interactive Question Dock (options A-D, "I don't know", `1..5` confidence bar, dual `readingThinking` + `thinking` textareas, `R0..R5` hint trigger), persistent Plan DAG right pane (`● Current`, `✓ Visited`, `○ Upcoming`), and interactive TUI Demo Explorer modal.
-  - **Tests**: `insta` TUI snapshot tests for Probe, Plan, Teach, and Practice states + keyboard interaction tests.
-- **`T52` (`Sonnet`) — Interactive Braille Graph Canvas & 3-Level Collapsible Chain Table**:
-  - **Scope**: Implement `ratatui::widgets::Canvas` with `Marker::Braille` force-directed Knowledge Graph renderer (pan/zoom camera, cluster hulls, node provenance drawer) and the 3-level collapsible Chain Table (`Cluster -> A ∧ B ⟹ C -> Statements`) with multi-select Practice launcher and cascade delete preview.
-  - **Tests**: `insta` snapshot tests for Graph Canvas and Chain Table + selection/delete state transitions.
-- **`T53` (`Sonnet`) — Tracker Digest Explorer & FSRS 4-Choice Spaced-Repetition Quiz UI**:
-  - **Scope**: Implement the Daily/Weekly CLI Agent Decision Digest browser (filter by repo/CLI tool, inspect `what`/`why`/`alternatives`/`risk`, one-key export to Knowledge Graph) and the FSRS 4-choice quiz runner (`Due Today`, instant rationale reveal, `1..4` `Again/Hard/Good/Easy` grading bar, retention streak telemetry).
-  - **Tests**: `insta` snapshot tests for Digest and FSRS Quiz views + full review-to-schedule update flow test.
-
-### Phase 6 — End-to-End Verification (`tester-army/e2e`), Code Review (`ocr`) & Opus Sign-Off
-- **`T60` (`AGY` + `Claude Opus High`)**:
+### Wave 2 — Parallel `lp-ui` Component Library Build (`D10` || `D11`)
+- **`D10` (`agy` `claude-sonnet-4-6` `high`) — `lp-ui` Theme, Icons & Core Visual Components**:
+  - **Disjoint Files**: `crates/lp-ui/src/{theme.rs, icons.rs, primitives.rs, code_block.rs}`.
   - **Scope**:
-    1. Run full `make ci` (`cargo fmt --check`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace`, `cargo deny check`).
-    2. Execute automated E2E terminal and CLI scenarios using [`tester-army/e2e`](https://github.com/tester-army/e2e) + PTY harness (`expectrl`) verifying:
-       - Multi-account CLI discovery (`claude` Account 1 & Account 2, `codex`, `agy`).
-       - Complete Classroom flow (`Probe -> probe_done -> plan_init -> Teach quiz -> Extraction -> Graph Chain Table`).
-       - Local transcript + `/Users/pratham/code/tracker` ingestion -> Decision distillation -> FSRS 4-choice card review.
-    3. Run [`alibaba/open-code-review`](https://github.com/alibaba/open-code-review) (`ocr`) across the repository and resolve all P0/P1/P2 findings.
-    4. Run **Claude Opus High** final architectural & resume-readiness audit, then fast-forward `prod` to `staging`.
+    - `theme.rs`: Complete OKLCH dark-mode stylesheet (`LP_THEME_CSS`) with shadcn variables, utility classes, mastery ring colors, custom thin scrollbars, and shimmer animations.
+    - `icons.rs`: 20+ pure-Rust Lucide SVG icon components (`IconGraph`, `IconClassroom`, `IconDigest`, `IconSparkles`, `IconCheck`, `IconX`, `IconChevronRight`, `IconChevronDown`, `IconSearch`, `IconSettings`, `IconTerminal`, `IconBook`, `IconBrain`, `IconRefresh`, `IconPlay`, `IconShield`, `IconPlus`, `IconTrash`, `IconZoomIn`, `IconZoomOut`, `IconMaximize`).
+    - `primitives.rs`: `Button` (`Primary`, `Secondary`, `Outline`, `Ghost`, `Destructive`, `Link`; sizes `Xs..Lg`, `Icon`), `Badge`, `Card` (`CardHeader`, `CardTitle`, `CardDescription`, `CardContent`, `CardFooter`), `Separator`, `Progress`, and SVG `MasteryRing` (0..100% circular ring).
+    - `code_block.rs`: Markdown + `syntect` syntax-highlighted block renderer with language header and copy button.
+  - **Tests**: `dioxus-ssr` unit tests verifying rendered HTML, classes, ARIA attributes, and SVG paths for every component.
+- **`D11` (`agy` `claude-sonnet-4-6` `high`) — `lp-ui` Interactive Primitives & Overlays (Zero Inline-JS)**:
+  - **Disjoint Files**: `crates/lp-ui/src/{dialog.rs, tabs.rs, overlays.rs, command_palette.rs}`.
+  - **Scope**:
+    - `dialog.rs`: Pure-Rust controlled/uncontrolled `Dialog`, `DialogHeader`, `DialogTitle`, `DialogDescription`, `DialogContent`, `DialogFooter` with `role="dialog"`, `aria-modal="true"`, backdrop dismiss, and `Escape` key handler.
+    - `tabs.rs`: Context-driven `Tabs`, `TabsList`, `TabsTrigger`, `TabsContent` (`role="tablist"`, `role="tab"`, `aria-selected`).
+    - `overlays.rs`: `Tooltip`, `Slider` (1..5 confidence & numeric parameter slider), `Switch`, `Checkbox`, `ScrollArea`, and `SplitPane`.
+    - `command_palette.rs`: `CommandPalette` (`Cmd+K` / `Ctrl+K` modal with live fuzzy filtering, keyboard up/down selection, and shortcut badges).
+  - **Tests**: `dioxus-ssr` unit tests verifying open/closed states, active tab switching, slider value rendering, and command filtering.
+
+### Wave 3 — `lp-app` Desktop Backend Bridge, Shell & Accounts Modal (`D20`)
+- **`D20` (`codex` `gpt-5.4` `high`)**:
+  - **Disjoint Files**: `crates/lp-app/src/{main.rs, lib.rs, state.rs, backend.rs, shell.rs, views/accounts.rs}`.
+  - **Scope**:
+    - `backend.rs`: `DesktopBackend` connecting `FsChatStore`, `FsGraphStore`, `FsJobStore`, `SqliteTrackerStore`, `AccountPool` (multi-account Claude + Codex + AGY), `ProberAgent`, `TeacherAgent`, `PracticeAgent`, `Extractor/Auditor/Merger`, and `lp-ingest` into clean async methods callable from Dioxus signals/tasks, plus automatic demo/tracker seeding when opened on a fresh store so the visual Graph and FSRS deck are immediately populated.
+    - `shell.rs`: Native macOS desktop window shell (`h-screen w-screen overflow-hidden flex`), Left Quick-Action Icon Rail (`Graph Home`, `Classroom`, `FSRS & Digest`, `CLI Accounts`), Top Status Bar (active CLI account pill, graph node/chain counters, `Cmd+K` search trigger, quick "New Topic" & "Sync CLI History" buttons), and `CommandPalette` integration.
+    - `views/accounts.rs`: Visual Multi-Account CLI & Role Slots dashboard showing discovered Claude accounts (`claude #1: pratham.bhavsar501@gmail.com`, `claude #2: q97159745@gmail.com`), Codex (`yadavkumar49900@gmail.com`), and AGY with health badges, cooldown timers, and per-role model/effort selectors.
+    - `main.rs`: Supports both `dioxus::LaunchBuilder::desktop()` (native macOS window with custom titlebar/size 1440x900) and `LP_E2E_PORT=<port>` / `--e2e-port <port>` local HTTP/SSR+liveview harness for `tester-army/e2e` and `--check-render` smoke verification.
+
+### Wave 4 — Parallel Visual Screens (`D21` || `D22` || `D23`)
+- **`D21` (`agy` `claude-sonnet-4-6` `high`) — Visual Classroom, Question Dock & Plan DAG Split View**:
+  - **Disjoint File**: `crates/lp-app/src/views/classroom.rs`.
+  - **Scope**:
+    - Collapsible Left Session Drawer (`Teaching | Practice | All`, phase badges `PROBE`/`PLAN`/`TEACH`/`PRACTICE`, New Session input, and live Sub-Agent Workbench cards for `researcher`, `pdf-reader`, `visual-maker`, `demo-builder`).
+    - Center Visual Lesson Stream: Renders teacher/prober turns with `lp-ui::CodeBlock`, tables, callouts, and graded answer verdict banners.
+    - Bottom Interactive Question Dock: Clickable `[A]..[D]` option cards with keyboard shortcut pills, `[I] I don't know` button, interactive `1..5` Confidence Slider (`1=Guess .. 5=Certain`), dual `Reading Notes` and `Answer Reasoning` tabs, and `R0..R5` Practice Hint button.
+    - Right Visual Plan DAG Viewport: Interactive `<svg>` dependency graph of the session's `PlanTree` showing topological levels, directed edges, and glowing status rings (`● Current`, `✓ Visited`, `○ Upcoming`).
+- **`D22` (`codex` `gpt-5.4` `high`) — Interactive SVG Knowledge Graph Canvas & 3-Level Chain Table**:
+  - **Disjoint File**: `crates/lp-app/src/views/graph_canvas.rs`.
+  - **Scope**:
+    - Sub-mode 1 (`Canvas View` — Default Home Screen): Hardware-accelerated `<svg>` viewport rendering propositions (`n_...`), implication junctions (`arg_...`), directed cubic-bezier arrows, and translucent birth-session cluster hulls. Includes floating toolbar (`Zoom In`, `Zoom Out`, `Fit View`, `Search Filter`, `Practice Selected (N)`), mouse wheel zoom, drag pan, and right-side **Node Provenance & Aliases Drawer** on node click.
+    - Sub-mode 2 (`Chain Table View`): Collapsible 3-level visual table (`Cluster -> Premise A ∧ Premise B ⟹ Conclusion C -> Precision Statements & Provenance`) with checkbox selection to launch an Adaptive Practice Session or preview deletion blast radius.
+- **`D23` (`agy` `claude-sonnet-4-6` `high`) — FSRS 4-Choice Visual Deck & CLI Transcript Digest**:
+  - **Disjoint File**: `crates/lp-app/src/views/digest_fsrs.rs`.
+  - **Scope**:
+    - Sub-tab 1 (`FSRS Spaced-Repetition Deck`): Visual flashcard studio with `MasteryRing` progress, category badges (`why`, `predict`, `bug`, `trace`, `ownership`, `cloze`), clickable 4-option cards, instant rationale + source commit reveal, and 1-click FSRS v5 grading buttons (`[1] Again`, `[2] Hard`, `[3] Good`, `[4] Easy`) showing next scheduled interval.
+    - Sub-tab 2 (`Local CLI Coding Digest`): Visual cards for ingested `claude` (all accounts), `codex`, and `agy` coding sessions and Git commits across `/Users/pratham/code/tracker` and `/Users/pratham/code/bunfiiliate`, displaying distilled `DecisionRecord`s (`What`, `Why`, `Basis`, `Alternatives Rejected`, `Risk`) with 1-click **"Fold into Knowledge Graph"** and **"Scan Local CLIs Now"** actions.
+
+### Wave 5 — `tester-army/e2e` & Desktop Verification Suite (`D30`)
+- **`D30` (`agy` `gemini-3.1-pro-high` `high`)**:
+  - **Disjoint Files**: `e2e.config.ts`, `package.json`, `tests/*.e2e.ts`, `crates/lp-app/tests/e2e_desktop.rs`.
+  - **Scope**:
+    1. Configure `e2e.config.ts` (`tester-army/e2e` with `@e2e-dev/web`) pointing at `learnpuppy-app --e2e-port {port}` and author comprehensive E2E test specs (`tests/graph-home.e2e.ts`, `tests/classroom-flow.e2e.ts`, `tests/fsrs-digest.e2e.ts`, `tests/cli-accounts.e2e.ts`) combining deterministic `screen.getByTestId` / `getByRole` assertions with `agent.act` / `agent.assert` steps.
+    2. Author Rust integration suite `crates/lp-app/tests/e2e_desktop.rs` testing full desktop state transitions, multi-account CLI pool discovery, Classroom quiz grading, Graph SVG rendering, and FSRS card scheduling.
+
+### Wave 6 — Final CI, `alibaba/open-code-review` (`ocr`), Opus Sign-Off & `prod` Release (`D60`)
+- **`D60` (`agy` `claude-opus-4-6-thinking` `high`)**:
+  - **Scope**:
+    1. Run full `make ci` (`cargo fmt --check`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace --all-targets`, `cargo deny check`, `validate.py brain --strict`).
+    2. Execute E2E verification suite (`cargo test -p lp-app --test e2e_desktop` + `tester-army/e2e`).
+    3. Run `alibaba/open-code-review` (`ocr scan` / `ocr review`) across `crates/lp-ui` and `crates/lp-app` and fix any flagged issues.
+    4. Perform final Opus architectural sign-off and fast-forward `prod` to `staging`.
 
 ---
 
-## 8. Ponytail Skip List (Deliberate Non-Goals)
+## 5. Future Cross-Platform Phases (`TODO` — Scheduled After macOS Release)
 
-Per `/ponytail` discipline, the following items are **explicitly skipped** to prevent bloat and keep the architecture razor-sharp:
-1. **No Electron / Next.js / Browser Server**: LearnPuppy is 100% native Rust CLI + TUI. Zero Node.js runtime, zero Chromium bundle, zero local HTTP/SSE server.
-2. **No Browser Cookie Scraping (`grok` / OAuth PKCE localhost listener)**: All authentication comes directly from existing local CLI logins (`claude` multi-account dirs, `codex`, `agy`) or optional API keys.
-3. **No Voice Dictation (Deepgram / Whisper subprocesses)**: Skipped in v1; terminal keyboard input (`tui-textarea`) and local file/transcript ingestion are primary.
-4. **No Louvain / Vector-Embedding Clustering**: Following `learnharness`'s 2026-09 simplification, Knowledge Graph clusters derive deterministically from **birth-session provenance** (`MIN_CLUSTER_SIZE = 3`), requiring zero embedding API calls or vector databases.
-5. **No Playwright / Headless Chrome Dependency**: `pdf-reader` uses pure-Rust PDF parsing, `researcher` uses `reqwest` + `scraper`, and `demo-builder` / `visual-maker` target native TUI Braille/Unicode canvases (with optional standalone `.html`/`.svg` file export).
+- **`T70` — Phase W (Next): Windows Desktop (`x86_64-pc-windows-msvc` / WebView2)**:
+  - Normalize CLI discovery paths for Windows (`%USERPROFILE%\.claude`, `%APPDATA%\codex`, `%USERPROFILE%\.gemini`), verify Dioxus 0.7 WebView2 window chrome, and add Windows `.msi`/`.exe` bundler config.
+- **`T80` — Phase M (Last): iOS & Android Mobile Companion (`dioxus` `mobile`)**:
+  - Enable `dioxus = { version = "0.7", features = ["mobile"] }`, add touch pinch-to-zoom on the SVG Graph Canvas, and wire LAN/file sync (`sync-<device>.jsonl` + `nodes.jsonl` + `chains.jsonl`) so mobile devices act as a companion FSRS flashcard reviewer and Knowledge Graph explorer.

@@ -1,27 +1,27 @@
 ---
 type: guide
 title: Mandatory Pre-Merge Verification Gate
-description: Exact verification checklist required before merging any feat/* branch into staging or fast-forwarding prod.
-tags: [wisdom, gate, ci, testing, e2e, ocr, okf]
-timestamp: 2026-10-27
+description: Exact verification checklist required before merging any worker branch into staging or fast-forwarding prod, including cargo, OKF, tester-army/e2e, and alibaba/open-code-review (ocr).
+tags: [wisdom, gate, ci, testing, e2e, ocr, okf, dioxus]
+timestamp: 2026-10-28
 ---
 
 # Mandatory Pre-Merge Verification Gate
 
-Back to [Wisdom Index](/wisdom/index.md). Related: [Task DAG](/tasks/index.md), [Anti-Patterns](/wisdom/anti-patterns.md).
+Back to [Wisdom Index](/wisdom/index.md). Related: [Task DAG](/tasks/index.md), [Anti-Patterns](/wisdom/anti-patterns.md), [Dioxus 0.7 & lp-ui Architecture](/architecture/dioxus-ui.md).
 
-Under `/ponytail` and `/orchestration` rules, **no worker branch (`feat/T<XX>-*`) may be merged into `staging`** until every command below exits `0`:
+Under `/ponytail` and `/orchestration` rules, **no worker branch (`pratham404/<task-id>`) may be merged into `staging`** until every command below exits `0`:
 
 ## 1. Per-Task Pre-Merge Gate (`make gate`)
 
 ```sh
-export PATH="/opt/homebrew/opt/rustup/bin:$HOME/.cargo/bin:$PATH"
+export PATH="/opt/homebrew/bin:/opt/homebrew/opt/rustup/bin:$HOME/.cargo/bin:$PATH"
 
-# 1. Formatting & Zero-Warning Clippy
+# 1. Formatting & Zero-Warning Clippy across all 8 crates (including lp-ui and lp-app)
 cargo fmt --all -- --check
 cargo clippy --workspace --all-targets -- -D warnings
 
-# 2. Unit, Property (proptest), and Snapshot (insta) Tests
+# 2. Unit, Property (proptest), SSR Component (lp-ui/lp-app), and Integration Tests
 cargo test --workspace --all-targets
 
 # 3. License & Security Advisory Check
@@ -34,21 +34,25 @@ python3 /Users/pratham/.claude/skills/okf/scripts/validate.py /Users/pratham/cod
 ## 2. Git Merge Protocol (`staging` Integration)
 
 1. Verify working tree is clean (`git status --porcelain` is empty) and no secrets/tokens or `.tmp` files are tracked.
-2. Commit with short, descriptive lowercase message: `feat: <what you did>` or `fix: <what you did>`.
+2. Commit with short, descriptive lowercase message: `feat: <what you did>`, `fix: <what you did>`, `test: <what you did>`, or `docs: <what you did>`.
 3. From `/Users/pratham/code/learnpuppy` (on `staging`):
    ```sh
-   git merge --no-ff feat/T<XX>-<slug> -m "merge: feat/T<XX>-<slug> into staging"
+   git merge --no-ff pratham404/<task-id> -m "merge: <task-id> into staging"
    ```
 4. Append a 2–4 line summary entry to `[/log.md](/log.md)` and update task status in `[/tasks/index.md](/tasks/index.md)`.
 
-## 3. Final Phase 6 Release Gate (`T60`)
+## 3. Final Release Gate (`D60` — macOS Visual Desktop Release)
 
 Before fast-forwarding `prod` to `staging`:
-1. **E2E Suite (`tester-army/e2e` + `expectrl` PTY tests)**:
-   - Verifies multi-account `claude` discovery (`#1` and `#2`), `codex`, and `agy`.
-   - Verifies full `Probe -> probe_done -> plan_init -> Teach quiz -> Graph extraction` lifecycle.
-   - Verifies `/Users/pratham/code/tracker` ingestion -> Decision distillation -> 4-choice FSRS card review.
-2. **Alibaba Open Code Review (`ocr`)**:
-   - Run `ocr` diff review against `prod..staging` and resolve all findings.
-3. **Claude Opus High Sign-Off**:
+1. **Dioxus SSR & Component Tree Tests (`cargo test -p lp-ui -p lp-app`)**:
+   - Verifies every `lp-ui` component (`Button`, `Badge`, `Card`, `Dialog`, `Tabs`, `Progress`, `Slider`, `CommandPalette`, SVG icons) and every `lp-app` screen (`GraphCanvasView`, `ClassroomView`, `DigestFsrsView`, `AccountsModal`) renders valid HTML/SVG with `dioxus-ssr` and handles state transitions.
+2. **End-to-End Visual & Agentic Suite (`tester-army/e2e` + `e2e.config.ts`)**:
+   - Launches `learnpuppy-app` in E2E web-harness mode (`LP_E2E_PORT`) and runs `npx e2e run` + `crates/lp-app/tests/e2e_desktop.rs` verifying:
+     - Quick-action Icon Rail navigation (`Graph Home`, `Classroom`, `FSRS & Digest`, `CLI Accounts`).
+     - Interactive SVG Knowledge Graph rendering (`n_...` nodes, `arg_...` junctions, zoom/pan controls, 3-level Chain Table toggle, node provenance drawer).
+     - Complete Classroom flow (`Probe -> probe_done -> plan_init -> Plan DAG rings -> Teach quiz -> Graded verdict`).
+     - Multi-account CLI pool (`claude #1: pratham.bhavsar501@gmail.com`, `claude #2: q97159745@gmail.com`, `codex`, `agy`) and FSRS 4-choice flashcard grading.
+3. **Alibaba Open Code Review (`ocr`)**:
+   - Run `ocr scan` / `ocr delegate` across `crates/lp-ui` and `crates/lp-app` and `git diff prod..staging`, resolving all P0/P1/P2 findings.
+4. **Claude Opus High Sign-Off (`claude-opus-4-6-thinking --effort high`)**:
    - Final architectural review confirming 100% parity with `docs/REVERSE_ENGINEERING.md` and `docs/PLAN.md`.
