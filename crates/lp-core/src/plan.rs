@@ -275,7 +275,7 @@ pub enum CorrectAnswer {
 }
 
 impl CorrectAnswer {
-    fn values(&self) -> &[String] {
+    pub fn values(&self) -> &[String] {
         match self {
             Self::One(s) => std::slice::from_ref(s),
             Self::Many(v) => v,

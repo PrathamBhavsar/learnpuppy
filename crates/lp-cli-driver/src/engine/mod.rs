@@ -15,7 +15,7 @@ use tokio_util::sync::CancellationToken;
 
 pub use faux::{FauxEngine, FauxStreamControl};
 pub use http::HttpApiEngine;
-pub use subprocess::{CliKind, SubprocessEngine};
+pub use subprocess::{account_label, CliKind, SubprocessEngine};
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct ToolCall {

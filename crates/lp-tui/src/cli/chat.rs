@@ -10,13 +10,13 @@ use clap::{Args, Subcommand};
 use lp_agent::loops::{Kind, Msg, Session};
 use lp_agent::workbench::{HttpWeb, PdftotextPdf, Web, Workbench};
 use lp_cli_driver::engine::LlmEngine;
-use lp_core::plan::Phase;
+use lp_core::plan::{Phase, QuizInput};
 use lp_core::ports::{ChatStore, JobKind, JobRecord, JobStatus};
 use lp_store::FsJobStore;
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 
-use crate::session::{classroom_view, pending_call, render_answer, run_to_rest};
+use crate::session::{classroom_view, pending_call, render_answer, run_to_rest, verdict};
 use crate::state::now_ms;
 use crate::views::classroom::{Answer, Prompt};
 
@@ -127,13 +127,29 @@ async fn run_with<E: LlmEngine + 'static>(
             ..
         } => {
             let mut s = Session::load(chats, id).with_context(|| format!("chat {id}"))?;
-            if let Some(call_id) = pending_call(&s).map(|c| c.id.clone()) {
+            if let Some(call) = pending_call(&s).cloned() {
+                let call_id = call.id;
+                // An answer naming an option (by value or label) is that selection; anything else is free text.
+                let quiz = serde_json::from_value::<QuizInput>(call.args).ok();
+                let value = quiz
+                    .as_ref()
+                    .and_then(|q| {
+                        q.options.iter().find(|o| {
+                            o.value.eq_ignore_ascii_case(answer.trim())
+                                || o.label.eq_ignore_ascii_case(answer.trim())
+                        })
+                    })
+                    .map(|o| o.value.clone())
+                    .unwrap_or_default();
                 let text = render_answer(&Answer {
-                    value: String::new(),
+                    value,
                     confidence: (*confidence).clamp(1, 5),
                     reading_thinking: String::new(),
                     thinking: answer.clone(),
                 });
+                if let Some(v) = quiz.and_then(|q| verdict(&q, &text)) {
+                    writeln!(out, "{v}\n")?;
+                }
                 s.answer(&call_id, text);
             } else if matches!(
                 s.messages.last(),
@@ -409,11 +425,37 @@ mod tests {
         assert_eq!(r.chats.load_chat(&id).unwrap().title, "ownership");
 
         r.faux.faux_text("Good.");
-        r.go(step_cmd(&id, 5)).await.unwrap();
+        let text = r.go(step_cmd(&id, 5)).await.unwrap();
+        assert!(
+            text.starts_with("**Correct.** One owner."),
+            "verdict leads the output: {text}"
+        );
+        assert!(text.contains("Confidence 5/5: well calibrated."), "{text}");
         let s = Session::load(&r.chats, &id).unwrap();
         assert!(pending_call(&s).is_none());
         let err = r.go(step_cmd(&id, 5)).await.unwrap_err();
         assert!(err.to_string().contains("no pending question"), "{err}");
+    }
+
+    #[tokio::test]
+    async fn wrong_answer_prints_an_incorrect_verdict_with_the_right_option() {
+        let r = Rig::new();
+        r.faux.faux_tool_call("probe", quiz());
+        r.go(new_cmd(5)).await.unwrap();
+        let id = r.id();
+        r.faux.faux_text("Ok.");
+        let cmd = Cmd::Step {
+            id,
+            answer: "Two".into(),
+            confidence: 5,
+            wait: Wait { wait_jobs: 5 },
+        };
+        let text = r.go(cmd).await.unwrap();
+        assert!(
+            text.starts_with("**Incorrect.** The right answer: One (a). One owner."),
+            "{text}"
+        );
+        assert!(text.contains("Confidence 5/5: overconfident."), "{text}");
     }
 
     #[tokio::test]

@@ -64,7 +64,7 @@ mod tests {
         let mut e = SubprocessEngine::new(CliKind::Claude).unwrap();
         e.program = mock;
         e.role = "teacher".into();
-        e.account = "claude:main".into();
+        e.account = "claude:me@example.com".into();
         e.model = Some("sonnet-x".into());
         e.effort = Some("high".into());
 
@@ -90,7 +90,10 @@ mod tests {
         for want in [
             "role=teacher",
             "provider=Claude",
-            "account=claude:main",
+            &format!(
+                "account={}",
+                lp_cli_driver::engine::account_label("claude:me@example.com")
+            ),
             "model=sonnet-x",
             "effort=high",
             "cli turn end",
@@ -99,5 +102,6 @@ mod tests {
             assert!(text.contains(want), "{want} missing: {text}");
         }
         assert!(!text.contains("SECRET-PROMPT-TEXT"), "{text}");
+        assert!(!text.contains("me@example.com"), "{text}");
     }
 }

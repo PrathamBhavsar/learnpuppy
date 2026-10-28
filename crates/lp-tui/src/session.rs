@@ -31,9 +31,17 @@ pub async fn run_to_rest<E: LlmEngine>(
 ) -> Result<(), TurnError> {
     loop {
         let engine = engine_for(role(s));
+        let phase = s.phase();
         run_turn(engine.as_ref(), root, s, events, cancel).await?;
         if !s.wake() {
             return Ok(());
+        }
+        if s.phase() == phase {
+            tracing::info!(
+                ?phase,
+                reason = "queued steer delivered",
+                "learner message triggered another model turn in the same phase"
+            );
         }
     }
 }
@@ -108,26 +116,86 @@ fn prompt(c: &Call) -> Prompt {
     }
 }
 
+/// One transcript line per message; `None` for messages the learner does not see.
+fn transcript_item(m: &Msg) -> Option<String> {
+    match m {
+        Msg::User(t) => Some(format!("**You:** {t}")),
+        Msg::Assistant { text, .. } => Some(text.clone()),
+        Msg::Answer { text, .. } => Some(format!("**You answered:** {text}")),
+        Msg::Compaction(t) => Some(format!("_Earlier:_ {t}")),
+        Msg::Steer { text, .. } if text.starts_with(lp_agent::workbench::VISUAL_STEER) => {
+            let (_, body) = text.split_once('\n')?;
+            Some(format!("**Diagram:**\n```\n{body}\n```"))
+        }
+        // Job notices are their own line, never part of a question.
+        Msg::ToolResult { name, text, .. } if text.starts_with("dispatched as ") => {
+            let job = text["dispatched as ".len()..].split_whitespace().next()?;
+            Some(format!("_{name} running in the background ({job})_"))
+        }
+        Msg::ToolResult { .. } | Msg::Steer { .. } => None,
+    }
+}
+
+/// The graded answer to a quiz: correct or not, the right option, the call's rationale and the
+/// confidence calibration. `None` when the answer carries no selected option.
+pub fn verdict(q: &QuizInput, answer: &str) -> Option<String> {
+    let picked = answer.strip_prefix("selected: ")?.split(';').next()?.trim();
+    let right = q.correct_answer.values();
+    let label = |v: &str| {
+        q.options
+            .iter()
+            .find(|o| o.value == v)
+            .map_or_else(|| v.to_owned(), |o| format!("{} ({v})", o.label))
+    };
+    let mut picks: Vec<&str> = picked.split(',').map(str::trim).collect();
+    picks.sort_unstable();
+    let mut want: Vec<&str> = right.iter().map(String::as_str).collect();
+    want.sort_unstable();
+    let correct = picks == want;
+    let mut out = if correct {
+        "**Correct.**".to_owned()
+    } else {
+        "**Incorrect.**".to_owned()
+    };
+    if !correct {
+        let right: Vec<String> = right.iter().map(|v| label(v)).collect();
+        out.push_str(&format!(" The right answer: {}.", right.join(", ")));
+    }
+    if !q.explanation.trim().is_empty() {
+        out.push_str(&format!(" {}", q.explanation.trim()));
+    }
+    let conf = answer
+        .rsplit("confidence: ")
+        .next()
+        .and_then(|c| c.split('/').next())
+        .and_then(|c| c.trim().parse::<u8>().ok());
+    if let Some(c) = conf {
+        let note = match (correct, c) {
+            (true, 4..) => "well calibrated",
+            (true, ..=2) => "underconfident",
+            (false, 4..) => "overconfident",
+            (false, ..=2) => "well calibrated",
+            _ => "moderate",
+        };
+        out.push_str(&format!(" Confidence {c}/5: {note}."));
+    }
+    Some(out)
+}
+
 /// What the Classroom view shows; `streaming` is the in-flight assistant text.
 pub fn classroom_view(s: &Session, streaming: &str) -> Classroom {
     let mut transcript: Vec<String> = s
         .messages
         .iter()
-        .filter_map(|m| match m {
-            Msg::User(t) => Some(format!("**You:** {t}")),
-            Msg::Assistant { text, .. } => Some(text.clone()),
-            Msg::Answer { text, .. } => Some(format!("**You answered:** {text}")),
-            Msg::Compaction(t) => Some(format!("_Earlier:_ {t}")),
-            Msg::Steer { text, .. } if text.starts_with(lp_agent::workbench::VISUAL_STEER) => {
-                let (_, body) = text.split_once('\n')?;
-                Some(format!("**Diagram:**\n```\n{body}\n```"))
-            }
-            // Job notices are their own line, never part of a question.
-            Msg::ToolResult { name, text, .. } if text.starts_with("dispatched as ") => {
-                let job = text["dispatched as ".len()..].split_whitespace().next()?;
-                Some(format!("_{name} running in the background ({job})_"))
-            }
-            Msg::ToolResult { .. } | Msg::Steer { .. } => None,
+        .flat_map(|m| {
+            let verdict = match m {
+                Msg::Answer { call_id, text } => calls(s)
+                    .find(|c| c.id == *call_id)
+                    .and_then(|c| serde_json::from_value::<QuizInput>(c.args.clone()).ok())
+                    .and_then(|q| verdict(&q, text)),
+                _ => None,
+            };
+            transcript_item(m).into_iter().chain(verdict)
         })
         .filter(|t| !t.trim().is_empty())
         .collect();
@@ -252,6 +320,11 @@ mod tests {
             }),
         );
         assert!(classroom_view(&s, "").prompt.is_none());
+        let t = classroom_view(&s, "").transcript;
+        assert_eq!(
+            t.last().unwrap(),
+            "**Correct.** One owner. Confidence 4/5: well calibrated."
+        );
         assert!(matches!(
             s.messages.last(),
             Some(Msg::Answer { text, .. }) if text == "selected: a; answer: owner; confidence: 4/5"
@@ -283,5 +356,31 @@ mod tests {
             thinking: String::new(),
         };
         assert_eq!(render_answer(&a), "selected: I don't know; confidence: 1/5");
+    }
+
+    #[test]
+    fn wrong_answer_gets_its_own_incorrect_line_after_the_answer() {
+        let mut s = Session::new("c1", Kind::Teach);
+        s.messages.push(Msg::Assistant {
+            text: String::new(),
+            calls: vec![Call {
+                id: "q#1".into(),
+                name: "quiz".into(),
+                args: json!({
+                    "question": "Who owns it?",
+                    "options": [{"label": "One", "value": "a"}, {"label": "Two", "value": "b"}],
+                    "correctAnswer": "a",
+                    "explanation": ""
+                }),
+            }],
+        });
+        s.answer("q#1", "selected: b; confidence: 5/5");
+        let t = classroom_view(&s, "").transcript;
+        assert_eq!(t.len(), 2);
+        assert!(t[0].starts_with("**You answered:**"));
+        assert_eq!(
+            t[1],
+            "**Incorrect.** The right answer: One (a). Confidence 5/5: overconfident."
+        );
     }
 }
