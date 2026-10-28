@@ -472,7 +472,7 @@ pub fn TabsContent(props: TabsContentProps) -> Element {
             style: if is_active { "" } else { "display: none;" },
             role: "tabpanel",
             aria_labelledby: "{trigger_id}",
-            hidden: !is_active,
+            hidden: (!is_active).then_some("true"),
             tabindex: "0",
             "data-state": "{state_str}",
             "data-value": "{props.value}",
@@ -549,7 +549,46 @@ mod tests {
         assert!(html.contains(r#"data-testid="tab-content-notes""#));
         assert!(html.contains("Notes Panel Body"));
         assert!(!html.contains("Reasoning Panel Body"));
+        assert!(!html.contains(r#"hidden="false""#));
         assert!(!html.contains("<script"));
+    }
+
+    #[component]
+    fn ForceMountTabsHarness() -> Element {
+        rsx! {
+            Tabs {
+                default_value: "notes",
+                tabs: vec!["notes".to_string(), "reasoning".to_string()],
+                TabsList {
+                    TabsTrigger { value: "notes", "Reading Notes" }
+                    TabsTrigger { value: "reasoning", "Answer Reasoning" }
+                }
+                TabsContent {
+                    value: "notes",
+                    force_mount: true,
+                    p { "Notes Panel Body" }
+                }
+                TabsContent {
+                    value: "reasoning",
+                    force_mount: true,
+                    p { "Reasoning Panel Body" }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn force_mount_tabs_omit_hidden_on_active_and_hide_inactive_panel() {
+        let mut dom = VirtualDom::new(ForceMountTabsHarness);
+        dom.rebuild_in_place();
+        let html = dioxus::ssr::render(&dom);
+
+        assert!(html.contains("Notes Panel Body"));
+        assert!(html.contains("Reasoning Panel Body"));
+        assert!(!html.contains(r#"hidden="false""#));
+        assert!(html.contains(r#"hidden="true""#));
+        assert!(html.contains(r#"data-state="active""#));
+        assert!(html.contains(r#"data-state="inactive""#));
     }
 
     #[test]

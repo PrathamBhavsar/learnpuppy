@@ -68,9 +68,11 @@ describe('shell navigation, Cmd+A accounts modal, and Cmd+K command palette', ()
     await expect(screen.getByTestId('command-palette')).toBeHidden();
     await expect(screen.getByTestId('view-digest')).toBeVisible();
 
-    // Reopen via keyboard shortcut, filter for CLI accounts, and open modal via command palette
+    // Reopen via keyboard shortcut, verify query cleared on close, filter for CLI accounts, and open modal via command palette
     await screen.getByTestId('app-shell').press('Control+k');
     await expect(screen.getByTestId('command-palette')).toBeVisible();
+    await expect(input).toHaveValue('');
+    await expect(screen.getByTestId('command-palette-item-graph')).toBeVisible();
     await input.fill('CLI accounts');
     await expect(screen.getByTestId('command-palette-item-accounts')).toBeVisible();
     await screen.getByTestId('command-palette-item-accounts').tap();

@@ -193,7 +193,7 @@ pub fn Dialog(props: DialogProps) -> Element {
             aria_describedby: "{describedby}",
             "data-state": "{state_str}",
             "data-testid": "{props.test_id}",
-            hidden: !is_open,
+            hidden: (!is_open).then_some("true"),
             tabindex: "-1",
             onkeydown: move |evt: KeyboardEvent| {
                 if close_on_escape && is_dialog_escape_key(&evt.key()) {
@@ -647,6 +647,7 @@ mod tests {
         assert!(html.contains("Multi-Account CLI Pool"));
         assert!(html.contains("Manage Claude, Codex, and AGY subscriptions."));
         assert!(html.contains("Active Account #1"));
+        assert!(!html.contains(r#"hidden="false""#));
         assert!(!html.contains("<script"));
     }
 

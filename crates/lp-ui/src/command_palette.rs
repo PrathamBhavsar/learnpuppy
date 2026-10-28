@@ -328,6 +328,19 @@ pub fn CommandPalette(props: CommandPaletteProps) -> Element {
         internal_open()
     };
 
+    let mut was_open = use_signal(|| is_open);
+    if *was_open.peek() != is_open {
+        was_open.set(is_open);
+        if !is_open {
+            selected_idx.set(0);
+            if let Some(mut q_sig) = props.query_signal {
+                q_sig.set(String::new());
+            } else if props.query.is_none() {
+                internal_query.set(String::new());
+            }
+        }
+    }
+
     let current_query = if let Some(sig) = props.query_signal {
         sig()
     } else if let Some(q) = &props.query {
@@ -352,9 +365,23 @@ pub fn CommandPalette(props: CommandPaletteProps) -> Element {
     let set_open = {
         let external_sig = props.open_signal;
         let controlled = props.open;
+        let external_query_sig = props.query_signal;
+        let controlled_q = props.query.is_some();
+        let on_query_change = props.on_query_change;
         let on_open_change = props.on_open_change;
         let on_close = props.on_close;
         move |next: bool| {
+            if !next {
+                selected_idx.set(0);
+                if let Some(mut q_sig) = external_query_sig {
+                    q_sig.set(String::new());
+                } else if !controlled_q {
+                    internal_query.set(String::new());
+                }
+                if let Some(cb) = &on_query_change {
+                    cb.call(String::new());
+                }
+            }
             if let Some(mut sig) = external_sig {
                 sig.set(next);
             } else if controlled.is_none() {
@@ -797,5 +824,62 @@ mod tests {
         assert_eq!(step_selected_index(0, 4, CommandKeyAction::MovePrev), 3);
         assert_eq!(step_selected_index(2, 4, CommandKeyAction::MoveFirst), 0);
         assert_eq!(step_selected_index(1, 4, CommandKeyAction::MoveLast), 3);
+    }
+
+    #[test]
+    fn command_palette_clears_query_when_closed_and_reopened() {
+        use std::cell::Cell;
+        use std::rc::Rc;
+
+        #[derive(Props, Clone)]
+        struct ReopenHarnessProps {
+            sig_slot: Rc<Cell<Option<Signal<bool>>>>,
+        }
+        impl PartialEq for ReopenHarnessProps {
+            fn eq(&self, _other: &Self) -> bool {
+                true
+            }
+        }
+
+        #[component]
+        fn ReopenHarness(props: ReopenHarnessProps) -> Element {
+            let open_sig = use_signal(|| true);
+            props.sig_slot.set(Some(open_sig));
+            rsx! {
+                CommandPalette {
+                    open_signal: open_sig,
+                    default_query: "fsrs".to_string(),
+                    commands: sample_commands(),
+                    test_id: "cmd-palette",
+                }
+            }
+        }
+
+        let sig_slot = Rc::new(Cell::new(None));
+        let mut dom = VirtualDom::new_with_props(
+            ReopenHarness,
+            ReopenHarnessProps {
+                sig_slot: sig_slot.clone(),
+            },
+        );
+        dom.rebuild_in_place();
+        let initial_html = dioxus::ssr::render(&dom);
+        assert!(initial_html.contains("Review FSRS Flashcards"));
+        assert!(!initial_html.contains("Go to Knowledge Graph"));
+
+        let mut open_sig = sig_slot.get().expect("open_signal initialized");
+
+        // Close the palette via signal
+        dom.in_runtime(|| open_sig.set(false));
+        dom.render_immediate(&mut dioxus::dioxus_core::NoOpMutations);
+        let closed_html = dioxus::ssr::render(&dom);
+        assert!(!closed_html.contains(r#"data-testid="cmd-palette""#));
+
+        // Reopen the palette: query must be cleared so all commands are visible again
+        dom.in_runtime(|| open_sig.set(true));
+        dom.render_immediate(&mut dioxus::dioxus_core::NoOpMutations);
+        let reopened_html = dioxus::ssr::render(&dom);
+        assert!(reopened_html.contains("Review FSRS Flashcards"));
+        assert!(reopened_html.contains("Go to Knowledge Graph"));
     }
 }
