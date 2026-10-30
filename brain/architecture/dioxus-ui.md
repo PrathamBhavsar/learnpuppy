@@ -2,11 +2,14 @@
 type: spec
 title: Dioxus 0.7 & lp-ui Visual Desktop Architecture
 description: Deep-dive specification for LearnPuppy's native macOS Dioxus 0.7 desktop UI (lp-app) and shadcn/Radix-style Rust component library (lp-ui), including library usage rules and banned patterns.
-tags: [architecture, dioxus, lp-ui, lp-app, shadcn, desktop, macos, svg, graph]
+tags: [architecture, dioxus, lp-ui, lp-app, shadcn, desktop, macos, svg, graph, archived]
+status: superseded
 timestamp: 2026-10-28
 ---
 
-# Dioxus 0.7 & `lp-ui` Visual Desktop Architecture
+# Dioxus 0.7 & `lp-ui` Visual Desktop Architecture (Archived)
+
+> **Archived (2026-10-31).** The Dioxus desktop app (`lp-app`) and its UI kit (`lp-ui`) was deleted from the workspace by [ADR-0006](/decisions/0006-web-ui-over-dioxus.md). This page is kept as history only; do not follow it for new work.
 
 Back to [Architecture Index](/architecture/index.md) | [Brain Index](/index.md). Related: [ADR-0005 Dioxus Desktop Over TUI](/decisions/0005-dioxus-desktop-over-tui.md), [Anti-Patterns](/wisdom/anti-patterns.md), [Knowledge Graph](/architecture/knowledge-graph.md).
 

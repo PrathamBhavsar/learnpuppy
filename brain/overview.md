@@ -1,19 +1,19 @@
 ---
 type: doc
 title: LearnPuppy Overview & Core Invariants
-description: High-level summary of LearnPuppy — pure-Rust Dioxus 0.7 + lp-ui visual learning desktop app (macOS first, Windows next, mobile last) with isolated legacy CLI/TUI on legacy/tui-cli.
-tags: [overview, learnpuppy, rust, dioxus, lp-ui, architecture, invariants]
+description: High-level summary of LearnPuppy — local web app (Rust lp-server over lp-service + Vite/React/shadcn SPA) for visual learning, a cross-session Knowledge Graph and FSRS review, with multiple workspaces; legacy TUI on legacy/tui-cli.
+tags: [overview, learnpuppy, rust, web, architecture, invariants]
 timestamp: 2026-10-28
 ---
 
 # LearnPuppy Overview
 
-Back to [Brain Index](/index.md). Related: [System Architecture](/architecture/system.md), [Dioxus 0.7 & lp-ui Architecture](/architecture/dioxus-ui.md), [Task DAG](/tasks/index.md).
+Back to [Brain Index](/index.md). Related: [System Architecture](/architecture/system.md), [ADR-0006 Web UI](/decisions/0006-web-ui-over-dioxus.md), [Task DAG](/tasks/index.md).
 
 ## 1. Product Mission
 
-**LearnPuppy** (`learnpuppy`) is a production-grade, pure-Rust visual learning application built with **Dioxus 0.7** and our own **`lp-ui`** (`shadcn/ui` + `dioxus-primitives` inspired Rust component library).
-- **Platform Order**: **macOS native desktop first** (active deliverable), **Windows desktop second** (`TODO` `T70`), and **iOS & Android mobile companion last** (`TODO` `T80`).
+**LearnPuppy** (`learnpuppy`) is a production-grade local learning web app: `learnpuppy serve` (crate `lp-server`, axum) runs on `127.0.0.1` over the no-HTTP logic crate `lp-service` and the unchanged Rust backend crates, and serves a **Vite + React + TypeScript + shadcn** SPA from `web/`. Multiple isolated workspaces are first-class. See [ADR-0006](/decisions/0006-web-ui-over-dioxus.md); the plan is `docs/web/`.
+- **History**: the Dioxus desktop app (`lp-app`) and Rust UI kit (`lp-ui`) of [ADR-0005](/decisions/0005-dioxus-desktop-over-tui.md) were removed; the Windows/mobile Dioxus phases are cancelled.
 - **Branch Isolation**: The completed Ratatui terminal UI and headless CLI are preserved in isolation on git branch `legacy/tui-cli` (and headless CLI subcommands remain available for scripting).
 
 It unifies two systems in 100% Rust:
@@ -27,4 +27,4 @@ It unifies two systems in 100% Rust:
 3. **Position-Not-Completion Plan Tree**: `PlanTree` stores structure only (`nodes`, `edges`, `version`). Node status (`Current`, `Visited`, `Upcoming`) is derived at render time from `quiz`/`explain` tool **calls** (`derive_plan_statuses`), never from answer outcomes. See [Classroom & Practice Engine](/architecture/classroom-engine.md).
 4. **Chains-Primary Knowledge Graph**: `nodes.jsonl` and `chains.jsonl` are the sole stored graph truth. Edges and implication junction nodes (`arg_...`) are derived at read time (`derive_graph_snapshot`). Only the 3-stage pipeline (`Extractor -> Auditor -> Merger`) writes to graph ledgers, running `simplify_chains` (prefer-fewest-premises + transitive ancestry-cover) inside the serialized audit-merge critical section. See [Knowledge Graph Pipeline](/architecture/knowledge-graph.md).
 5. **Safe Live-DB Transcript Ingestion**: When reading Antigravity's `conversation_summaries.db` (or any live SQLite WAL database), `lp-ingest` **always copies `.db`, `-wal`, and `-shm` to a temp snapshot directory** before opening (`with_snapshot`), never locking the live CLI's database. See [Transcript & Git Ingestor](/architecture/transcript-ingest.md).
-6. **Pure-Rust Dioxus 0.7 Desktop Reactivity (`lp-ui` + `lp-app`)**: All visual UI state (modals, tabs, command palette, interactive SVG Knowledge Graph camera, quiz cards) uses Dioxus `Signal<T>` and `Memo<T>`. `wasm-bindgen`/`web-sys` imports and inline `<script>` DOM polling are strictly banned so the codebase compiles natively to `aarch64-apple-darwin` (`WKWebView`). See [Dioxus 0.7 & lp-ui Architecture](/architecture/dioxus-ui.md) and [ADR-0005](/decisions/0005-dioxus-desktop-over-tui.md).
+6. **Domain Logic Lives in Rust, the Browser Only Renders**: FSRS scheduling, graph merge and layout, plan statuses, option shuffling and verdicts run in Rust (`lp-core`/`lp-service`); the SPA renders DTOs from the OpenAPI contract and sends intent. Time is server-authoritative. The server binds `127.0.0.1` only. See [ADR-0006](/decisions/0006-web-ui-over-dioxus.md).

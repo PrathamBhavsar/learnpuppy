@@ -2,7 +2,7 @@
 type: guide
 title: Mandatory Pre-Merge Verification Gate
 description: Exact verification checklist required before merging any worker branch into staging or fast-forwarding prod, including cargo, OKF, tester-army/e2e, and alibaba/open-code-review (ocr).
-tags: [wisdom, gate, ci, testing, e2e, ocr, okf, dioxus]
+tags: [wisdom, gate, ci, testing, e2e, ocr, okf, web]
 timestamp: 2026-10-28
 ---
 
@@ -17,11 +17,11 @@ Under `/ponytail` and `/orchestration` rules, **no worker branch (`pratham404/<t
 ```sh
 export PATH="/opt/homebrew/bin:/opt/homebrew/opt/rustup/bin:$HOME/.cargo/bin:$PATH"
 
-# 1. Formatting & Zero-Warning Clippy across all 8 crates (including lp-ui and lp-app)
+# 1. Formatting & Zero-Warning Clippy across all 7 crates
 cargo fmt --all -- --check
 cargo clippy --workspace --all-targets -- -D warnings
 
-# 2. Unit, Property (proptest), SSR Component (lp-ui/lp-app), and Integration Tests
+# 2. Unit, Property (proptest), and Integration Tests
 cargo test --workspace --all-targets
 
 # 3. License & Security Advisory Check
@@ -41,7 +41,9 @@ python3 /Users/pratham/.claude/skills/okf/scripts/validate.py /Users/pratham/cod
    ```
 4. Append a 2–4 line summary entry to `[/log.md](/log.md)` and update task status in `[/tasks/index.md](/tasks/index.md)`.
 
-## 3. Final Release Gate (`D60` — macOS Visual Desktop Release)
+## 3. Final Release Gate (Archived: `D60` macOS Dioxus Release)
+
+> Archived: `lp-ui`/`lp-app` and the root `e2e.config.ts` harness were removed by [ADR-0006](/decisions/0006-web-ui-over-dioxus.md). The web release gate (Playwright under `web/e2e/`, `make e2e`) is defined in `docs/web/07-testing-and-quality.md` and `docs/web/10-acceptance.md`. The list below is history.
 
 Before fast-forwarding `prod` to `staging`:
 1. **Dioxus SSR & Component Tree Tests (`cargo test -p lp-ui -p lp-app`)**:

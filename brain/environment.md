@@ -39,7 +39,7 @@ Installed from [`humanlayer/skills`](https://github.com/humanlayer/skills) and [
 - `improve-claude-md`: `<important if="...">` conditional context structuring (applied to `CLAUDE.md`).
 - `build-iterated-agentic-loop` & `design-control-loop`: Iterated agent control loops.
 - `e2e` & `create-verification-skill`: Official `tester-army/e2e` browser/mobile agentic E2E test authoring and verification skills.
-- `dioxus-desktop-ui`: Project-specific Dioxus 0.7 + `lp-ui` rules and hard bans.
+- `dioxus-desktop-ui`: Archived Dioxus 0.7 + `lp-ui` rules (the crates were removed by [ADR-0006](/decisions/0006-web-ui-over-dioxus.md)).
 - `orca-model-matrix`: Project-specific model selection, effort levels, and Orca worktree dispatch rules.
 
 ## 3. Verified Local CLI Logins & Exact Model Capabilities
@@ -60,4 +60,4 @@ Installed from [`humanlayer/skills`](https://github.com/humanlayer/skills) and [
   ```
 - **Orca Multi-Agent Supervisor**: `/opt/homebrew/bin/orca` (`orca worktree create`, `orca terminal create`, `orca terminal wait`, `orca worktree rm`).
 - **Open Code Review (`alibaba/open-code-review`)**: `/opt/homebrew/bin/ocr` (`@alibaba-group/open-code-review@1.13.3` — `ocr review`, `ocr scan`, `ocr delegate`).
-- **E2E Harness (`tester-army/e2e`)**: Configured via `e2e.config.ts` + `tests/*.e2e.ts` driving `learnpuppy-app` (`LP_E2E_PORT`) and Rust integration tests (`crates/lp-app/tests/`).
+- **E2E Harness**: the root `e2e.config.ts` + `tests/*.e2e.ts` Dioxus harness was removed with `lp-app` ([ADR-0006](/decisions/0006-web-ui-over-dioxus.md)); browser E2E moves to Playwright under `web/e2e/` (`docs/web/07-testing-and-quality.md`).

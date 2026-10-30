@@ -2,7 +2,8 @@
 type: adr
 title: "ADR-0005: Pivot Primary UI to Native Dioxus 0.7 + lp-ui (Isolate TUI on legacy/tui-cli)"
 description: Architectural decision to make Dioxus 0.7 + custom shadcn-style lp-ui the primary visual learning desktop app (macOS first, Windows next, mobile last) while preserving the Ratatui CLI/TUI on legacy/tui-cli.
-tags: [adr, dioxus, lp-ui, desktop, macos, architecture, ui]
+tags: [adr, dioxus, lp-ui, desktop, macos, architecture, ui, superseded]
+status: superseded
 timestamp: 2026-10-28
 ---
 
@@ -11,7 +12,9 @@ timestamp: 2026-10-28
 Back to [Decisions Index](/decisions/index.md) | [Brain Index](/index.md). Related: [Dioxus 0.7 & lp-ui Architecture](/architecture/dioxus-ui.md), [ADR-0001](/decisions/0001-rust-tui-over-electron.md).
 
 ## Status
-**Accepted** (2026-10-28) — Supersedes the UI layer of [ADR-0001](/decisions/0001-rust-tui-over-electron.md) while retaining 100% of the Rust backend crates (`lp-core`, `lp-store`, `lp-cli-driver`, `lp-agent`, `lp-ingest`).
+**Superseded** (2026-10-31) by [ADR-0006: Local Web UI Over Dioxus Desktop](/decisions/0006-web-ui-over-dioxus.md); `lp-ui` and `lp-app` were deleted from the workspace. Historical record follows.
+
+Originally **Accepted** (2026-10-28) — Supersedes the UI layer of [ADR-0001](/decisions/0001-rust-tui-over-electron.md) while retaining 100% of the Rust backend crates (`lp-core`, `lp-store`, `lp-cli-driver`, `lp-agent`, `lp-ingest`).
 
 ## Context
 1. Visual learning requires clickable icons, an interactive zoomable Knowledge Graph canvas, visual Mermaid/DAG node rings, and effortless mouse + keyboard ergonomics. A terminal-only view (`ratatui`) sacrifices quick icons and visual spatial memory.
