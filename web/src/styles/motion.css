@@ -1,0 +1,104 @@
+/* Motion tokens (docs/web/05) and the CSS-driven animations. TS twins: src/lib/motion.ts */
+:root {
+  --dur-instant: 80ms;
+  --dur-fast: 140ms;
+  --dur-base: 220ms;
+  --dur-slow: 360ms;
+  --dur-hero: 600ms;
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-in: cubic-bezier(0.64, 0, 0.78, 0);
+  --ease-inout: cubic-bezier(0.65, 0, 0.35, 1);
+}
+
+/* Theme / direction switch: 200 ms cross-fade through the View Transitions API. */
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation-duration: 200ms;
+  animation-timing-function: var(--ease-inout);
+}
+
+/* Skeleton shimmer: 1.6 s gradient sweep on transform. */
+.lp-shimmer {
+  position: relative;
+  overflow: hidden;
+  animation: none;
+}
+.lp-shimmer::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    color-mix(in oklch, var(--foreground) 9%, transparent),
+    transparent
+  );
+  transform: translateX(-100%);
+  animation: lp-shimmer 1.6s linear infinite;
+}
+[dir="rtl"] .lp-shimmer::after {
+  animation-name: lp-shimmer-rtl;
+}
+@keyframes lp-shimmer {
+  to {
+    transform: translateX(100%);
+  }
+}
+@keyframes lp-shimmer-rtl {
+  from {
+    transform: translateX(100%);
+  }
+  to {
+    transform: translateX(-100%);
+  }
+}
+
+/* Empty state icon: one-time gentle float-in. */
+.lp-float-in {
+  animation: lp-float-in var(--dur-hero) var(--ease-out) both;
+}
+@keyframes lp-float-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+}
+
+/* Error state icon: shake once. */
+.lp-shake {
+  animation: lp-shake 240ms var(--ease-inout) 1;
+}
+@keyframes lp-shake {
+  25% {
+    transform: translateX(-4px);
+  }
+  75% {
+    transform: translateX(4px);
+  }
+}
+
+/* Reduced motion: OS preference or the Settings override (html[data-reduce-motion]). */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+  .lp-shimmer::after {
+    display: none;
+  }
+}
+:root[data-reduce-motion="true"] *,
+:root[data-reduce-motion="true"] *::before,
+:root[data-reduce-motion="true"] *::after {
+  animation-duration: 0.01ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.01ms !important;
+  scroll-behavior: auto !important;
+}
+:root[data-reduce-motion="true"] .lp-shimmer::after {
+  display: none;
+}
