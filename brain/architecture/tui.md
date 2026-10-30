@@ -2,11 +2,15 @@
 type: spec
 title: 60fps Ratatui TUI & Headless CLI (lp-tui)
 description: Terminal UI layout, 4 primary workspaces, Braille force-directed Graph Canvas, 3-level Chain Table, Question Dock, and scriptable CLI commands.
-tags: [tui, ratatui, crossterm, cli, braille, canvas, ux]
+tags: [tui, ratatui, crossterm, cli, braille, canvas, ux, archived]
+status: superseded
 timestamp: 2026-10-27
 ---
 
-# 60fps Ratatui TUI & Headless CLI (`lp-tui`)
+# 60fps Ratatui TUI & Headless CLI (`lp-tui`) (Archived)
+
+> **Archived (2026-10-31).** `lp-tui` (TUI and headless CLI; history on branch `legacy/tui-cli`) was deleted from the workspace by [ADR-0006](/decisions/0006-web-ui-over-dioxus.md). This page is kept as history only; do not follow it for new work.
+Its reusable logic (settings, engine routing, session helpers, review) now lives in `crates/lp-service`.
 
 Back to [Architecture Index](/architecture/index.md). Related: [Storage & Memory Model](/architecture/storage-memory.md), [Classroom Engine](/architecture/classroom-engine.md).
 

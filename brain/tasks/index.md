@@ -1,6 +1,31 @@
-# Task DAG & Worker Dispatch (`T00`–`T80`)
+# Task DAG & Worker Dispatch
 
-Back to [Brain Index](/index.md). Related: [Overview](/overview.md), [Architecture Index](/architecture/index.md), [Dioxus 0.7 & lp-ui Architecture](/architecture/dioxus-ui.md), [Pre-Merge Gate](/wisdom/pre-merge-gate.md).
+Back to [Brain Index](/index.md). Related: [Overview](/overview.md), [Architecture Index](/architecture/index.md), [ADR-0006 Web UI](/decisions/0006-web-ui-over-dioxus.md), [Pre-Merge Gate](/wisdom/pre-merge-gate.md).
+
+## 0. Active: Web UI Rollout (`V00`–`A70`, [ADR-0006](/decisions/0006-web-ui-over-dioxus.md))
+
+The authoritative DAG, owned files and done-when criteria are in `docs/web/08-task-dag.md`; this table only tracks status. Branch flow: `staging <- pratham404/<task-id>` (`--no-ff`, `make gate` first).
+
+| ID | Task | Depends On | Status |
+|---|---|---|---|
+| `V00` | Verify shadcn preset + disk plan (`docs/web/04-preset-facts.md`) | — | `done` |
+| `V01` | Repo surgery: delete `lp-ui`, `lp-app`, `lp-tui`, Dioxus `tests/`, root e2e configs, `scripts/export-icons.ts` | `V00` | `done` |
+| `V02` | `lp-service` (ported logic + tests, `paths`) and `lp-server` skeleton (`learnpuppy --version`, subcommands) | `V01` | `done` |
+| `F00` | `web/` Vite + React + shadcn scaffold, tokens, shell, gallery | `V00` | `pending` |
+| `B10` | Workspaces core: registry, meta, trash, migration, export/import | `V02` | `pending` |
+| `B11` | Server core: auth, errors, SSE hub, OpenAPI, assets, lock, shutdown | `V02` | `pending` |
+| `B20` | Read APIs: workspaces, graph, chats, review, digest, accounts, settings, search, trash | `B10`, `B11` | `pending` |
+| `F10` | API client, SSE manager, MSW, routing, palette, hotkeys, toasts | `F00`, `B11` | `pending` |
+| `B21` | Chat engine: turns, view, answers, jobs, uploads, recovery | `B20` | `pending` |
+| `B22` | Graph mutate/search/layout cache, ingest run, export/import jobs | `B20` | `pending` |
+| `F20`–`F24` | Feature screens: workspaces, graph canvas, classroom, review + digest, ingest/accounts/settings | `F10` (+ `B21`/`B22`) | `pending` |
+| `P30` | Motion + polish pass | `F20`–`F24` | `pending` |
+| `Q40` | a11y + RTL + perf pass | `P30` | `pending` |
+| `E50` | Full Playwright E2E + visual baselines | `Q40` | `pending` |
+| `D60` | Docs/brain/CLAUDE.md sweep + legacy cleanup | `E50` | `pending` |
+| `A70` | Opus audit vs `docs/web/10-acceptance.md` | `D60` | `pending` |
+
+---
 
 ## 1. Exact Model Capabilities & Effort Matrix (`claude`, `codex`, `agy`)
 
@@ -33,11 +58,13 @@ Every task in the DAG is assigned to the model and CLI tool whose strengths best
 | `T32` | `lp-agent` 3-Stage Knowledge Graph Extraction Pipeline (`Extractor -> Verdicts-Only Auditor -> Merger`) + Markdown/PDF file import | `agy claude-sonnet-4-6 (high)` | `T30` | [Knowledge Graph](/architecture/knowledge-graph.md) | `done` |
 | `T40` | `lp-ingest` Incremental `mtime+size` parsers for Claude (all accounts), Codex, AGY (`with_snapshot` SQLite copy), and Git commit/diff window matcher | `codex gpt-5.4 (high)` | `T20`, `T22` | [Transcript Ingestor](/architecture/transcript-ingest.md) | `done` |
 | `T41` | `lp-ingest` Decision distiller (`DecisionRecord` -> Graph bridge), 4-choice MC card generator, book chunker, and `/Users/pratham/code/tracker` seed | `agy claude-sonnet-4-6 (high)` | `T32`, `T40` | [Transcript Ingestor](/architecture/transcript-ingest.md), [Practice & FSRS](/architecture/practice-fsrs.md) | `done` |
-| `T50`–`T54` | Legacy Ratatui TUI & Headless CLI (`lp-tui`) — isolated on git branch `legacy/tui-cli` | `agy claude-sonnet-4-6 (high)` | `T31`, `T41` | [Headless CLI & Legacy TUI](/architecture/tui.md) | `done` |
+| `T50`–`T54` | Legacy Ratatui TUI & Headless CLI (`lp-tui`) — isolated on git branch `legacy/tui-cli`; crate deleted from `staging` by `V01` | `agy claude-sonnet-4-6 (high)` | `T31`, `T41` | [Headless CLI & Legacy TUI](/architecture/tui.md) | `done` |
 
 ---
 
-## 3. Phase D — Native macOS Dioxus 0.7 + `lp-ui` Visual Desktop App (Active Execution Wave)
+## 3. Phase D — Native macOS Dioxus 0.7 + `lp-ui` Visual Desktop App (Archived)
+
+> Superseded by [ADR-0006](/decisions/0006-web-ui-over-dioxus.md): `lp-ui` and `lp-app` were deleted by `V01`. Kept as history.
 
 Designed for parallel multi-worktree execution via Orca (`orca worktree create --base-branch staging`):
 
@@ -55,9 +82,11 @@ Designed for parallel multi-worktree execution via Orca (`orca worktree create -
 
 ---
 
-## 4. Future Cross-Platform Phases (`TODO` — Scheduled After macOS Release)
+## 4. Cross-Platform Dioxus Phases (Cancelled)
+
+> Cancelled by [ADR-0006](/decisions/0006-web-ui-over-dioxus.md); a native shell can wrap the web app later.
 
 | ID | Task | Target Platform | Worker & Effort | Depends On | Spec Links | Status |
 |---|---|---|---|---|---|---|
-| `T70` | **Phase W (Next)**: Windows Desktop Packaging (`x86_64-pc-windows-msvc`), WebView2 installer bundle, and Windows `%APPDATA%` / `%USERPROFILE%\.claude` path discovery | Windows 11 Desktop | `codex gpt-5.4 (high)` | `D60` | [Dioxus 0.7 & lp-ui Architecture](/architecture/dioxus-ui.md) | `pending` |
-| `T80` | **Phase M (Last)**: iOS & Android Mobile Companion (`dioxus` `mobile` feature), touch gesture Graph Canvas, and LAN/folder `sync-<device>.jsonl` + `nodes.jsonl` replication for mobile FSRS review | iOS & Android | `agy claude-sonnet-4-6 (high)` | `T70` | [Dioxus 0.7 & lp-ui Architecture](/architecture/dioxus-ui.md) | `pending` |
+| `T70` | **Phase W (Next)**: Windows Desktop Packaging (`x86_64-pc-windows-msvc`), WebView2 installer bundle, and Windows `%APPDATA%` / `%USERPROFILE%\.claude` path discovery | Windows 11 Desktop | `codex gpt-5.4 (high)` | `D60` | [Dioxus 0.7 & lp-ui Architecture](/architecture/dioxus-ui.md) | `cancelled` |
+| `T80` | **Phase M (Last)**: iOS & Android Mobile Companion (`dioxus` `mobile` feature), touch gesture Graph Canvas, and LAN/folder `sync-<device>.jsonl` + `nodes.jsonl` replication for mobile FSRS review | iOS & Android | `agy claude-sonnet-4-6 (high)` | `T70` | [Dioxus 0.7 & lp-ui Architecture](/architecture/dioxus-ui.md) | `cancelled` |

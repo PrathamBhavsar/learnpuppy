@@ -10,6 +10,8 @@ timestamp: 2026-10-28
 
 Back to [Wisdom Index](/wisdom/index.md). Related: [Dioxus 0.7 & lp-ui Architecture](/architecture/dioxus-ui.md), [Storage & Memory Model](/architecture/storage-memory.md), [Core Domain](/architecture/core-domain.md).
 
+> Items 1–5 guarded the Dioxus crates `lp-ui`/`lp-app`, removed by [ADR-0006](/decisions/0006-web-ui-over-dioxus.md); they are kept as history. Item 5's rule (never block the UI or async runtime with synchronous SQLite/subprocess IO; use `spawn_blocking`) still applies to `lp-server`.
+
 1. **NEVER use inline `<script>` DOM polling (`dangerous_inner_html`) in `lp-ui` or `lp-app`**:
    - We inspected `rust-ui/dioxus-ui` and found it injects `<script>` blocks with `setTimeout(setupDialog, 50)` to attach click and Escape handlers outside Dioxus's VirtualDOM. This breaks on re-renders and leaks listeners. All interactivity in `lp-ui` and `lp-app` MUST use pure Rust `Signal<T>` (`use_signal`, `use_memo`, `use_context`) and native Dioxus event handlers (`onclick`, `onkeydown`, `onwheel`).
 2. **NEVER import `wasm_bindgen`, `web_sys`, `js_sys`, or `gloo_timers` in `lp-ui` or `lp-app`**:
