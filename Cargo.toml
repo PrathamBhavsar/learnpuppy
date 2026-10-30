@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/lp-core", "crates/lp-store", "crates/lp-cli-driver", "crates/lp-agent", "crates/lp-ingest", "crates/lp-service"]
+members = ["crates/lp-core", "crates/lp-store", "crates/lp-cli-driver", "crates/lp-agent", "crates/lp-ingest", "crates/lp-service", "crates/lp-server"]
 
 [workspace.package]
 edition = "2021"
