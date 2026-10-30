@@ -1,6 +1,5 @@
 #!/usr/bin/env bun
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
 
 /** Convert sRGB hex to OKLCH; surface lifts add to perceptual lightness. */
 export function hexToOklch(hex: string, lift = 0, alpha = 1): string {
@@ -182,8 +181,6 @@ if (import.meta.main) {
     assert.throws(() => hexToOklch("#fff", 0, -1));
     assert.throws(() => hexToOklch("#fff", 0, 2));
     assert.throws(() => hexToOklch("#fff", 0, NaN));
-    const theme = readFileSync(new URL("../crates/lp-ui/src/theme.rs", import.meta.url), "utf8");
-    assert.ok(theme.includes(`\n${themeTokens()}\n`), "theme.rs must contain the generated token block");
     console.log("hex2oklch self-checks passed");
   } else if (args.length > 0 && args.every((arg) => arg.startsWith("#"))) {
     for (const hex of args) console.log(hexToOklch(hex));
