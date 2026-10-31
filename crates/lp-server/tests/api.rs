@@ -564,7 +564,7 @@ async fn node_detail_search_and_chain_table() {
 // ------------------------------------------------------------------ chats
 
 #[tokio::test]
-async fn lists_chats_with_phase_pending_and_running_jobs() {
+async fn lists_chats_with_phase_pending_and_recovered_jobs() {
     let a = api();
     let r = a.get(&ws("/chats")).await;
     assert_eq!(r.status, StatusCode::OK);
@@ -585,7 +585,11 @@ async fn lists_chats_with_phase_pending_and_running_jobs() {
     assert_eq!(by("chat_practice")["phase"], "practice");
     assert_eq!(by("chat_done")["phase"], "done");
     assert_eq!(by("chat_teach")["pending"], true);
-    assert_eq!(by("chat_teach")["jobs"], 1, "one running job");
+    assert_eq!(
+        by("chat_teach")["jobs"],
+        0,
+        "the pre-restart job was recovered"
+    );
     assert_eq!(by("chat_done")["pending"], false);
     let times: Vec<_> = j["items"]
         .as_array()
@@ -654,7 +658,7 @@ async fn classroom_view_has_the_documented_shape() {
         .as_array()
         .unwrap()
         .iter()
-        .any(|x| x["status"] == "running"));
+        .any(|x| x["id"] == "job_research_run" && x["status"] == "done"));
 
     let done = a.get(&ws("/chats/chat_done")).await.json();
     assert!(done["pending"].is_null());

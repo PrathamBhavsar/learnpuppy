@@ -7,8 +7,8 @@
 
 use lp_agent::loops::{Call, Kind, Msg, Session, MAX_PROBE_QUESTIONS};
 use lp_core::plan::{shuffle_options, Phase, ProblemInput, QuizInput, QuizOption};
-use lp_core::ports::{ChatRecord, JobKind, JobRecord, JobStatus};
-use lp_service::chat::{self, Prompt, IDK};
+use lp_core::ports::{ChatRecord, JobRecord, JobStatus};
+use lp_service::chat::{self, ChatMeta, Prompt, IDK};
 use serde::{Deserialize, Serialize};
 use utoipa::{IntoParams, ToSchema};
 
@@ -363,37 +363,24 @@ pub struct JobDto {
     pub artifact_id: Option<String>,
 }
 
-fn job_kind(k: JobKind) -> &'static str {
-    match k {
-        JobKind::Research => "research",
-        JobKind::Pdf => "pdf",
-        JobKind::Visual => "visual",
-        JobKind::Demo => "demo",
+impl From<&JobRecord> for JobDto {
+    fn from(j: &JobRecord) -> Self {
+        Self {
+            id: j.id.to_string(),
+            kind: chat::kind_name(j.kind).to_owned(),
+            status: j.status.into(),
+            title: chat::job_title(j),
+            artifact_id: chat::job_artifact(j),
+        }
     }
 }
 
-impl From<&JobRecord> for JobDto {
-    fn from(j: &JobRecord) -> Self {
-        let field = |k: &str| {
-            j.result
-                .as_ref()
-                .and_then(|r| r.get(k))
-                .and_then(|v| v.as_str())
-                .map(str::to_owned)
-        };
-        Self {
-            id: j.id.to_string(),
-            kind: job_kind(j.kind).to_owned(),
-            status: match j.status {
-                JobStatus::Running => JobStatusDto::Running,
-                JobStatus::Done => JobStatusDto::Done,
-                JobStatus::Failed => JobStatusDto::Failed,
-            },
-            title: field("title").unwrap_or_else(|| {
-                let k = job_kind(j.kind);
-                format!("{}{} job", k[..1].to_uppercase(), &k[1..])
-            }),
-            artifact_id: field("artifactId"),
+impl From<JobStatus> for JobStatusDto {
+    fn from(s: JobStatus) -> Self {
+        match s {
+            JobStatus::Running => JobStatusDto::Running,
+            JobStatus::Done => JobStatusDto::Done,
+            JobStatus::Failed => JobStatusDto::Failed,
         }
     }
 }
@@ -407,12 +394,65 @@ pub enum TurnState {
     Error,
 }
 
+/// Why the last turn stopped short.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct TurnErrorDto {
+    /// `engine_unavailable`, `rate_limited`, `internal`, `storage_full`, or `interrupted` when a
+    /// server restart cut the turn off.
+    pub code: String,
+    pub message: String,
+    pub retryable: bool,
+    /// For `rate_limited`: how long until an account is free again.
+    pub retry_after_ms: Option<u64>,
+    /// The server stopped mid-turn; offer Resume.
+    pub interrupted: bool,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct TurnDto {
     pub state: TurnState,
     pub turn_id: Option<String>,
     pub started_at: Option<i64>,
+    /// The request that started the turn; post it again to retry after an error.
+    #[serde(default)]
+    pub client_id: Option<String>,
+    /// While `queued` on a rate limit: when the next attempt starts (epoch ms).
+    #[serde(default)]
+    pub retry_at: Option<i64>,
+    #[serde(default)]
+    pub error: Option<TurnErrorDto>,
+}
+
+impl TurnDto {
+    pub fn idle() -> Self {
+        Self::from(&chat::TurnStatus::default())
+    }
+}
+
+impl From<&chat::TurnStatus> for TurnDto {
+    fn from(t: &chat::TurnStatus) -> Self {
+        Self {
+            state: match t.state {
+                chat::TurnState::Idle => TurnState::Idle,
+                chat::TurnState::Running => TurnState::Running,
+                chat::TurnState::Queued => TurnState::Queued,
+                chat::TurnState::Error => TurnState::Error,
+            },
+            turn_id: t.turn_id.clone(),
+            started_at: t.started_at,
+            client_id: t.client_id.clone(),
+            retry_at: t.retry_at,
+            error: t.error.as_ref().map(|e| TurnErrorDto {
+                code: e.code.clone(),
+                message: e.message.clone(),
+                retryable: e.retryable,
+                retry_after_ms: e.retry_after_ms,
+                interrupted: e.interrupted,
+            }),
+        }
+    }
 }
 
 /// Everything the Classroom renders, derived server-side from the stored session.
@@ -430,8 +470,62 @@ pub struct ClassroomViewDto {
     pub plan: Option<PlanDto>,
     pub probe_progress: ProbeProgressDto,
     pub verdicts: Vec<VerdictDto>,
+    pub problem_result: Option<ProblemResultDto>,
     pub jobs: Vec<JobDto>,
     pub turn: TurnDto,
+}
+
+/// Feedback committed by a successful Practice conclude call.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ProblemResultDto {
+    pub call_id: String,
+    pub outcome: String,
+    pub verdict: String,
+    pub rung: Option<String>,
+    pub miss_class: Option<String>,
+    pub retest: bool,
+}
+
+fn problem_result(s: &Session) -> Option<ProblemResultDto> {
+    s.messages.iter().rev().find_map(|m| {
+        let Msg::ToolResult {
+            call_id,
+            name,
+            ok: true,
+            ..
+        } = m
+        else {
+            return None;
+        };
+        if name != "conclude" {
+            return None;
+        }
+        let call = s.messages.iter().find_map(|m| match m {
+            Msg::Assistant { calls, .. } => calls.iter().find(|c| c.id == *call_id),
+            _ => None,
+        })?;
+        let input: lp_core::plan::ConcludeInput = serde_json::from_value(call.args.clone()).ok()?;
+        let wire = |v| {
+            serde_json::to_value(v)
+                .ok()
+                .and_then(|v| v.as_str().map(str::to_owned))
+        };
+        Some(ProblemResultDto {
+            call_id: call_id.clone(),
+            outcome: wire(input.outcome)?,
+            verdict: input.verdict,
+            rung: input
+                .rung
+                .and_then(|r| serde_json::to_value(r).ok())
+                .and_then(|v| v.as_str().map(str::to_owned)),
+            miss_class: input
+                .miss_class
+                .and_then(|r| serde_json::to_value(r).ok())
+                .and_then(|v| v.as_str().map(str::to_owned)),
+            retest: input.retest,
+        })
+    })
 }
 
 /// Longest tool notice sent to the UI.
@@ -485,7 +579,7 @@ fn friendly_answer(call: Option<&Call>, text: &str) -> String {
     }
 }
 
-fn messages(s: &Session) -> Vec<MessageDto> {
+fn messages(s: &Session, meta: &ChatMeta) -> Vec<MessageDto> {
     let call = |id: &str| -> Option<&Call> {
         s.messages.iter().find_map(|m| match m {
             Msg::Assistant { calls, .. } => calls.iter().find(|c| c.id == id),
@@ -497,10 +591,10 @@ fn messages(s: &Session) -> Vec<MessageDto> {
         role,
         text,
         thinking: None,
-        interrupted: None,
+        interrupted: meta.is_interrupted(i).then_some(true),
         calls: vec![],
         answers_call_id: None,
-        created_at: None,
+        created_at: meta.time(i),
     };
     let mut out = Vec::new();
     for (i, m) in s.messages.iter().enumerate() {
@@ -594,6 +688,7 @@ impl ClassroomViewDto {
     /// `turn` is the live turn state; the stored session knows nothing of it.
     pub fn new(rec: &ChatRecord, jobs: &[JobRecord], turn: TurnDto) -> Self {
         let s = session_of(rec);
+        let meta = ChatMeta::of(&rec.body);
         let view = chat::classroom_view(&s, "");
         let pending = chat::pending_call(&s)
             .zip(view.prompt.clone())
@@ -604,7 +699,7 @@ impl ClassroomViewDto {
             title: rec.title.clone(),
             phase: phase_of(&s, &view),
             view_version: u64::try_from(rec.updated_at).unwrap_or(0),
-            messages: messages(&s),
+            messages: messages(&s, &meta),
             pending,
             plan: plan_dto(&view),
             probe_progress: ProbeProgressDto {
@@ -612,6 +707,7 @@ impl ClassroomViewDto {
                 max: MAX_PROBE_QUESTIONS,
             },
             verdicts: verdicts(&s),
+            problem_result: problem_result(&s),
             jobs: jobs
                 .iter()
                 .filter(|j| j.chat_id == rec.id)
@@ -622,10 +718,220 @@ impl ClassroomViewDto {
     }
 }
 
+// ---------------------------------------------------------------- chat commands
+
+/// `POST …/chats`.
+#[derive(Clone, Debug, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct CreateChat {
+    pub kind: ChatKind,
+    /// What to learn (teach; required) or an optional focus (practice).
+    #[serde(default)]
+    pub topic: String,
+    /// Graph propositions the chat starts from (practice needs a topic or at least one).
+    #[serde(default)]
+    pub seed_node_ids: Vec<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct CreatedChatDto {
+    pub chat_id: String,
+    /// The first turn, already running.
+    pub turn_id: String,
+}
+
+/// The learner's answer to the pending question.
+#[derive(Clone, Debug, Default, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct AnswerDto {
+    /// Picked option keys (`pending.options[].key`, or `pending.idkKey`); several only when
+    /// `pending.multiSelect`.
+    #[serde(default)]
+    pub choice: Vec<String>,
+    /// Free text: a probe's own answer, a recall, an explanation, a problem attempt.
+    #[serde(default)]
+    pub text: String,
+    #[serde(default)]
+    pub reading_notes: String,
+    /// `1..=5`, when `pending.confidenceScale` is set (default 3).
+    #[serde(default)]
+    pub confidence: Option<u8>,
+    /// Problems only: ask for the next hint rung.
+    #[serde(default)]
+    pub hint: bool,
+}
+
+/// `POST …/chats/{id}/turn`. `clientId` makes retries safe: a repeated id returns the original
+/// turn, and after an `error` it re-runs the turn.
+#[derive(Clone, Debug, Deserialize, ToSchema)]
+#[serde(tag = "type", rename_all = "lowercase")]
+pub enum TurnBody {
+    /// A learner message (not while a question is pending).
+    User {
+        text: String,
+        #[serde(rename = "clientId")]
+        client_id: String,
+    },
+    /// Answers the pending question `callId`.
+    Answer {
+        #[serde(rename = "callId")]
+        call_id: String,
+        answer: AnswerDto,
+        #[serde(rename = "clientId")]
+        client_id: String,
+    },
+    /// Guidance; joins the running turn between model steps, or starts a turn when idle.
+    Steer {
+        text: String,
+        #[serde(rename = "clientId")]
+        client_id: String,
+    },
+    /// Re-runs the last step after an error or a restart.
+    Resume {
+        #[serde(rename = "clientId")]
+        client_id: String,
+    },
+}
+
+impl TurnBody {
+    pub fn into_input(self) -> (String, chat::TurnInput) {
+        match self {
+            TurnBody::User { text, client_id } => (client_id, chat::TurnInput::User(text)),
+            TurnBody::Steer { text, client_id } => (client_id, chat::TurnInput::Steer(text)),
+            TurnBody::Resume { client_id } => (client_id, chat::TurnInput::Resume),
+            TurnBody::Answer {
+                call_id,
+                answer,
+                client_id,
+            } => (
+                client_id,
+                chat::TurnInput::Answer {
+                    call_id,
+                    answer: chat::AnswerInput {
+                        choice: answer.choice,
+                        text: answer.text,
+                        reading_notes: answer.reading_notes,
+                        confidence: answer.confidence,
+                        hint: answer.hint,
+                    },
+                },
+            ),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub enum TurnAcceptance {
+    /// A new turn is running.
+    Started,
+    /// This `clientId` was already applied; `turnId` is its turn.
+    Duplicate,
+    /// A steer for the running turn `turnId`.
+    SteerQueued,
+    /// Saved; the model runs once the pending question is answered.
+    Recorded,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct TurnAcceptedDto {
+    pub turn_id: String,
+    pub status: TurnAcceptance,
+}
+
+impl From<chat::Accepted> for TurnAcceptedDto {
+    fn from(a: chat::Accepted) -> Self {
+        let status = match &a {
+            chat::Accepted::Started(_) => TurnAcceptance::Started,
+            chat::Accepted::Duplicate(_) => TurnAcceptance::Duplicate,
+            chat::Accepted::SteerQueued(_) => TurnAcceptance::SteerQueued,
+            chat::Accepted::Recorded(_) => TurnAcceptance::Recorded,
+        };
+        Self {
+            turn_id: a.turn_id().to_owned(),
+            status,
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct CancelDto {
+    /// False when no turn was running.
+    pub cancelled: bool,
+    pub turn_id: Option<String>,
+}
+
+/// One workbench job in the workspace's job list.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct JobItemDto {
+    pub id: String,
+    pub chat_id: String,
+    /// `research`, `pdf`, `visual` or `demo`.
+    pub kind: String,
+    pub status: JobStatusDto,
+    pub title: String,
+    pub artifact_id: Option<String>,
+    /// Why a finished job has no result.
+    pub error: Option<String>,
+    pub created_at: i64,
+}
+
+impl From<chat::JobView> for JobItemDto {
+    fn from(j: chat::JobView) -> Self {
+        Self {
+            id: j.id,
+            chat_id: j.chat_id,
+            kind: j.kind.to_owned(),
+            status: j.status.into(),
+            title: j.title,
+            artifact_id: j.artifact_id,
+            error: j.error,
+            created_at: j.created_at,
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+pub struct JobListDto {
+    /// Newest first.
+    pub items: Vec<JobItemDto>,
+}
+
+/// `POST …/sources/pdf` form: the PDF and an optional question for the reading job.
+#[derive(ToSchema)]
+#[allow(dead_code)]
+pub struct PdfUploadForm {
+    #[schema(value_type = String, format = Binary)]
+    pub file: Vec<u8>,
+    pub question: Option<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct PdfUploadDto {
+    pub job_id: String,
+    /// The stored PDF (`GET …/artifacts/{id}`).
+    pub artifact_id: String,
+    pub chat_id: String,
+    pub bytes: u64,
+}
+
+#[derive(Debug, Deserialize, IntoParams)]
+#[into_params(parameter_in = Query)]
+pub struct PdfQuery {
+    /// The chat the reading job reports to.
+    pub chat: String,
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
     use lp_core::plan::{PlanNode, PlanTree};
+    use lp_core::ports::JobKind;
     use serde_json::json;
 
     pub(crate) fn call(id: &str, name: &str, args: serde_json::Value) -> Msg {
@@ -667,11 +973,7 @@ pub(crate) mod tests {
     }
 
     fn idle() -> TurnDto {
-        TurnDto {
-            state: TurnState::Idle,
-            turn_id: None,
-            started_at: None,
-        }
+        TurnDto::idle()
     }
 
     #[test]

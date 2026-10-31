@@ -284,6 +284,7 @@ pub async fn run(
     state.shutdown = shutdown.clone();
 
     let pump = state.pump.spawn(shutdown.clone());
+    let chats = state.chats.clone();
     let app = crate::app::router(state);
     let servers: Vec<_> = listeners
         .into_iter()
@@ -306,6 +307,7 @@ pub async fn run(
             result = Err(anyhow::Error::new(e).context("server failed"));
         }
     }
+    chats.wait_idle().await;
     pump.await?;
     drop(guard);
     tracing::info!(port, "stopped");

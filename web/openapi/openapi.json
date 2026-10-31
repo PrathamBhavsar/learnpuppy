@@ -842,6 +842,62 @@
         }
       }
     },
+    "/workspaces/{ws}/artifacts/{id}": {
+      "get": {
+        "tags": [
+          "chats"
+        ],
+        "summary": "One artifact.",
+        "operationId": "artifact",
+        "parameters": [
+          {
+            "name": "ws",
+            "in": "path",
+            "description": "Workspace id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Artifact id (`JobDto.artifactId`)",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The file; `text/html` and `image/svg+xml` carry `Content-Security-Policy: sandbox`",
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "integer",
+                    "format": "int32",
+                    "minimum": 0
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/workspaces/{ws}/chats": {
       "get": {
         "tags": [
@@ -890,6 +946,76 @@
           },
           "404": {
             "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "chats"
+        ],
+        "summary": "Starts a Teach or Practice chat; its first turn runs at once.",
+        "operationId": "create",
+        "parameters": [
+          {
+            "name": "ws",
+            "in": "path",
+            "description": "Workspace id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateChat"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "description": "Created; the first turn is running",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreatedChatDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid topic or unknown seed nodes",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Workspace archived",
             "content": {
               "application/json": {
                 "schema": {
@@ -1072,6 +1198,189 @@
           },
           "422": {
             "description": "Invalid title",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/workspaces/{ws}/chats/{id}/cancel": {
+      "post": {
+        "tags": [
+          "chats"
+        ],
+        "summary": "Stops the running or queued turn; text streamed so far is kept, marked interrupted.",
+        "operationId": "cancel",
+        "parameters": [
+          {
+            "name": "ws",
+            "in": "path",
+            "description": "Workspace id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Chat id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CancelDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/workspaces/{ws}/chats/{id}/export.md": {
+      "get": {
+        "tags": [
+          "chats"
+        ],
+        "summary": "The chat as a Markdown transcript (download).",
+        "operationId": "export",
+        "parameters": [
+          {
+            "name": "ws",
+            "in": "path",
+            "description": "Workspace id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Chat id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "text/markdown": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/workspaces/{ws}/chats/{id}/turn": {
+      "post": {
+        "tags": [
+          "chats"
+        ],
+        "summary": "Sends the learner's message, answer, steer or resume; the turn runs in the background.",
+        "operationId": "turn",
+        "parameters": [
+          {
+            "name": "ws",
+            "in": "path",
+            "description": "Workspace id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Chat id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TurnBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TurnAcceptedDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "`turn_in_progress`; `stale_question` with the fresh view in `details.view`; `conflict` while a question is pending or nothing to resume; `workspace_archived`",
             "content": {
               "application/json": {
                 "schema": {
@@ -1497,6 +1806,109 @@
           },
           "422": {
             "description": "Empty query",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/workspaces/{ws}/jobs": {
+      "get": {
+        "tags": [
+          "chats"
+        ],
+        "summary": "Every job of the workspace, newest first. Jobs a previous server left running read as\nfinished with an \"interrupted by a restart\" error.",
+        "operationId": "list",
+        "parameters": [
+          {
+            "name": "ws",
+            "in": "path",
+            "description": "Workspace id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobListDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/workspaces/{ws}/jobs/{id}/abort": {
+      "post": {
+        "tags": [
+          "chats"
+        ],
+        "summary": "Stops a running job; its result is never delivered to the chat.",
+        "operationId": "abort",
+        "parameters": [
+          {
+            "name": "ws",
+            "in": "path",
+            "description": "Workspace id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Job id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Abort requested; `job.updated` follows",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobItemDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The job is not running",
             "content": {
               "application/json": {
                 "schema": {
@@ -2097,6 +2509,95 @@
           }
         }
       }
+    },
+    "/workspaces/{ws}/sources/pdf": {
+      "post": {
+        "tags": [
+          "chats"
+        ],
+        "operationId": "pdf",
+        "parameters": [
+          {
+            "name": "ws",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "chat",
+            "in": "query",
+            "description": "The chat the reading job reports to.",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/PdfUploadForm"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PdfUploadDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "PDF exceeds 50 MB",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -2443,6 +2944,24 @@
           },
           "name": {
             "type": "string"
+          }
+        }
+      },
+      "CancelDto": {
+        "type": "object",
+        "required": [
+          "cancelled"
+        ],
+        "properties": {
+          "cancelled": {
+            "type": "boolean",
+            "description": "False when no turn was running."
+          },
+          "turnId": {
+            "type": [
+              "string",
+              "null"
+            ]
           }
         }
       },
@@ -3001,6 +3520,16 @@
           "probeProgress": {
             "$ref": "#/components/schemas/ProbeProgressDto"
           },
+          "problemResult": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/ProblemResultDto"
+              }
+            ]
+          },
           "title": {
             "type": "string"
           },
@@ -3074,6 +3603,29 @@
           }
         }
       },
+      "CreateChat": {
+        "type": "object",
+        "description": "`POST …/chats`.",
+        "required": [
+          "kind"
+        ],
+        "properties": {
+          "kind": {
+            "$ref": "#/components/schemas/ChatKind"
+          },
+          "seedNodeIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Graph propositions the chat starts from (practice needs a topic or at least one)."
+          },
+          "topic": {
+            "type": "string",
+            "description": "What to learn (teach; required) or an optional focus (practice)."
+          }
+        }
+      },
       "CreateWorkspace": {
         "type": "object",
         "required": [
@@ -3110,6 +3662,22 @@
                 "$ref": "#/components/schemas/SourcesDto"
               }
             ]
+          }
+        }
+      },
+      "CreatedChatDto": {
+        "type": "object",
+        "required": [
+          "chatId",
+          "turnId"
+        ],
+        "properties": {
+          "chatId": {
+            "type": "string"
+          },
+          "turnId": {
+            "type": "string",
+            "description": "The first turn, already running."
           }
         }
       },
@@ -3865,6 +4433,68 @@
           }
         }
       },
+      "JobItemDto": {
+        "type": "object",
+        "description": "One workbench job in the workspace's job list.",
+        "required": [
+          "id",
+          "chatId",
+          "kind",
+          "status",
+          "title",
+          "createdAt"
+        ],
+        "properties": {
+          "artifactId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "chatId": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "error": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Why a finished job has no result."
+          },
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string",
+            "description": "`research`, `pdf`, `visual` or `demo`."
+          },
+          "status": {
+            "$ref": "#/components/schemas/JobStatusDto"
+          },
+          "title": {
+            "type": "string"
+          }
+        }
+      },
+      "JobListDto": {
+        "type": "object",
+        "required": [
+          "items"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/JobItemDto"
+            },
+            "description": "Newest first."
+          }
+        }
+      },
       "JobStatusDto": {
         "type": "string",
         "enum": [
@@ -4152,6 +4782,51 @@
           }
         }
       },
+      "PdfUploadDto": {
+        "type": "object",
+        "required": [
+          "jobId",
+          "artifactId",
+          "chatId",
+          "bytes"
+        ],
+        "properties": {
+          "artifactId": {
+            "type": "string",
+            "description": "The stored PDF (`GET …/artifacts/{id}`)."
+          },
+          "bytes": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "chatId": {
+            "type": "string"
+          },
+          "jobId": {
+            "type": "string"
+          }
+        }
+      },
+      "PdfUploadForm": {
+        "type": "object",
+        "description": "`POST …/sources/pdf` form: the PDF and an optional question for the reading job.",
+        "required": [
+          "file"
+        ],
+        "properties": {
+          "file": {
+            "type": "string",
+            "format": "binary"
+          },
+          "question": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
       "PendingDto": {
         "type": "object",
         "description": "The question waiting for the learner. Has no field for the correct answer.",
@@ -4378,6 +5053,42 @@
             "description": "Hint rungs, when the mode has a ladder."
           },
           "statement": {
+            "type": "string"
+          }
+        }
+      },
+      "ProblemResultDto": {
+        "type": "object",
+        "description": "Feedback committed by a successful Practice conclude call.",
+        "required": [
+          "callId",
+          "outcome",
+          "verdict",
+          "retest"
+        ],
+        "properties": {
+          "callId": {
+            "type": "string"
+          },
+          "missClass": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "outcome": {
+            "type": "string"
+          },
+          "retest": {
+            "type": "boolean"
+          },
+          "rung": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "verdict": {
             "type": "string"
           }
         }
@@ -5259,12 +5970,158 @@
           }
         }
       },
+      "TurnAcceptance": {
+        "type": "string",
+        "enum": [
+          "started",
+          "duplicate",
+          "steerQueued",
+          "recorded"
+        ]
+      },
+      "TurnAcceptedDto": {
+        "type": "object",
+        "required": [
+          "turnId",
+          "status"
+        ],
+        "properties": {
+          "status": {
+            "$ref": "#/components/schemas/TurnAcceptance"
+          },
+          "turnId": {
+            "type": "string"
+          }
+        }
+      },
+      "TurnBody": {
+        "oneOf": [
+          {
+            "type": "object",
+            "description": "A learner message (not while a question is pending).",
+            "required": [
+              "text",
+              "clientId",
+              "type"
+            ],
+            "properties": {
+              "clientId": {
+                "type": "string"
+              },
+              "text": {
+                "type": "string"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "user"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "Answers the pending question `callId`.",
+            "required": [
+              "callId",
+              "answer",
+              "clientId",
+              "type"
+            ],
+            "properties": {
+              "answer": {
+                "$ref": "#/components/schemas/AnswerDto"
+              },
+              "callId": {
+                "type": "string"
+              },
+              "clientId": {
+                "type": "string"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "answer"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "Guidance; joins the running turn between model steps, or starts a turn when idle.",
+            "required": [
+              "text",
+              "clientId",
+              "type"
+            ],
+            "properties": {
+              "clientId": {
+                "type": "string"
+              },
+              "text": {
+                "type": "string"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "steer"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "Re-runs the last step after an error or a restart.",
+            "required": [
+              "clientId",
+              "type"
+            ],
+            "properties": {
+              "clientId": {
+                "type": "string"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "resume"
+                ]
+              }
+            }
+          }
+        ],
+        "description": "`POST …/chats/{id}/turn`. `clientId` makes retries safe: a repeated id returns the original\nturn, and after an `error` it re-runs the turn."
+      },
       "TurnDto": {
         "type": "object",
         "required": [
           "state"
         ],
         "properties": {
+          "clientId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The request that started the turn; post it again to retry after an error."
+          },
+          "error": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/TurnErrorDto"
+              }
+            ]
+          },
+          "retryAt": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "While `queued` on a rate limit: when the next attempt starts (epoch ms)."
+          },
           "startedAt": {
             "type": [
               "integer",
@@ -5296,6 +6153,41 @@
           },
           "message": {
             "type": "string"
+          },
+          "retryable": {
+            "type": "boolean"
+          }
+        }
+      },
+      "TurnErrorDto": {
+        "type": "object",
+        "description": "Why the last turn stopped short.",
+        "required": [
+          "code",
+          "message",
+          "retryable",
+          "interrupted"
+        ],
+        "properties": {
+          "code": {
+            "type": "string",
+            "description": "`engine_unavailable`, `rate_limited`, `internal`, `storage_full`, or `interrupted` when a\nserver restart cut the turn off."
+          },
+          "interrupted": {
+            "type": "boolean",
+            "description": "The server stopped mid-turn; offer Resume."
+          },
+          "message": {
+            "type": "string"
+          },
+          "retryAfterMs": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "For `rate_limited`: how long until an account is free again.",
+            "minimum": 0
           },
           "retryable": {
             "type": "boolean"
