@@ -476,6 +476,9 @@ export interface PendingPaths {
   "/workspaces/{ws}/restore": Path<
     Method<"post", BodylessOp<WorkspaceDetail, WsP>>
   >
+  "/workspaces/{ws}/repair": Path<
+    Method<"post", BodylessOp<WorkspaceDetail, WsP>>
+  >
   "/workspaces/{ws}/export": Path<
     Method<"post", BodylessOp<{ jobId: string }, WsP>>
   >

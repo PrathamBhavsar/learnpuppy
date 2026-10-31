@@ -36,7 +36,7 @@ import {
   hueClass,
 } from "@/lib/workspace-visual"
 
-export function WorkspaceAvatar({
+function WorkspaceAvatar({
   workspace,
   className,
   shared = false,

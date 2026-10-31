@@ -1,10 +1,7 @@
-import { Link, Outlet, useParams, useRouterState } from "@tanstack/react-router"
-import { CompassIcon } from "lucide-react"
+import { Outlet, useParams, useRouterState } from "@tanstack/react-router"
 import { motion } from "motion/react"
 import { useEffect, useRef, useState } from "react"
 
-import { EmptyState } from "@/components/app/empty-state"
-import { Button } from "@/components/ui/button"
 import { useHotkey } from "@/hooks/use-hotkey"
 import { useShellHotkeys } from "@/hooks/use-shell-hotkeys"
 import { useActiveWorkspace } from "@/hooks/use-workspace"
@@ -92,20 +89,7 @@ export function AppShell() {
             animate="visible"
             className="h-full"
           >
-            {active.notFound ? (
-              <EmptyState
-                icon={CompassIcon}
-                title="Workspace not found"
-                description="It may have been deleted or moved to the trash."
-                action={
-                  <Button asChild variant="outline">
-                    <Link to="/">All workspaces</Link>
-                  </Button>
-                }
-              />
-            ) : (
-              <Outlet />
-            )}
+            <Outlet />
           </motion.div>
         </main>
       </div>

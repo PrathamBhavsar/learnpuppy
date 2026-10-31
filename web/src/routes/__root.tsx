@@ -15,7 +15,8 @@ import { CommandPalette } from "@/features/palette/CommandPalette"
 import { AuthRequired } from "@/features/shell/AuthRequired"
 import { ShortcutsSheet } from "@/features/shell/ShortcutsSheet"
 import { useServerEvents } from "@/hooks/use-server-events"
-import { toastInfo, toastSuccess } from "@/lib/toast"
+import { notifyExportReady } from "@/features/workspaces/exports"
+import { toastInfo } from "@/lib/toast"
 import { useStatus } from "@/stores/status"
 
 export type RouterContext = { queryClient: QueryClient }
@@ -50,7 +51,7 @@ function Root() {
           void navigate({ to: "/" })
         }
       },
-      exportReady: () => toastSuccess("Export ready"),
+      exportReady: notifyExportReady,
     }),
     [ws, navigate]
   )
