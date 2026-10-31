@@ -89,6 +89,41 @@ impl LearningStyle {
     }
 }
 
+/// Model ids per provider, for the catalog: the starter table, every saved profile, plus the
+/// Claude aliases the CLI accepts. Sorted, no duplicates.
+pub fn catalog_models(provider: &str, saved: &Settings) -> Vec<String> {
+    let mut out: Vec<String> = DEFAULT_PROFILES
+        .iter()
+        .filter(|(_, p, _, _)| *p == provider)
+        .map(|(_, _, m, _)| (*m).to_owned())
+        .collect();
+    if provider == "claude" {
+        out.extend(
+            [
+                "auto",
+                "opus",
+                "sonnet",
+                "haiku",
+                "claude-fable-5-1",
+                "claude-opus-5-5",
+                "claude-sonnet-5-5",
+                "claude-haiku-5-5",
+            ]
+            .map(str::to_owned),
+        );
+    }
+    out.extend(
+        saved
+            .profiles
+            .values()
+            .filter(|p| p.provider == provider)
+            .map(|p| p.model.clone()),
+    );
+    out.sort();
+    out.dedup();
+    out
+}
+
 /// The coordinator's starter table: role, provider, model, effort.
 const DEFAULT_PROFILES: [(&str, &str, &str, Option<&str>); 9] = [
     ("prober", "codex", "gpt-6.1-sol", Some("low")),
@@ -101,6 +136,57 @@ const DEFAULT_PROFILES: [(&str, &str, &str, Option<&str>); 9] = [
     ("demo", "codex", "gpt-6.1-sol", Some("medium")),
     ("pdf", "agy", "gemini-3.8-flash-medium", None),
 ];
+
+pub const THEMES: [&str; 3] = ["dark", "light", "system"];
+pub const DIRECTIONS: [&str; 3] = ["ltr", "rtl", "auto"];
+pub const DENSITIES: [&str; 2] = ["comfortable", "compact"];
+/// Parallel model calls the server allows (docs/web/06 Settings → Behavior).
+pub const CONCURRENCY_RANGE: std::ops::RangeInclusive<u8> = 1..=6;
+pub const DEFAULT_CONCURRENCY: u8 = 2;
+
+/// Appearance and behavior preferences the web UI reads at start.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct UiSettings {
+    /// One of [`THEMES`].
+    pub theme: String,
+    /// One of [`DIRECTIONS`].
+    pub direction: String,
+    /// One of [`DENSITIES`].
+    pub density: String,
+    pub reduce_motion: bool,
+    pub confirm_destructive: bool,
+    pub auto_open_browser: bool,
+}
+
+impl Default for UiSettings {
+    fn default() -> Self {
+        Self {
+            theme: "dark".into(),
+            direction: "ltr".into(),
+            density: "comfortable".into(),
+            reduce_motion: false,
+            confirm_destructive: true,
+            auto_open_browser: true,
+        }
+    }
+}
+
+impl UiSettings {
+    pub fn validate(&self) -> Vec<(&'static str, String)> {
+        let mut out = Vec::new();
+        for (path, v, ok) in [
+            ("ui.theme", &self.theme, &THEMES[..]),
+            ("ui.direction", &self.direction, &DIRECTIONS[..]),
+            ("ui.density", &self.density, &DENSITIES[..]),
+        ] {
+            if !ok.contains(&v.as_str()) {
+                out.push((path, format!("must be one of: {}", ok.join(", "))));
+            }
+        }
+        out
+    }
+}
 
 /// Model slot pins, extra Claude profiles and allowlisted repos.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -115,6 +201,12 @@ pub struct Settings {
     pub repos: Vec<PathBuf>,
     /// This install's id in the FSRS replication logs; minted on first use.
     pub device_id: String,
+    /// Appearance and behavior preferences.
+    pub ui: UiSettings,
+    /// Parallel model calls; 0 (unset) means [`DEFAULT_CONCURRENCY`].
+    pub concurrency_cap: u8,
+    /// Accounts the user excluded from the pool; re-applied at start.
+    pub disabled_accounts: Vec<String>,
 }
 
 impl Settings {
@@ -125,6 +217,14 @@ impl Settings {
     /// The pin serving `role`: its saved pin, else `DEFAULT_PIN`.
     pub fn pin(&self, role: &str) -> &str {
         self.pins.get(role).map_or(DEFAULT_PIN, String::as_str)
+    }
+
+    /// The effective concurrency cap, `1..=6`.
+    pub fn concurrency(&self) -> u8 {
+        match self.concurrency_cap {
+            0 => DEFAULT_CONCURRENCY,
+            n => n.clamp(*CONCURRENCY_RANGE.start(), *CONCURRENCY_RANGE.end()),
+        }
     }
 
     pub fn load(root: &Path) -> anyhow::Result<Self> {

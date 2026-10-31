@@ -1,7 +1,17 @@
 //! `/api/v1` route files. Each file exposes `routes()`; add new files to [`api`] and their
 //! handlers to `openapi.rs`.
 
+pub mod accounts;
+pub mod chats;
+pub mod common;
+pub mod digest;
+pub mod graph;
+pub mod review;
+pub mod search;
 pub mod system;
+#[cfg(feature = "test-hooks")]
+pub mod testhooks;
+pub mod workspaces;
 
 use axum::Router;
 
@@ -9,7 +19,17 @@ use crate::app::AppState;
 
 /// Everything nested under `/api/v1`.
 pub fn api() -> Router<AppState> {
-    Router::new()
+    let router = Router::new()
         .merge(system::routes())
-        .merge(crate::sse::routes())
+        .merge(workspaces::routes())
+        .merge(graph::routes())
+        .merge(chats::routes())
+        .merge(review::routes())
+        .merge(digest::routes())
+        .merge(accounts::routes())
+        .merge(search::routes())
+        .merge(crate::sse::routes());
+    #[cfg(feature = "test-hooks")]
+    let router = router.merge(testhooks::routes());
+    router
 }

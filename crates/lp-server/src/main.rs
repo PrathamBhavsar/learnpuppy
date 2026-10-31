@@ -8,12 +8,9 @@ use clap::Parser;
 use lp_server::app::{EngineMode, HEARTBEAT};
 use lp_server::assets::Assets;
 use lp_server::cli::{Cli, Cmd, Engine};
-use lp_server::{doctor, openapi, serve};
+use lp_server::{doctor, openapi, seed, serve};
 use lp_service::paths;
 use tokio_util::sync::CancellationToken;
-
-/// Exit code of a subcommand that exists but is not built yet.
-const NOT_IMPLEMENTED: u8 = 2;
 
 fn home() -> anyhow::Result<PathBuf> {
     std::env::var_os("HOME")
@@ -151,15 +148,59 @@ fn run(cmd: Cmd, out: &mut dyn Write, err: &mut dyn Write) -> anyhow::Result<Exi
             no_open,
         } => serve_cmd(port, dev, real, fixture, engine, no_open),
         Cmd::Doctor => doctor_cmd(out),
-        other @ (Cmd::Migrate { .. } | Cmd::Seed { .. }) => {
-            writeln!(
-                err,
-                "learnpuppy {}: not implemented in this wave (web UI rollout, see docs/web/08-task-dag.md)",
-                other.name()
-            )?;
-            Ok(ExitCode::from(NOT_IMPLEMENTED))
+        Cmd::Migrate { revert } => migrate_cmd(revert, out),
+        Cmd::Seed { fixture, out: dir } => {
+            let report = seed::seed(fixture, &dir)?;
+            writeln!(out, "{}", serde_json::to_string_pretty(&report)?)?;
+            let _ = err;
+            Ok(ExitCode::SUCCESS)
         }
     }
+}
+
+/// `learnpuppy migrate [--revert]`: moves a legacy single-store data root into the "Default"
+/// workspace, or puts it back.
+fn migrate_cmd(revert: bool, out: &mut dyn Write) -> anyhow::Result<ExitCode> {
+    use lp_service::workspace::{migrate, MigrationOutcome, ServerLock};
+    let root = paths::data_root()?;
+    std::fs::create_dir_all(&root)?;
+    let lock = ServerLock::acquire(&root, None, None)
+        .map_err(|e| anyhow::anyhow!("another LearnPuppy process holds the data root: {e}"))?;
+    if revert {
+        let r = migrate::revert(&root, &lock)?;
+        writeln!(
+            out,
+            "reverted: moved {} entries back out of workspace {}",
+            r.restored.len(),
+            r.workspace_id
+        )?;
+        if let Some(left) = r.left_behind {
+            writeln!(
+                out,
+                "kept {} (it holds files created after the migration)",
+                left.display()
+            )?;
+        }
+    } else {
+        match migrate::migrate(&root, &lock)? {
+            MigrationOutcome::NotNeeded => writeln!(out, "nothing to migrate")?,
+            MigrationOutcome::AlreadyMigrated { workspace_id } => {
+                writeln!(out, "already migrated into workspace {workspace_id}")?;
+            }
+            MigrationOutcome::Migrated {
+                workspace_id,
+                moved,
+                resumed,
+            } => writeln!(
+                out,
+                "{}moved {} entries into workspace {workspace_id}: {}",
+                if resumed { "resumed: " } else { "" },
+                moved.len(),
+                moved.join(", ")
+            )?,
+        }
+    }
+    Ok(ExitCode::SUCCESS)
 }
 
 fn main() -> ExitCode {
@@ -188,20 +229,31 @@ mod tests {
     }
 
     #[test]
-    fn unbuilt_subcommands_say_so_and_fail() {
-        for cmd in [
-            Cmd::Migrate { revert: false },
-            Cmd::Seed { dir: "x".into() },
-        ] {
-            let name = cmd.name();
-            let (code, out, err) = go(cmd);
-            assert_eq!(code, ExitCode::from(NOT_IMPLEMENTED));
-            assert!(out.is_empty());
-            assert!(
-                err.starts_with(&format!("learnpuppy {name}: not implemented in this wave")),
-                "{err}"
-            );
-        }
+    fn seed_writes_a_fixture_and_reports_it() {
+        let d = tempfile::tempdir().unwrap();
+        let (code, out, _) = go(Cmd::Seed {
+            fixture: seed::Fixture::Small,
+            out: d.path().join("fx"),
+        });
+        assert_eq!(code, ExitCode::SUCCESS);
+        let report: serde_json::Value = serde_json::from_str(&out).unwrap();
+        assert_eq!(report["fixture"], "small");
+        assert_eq!(report["nodes"], 40);
+        assert!(d
+            .path()
+            .join("fx/workspaces/ws_5eed0001/workspace.json")
+            .is_file());
+        // A second seed into the same directory is refused.
+        let mut sink = Vec::new();
+        let again = run(
+            Cmd::Seed {
+                fixture: seed::Fixture::Small,
+                out: d.path().join("fx"),
+            },
+            &mut sink,
+            &mut Vec::new(),
+        );
+        assert!(again.is_err());
     }
 
     #[test]

@@ -31,6 +31,8 @@ pub struct AccountState {
     pub window_input_tokens: u64,
     pub window_output_tokens: u64,
     pub last_used_at: Option<Instant>,
+    /// Excluded from `acquire` by the user until re-enabled.
+    pub disabled: bool,
     /// Consecutive rate-limit hits; drives exponential cooldown.
     strikes: u32,
 }
@@ -70,6 +72,7 @@ impl AccountPool {
                 window_input_tokens: 0,
                 window_output_tokens: 0,
                 last_used_at: None,
+                disabled: false,
                 strikes: 0,
             })
             .collect();
@@ -92,9 +95,9 @@ impl AccountPool {
             }
         }
         for provider in chain {
-            let mut usable = accounts
-                .iter_mut()
-                .filter(|a| a.provider == *provider && a.health == AccountHealth::Healthy);
+            let mut usable = accounts.iter_mut().filter(|a| {
+                a.provider == *provider && !a.disabled && a.health == AccountHealth::Healthy
+            });
             let picked = match self.strategy {
                 Strategy::Priority => usable.next(),
                 Strategy::RoundRobin => usable.min_by_key(|a| a.last_used_at),
@@ -154,6 +157,62 @@ impl AccountPool {
             a.window_input_tokens += input_tokens;
             a.window_output_tokens += output_tokens;
         }
+    }
+
+    /// Exclude (or re-include) an account from `acquire`. False when `id` is unknown.
+    pub fn set_disabled(&self, id: &AccountId, disabled: bool) -> bool {
+        match self.accounts.lock().iter_mut().find(|a| a.id == *id) {
+            Some(a) => {
+                a.disabled = disabled;
+                true
+            }
+            None => false,
+        }
+    }
+
+    /// Fold a fresh discovery into the pool: unknown accounts are appended (their ids are
+    /// returned); known ones keep their health, but a login that expired or was renewed on disk
+    /// is picked up when the pool has no runtime cooldown on it.
+    pub fn merge_discovered(&self, discovered: Vec<DiscoveredAccount>) -> Vec<AccountId> {
+        let mut accounts = self.accounts.lock();
+        let mut added = Vec::new();
+        for d in discovered {
+            match accounts.iter_mut().find(|a| a.id == d.id) {
+                Some(a) => {
+                    a.email = d.email;
+                    a.rate_limit_tier = d.rate_limit_tier;
+                    a.config_dir = d.config_dir;
+                    match (&a.health, d.auth_expired) {
+                        (AccountHealth::Healthy, true) => a.health = AccountHealth::AuthExpired,
+                        (AccountHealth::AuthExpired, false) => a.health = AccountHealth::Healthy,
+                        _ => {}
+                    }
+                }
+                None => {
+                    added.push(d.id.clone());
+                    accounts.push(AccountState {
+                        health: if d.auth_expired {
+                            AccountHealth::AuthExpired
+                        } else {
+                            AccountHealth::Healthy
+                        },
+                        id: d.id,
+                        provider: d.provider,
+                        email: d.email,
+                        account_uuid: d.account_uuid,
+                        config_dir: d.config_dir,
+                        rate_limit_tier: d.rate_limit_tier,
+                        window_requests: 0,
+                        window_input_tokens: 0,
+                        window_output_tokens: 0,
+                        last_used_at: None,
+                        disabled: false,
+                        strikes: 0,
+                    });
+                }
+            }
+        }
+        added
     }
 
     pub fn snapshot(&self) -> Vec<AccountState> {
