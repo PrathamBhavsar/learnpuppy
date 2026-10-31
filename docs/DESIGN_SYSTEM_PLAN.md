@@ -1,3 +1,5 @@
+> **Archived:** superseded by [`web/05-design-and-motion.md`](./web/05-design-and-motion.md). Palette and token facts below are carried over there.
+
 # Design System Plan — shadcn `buFzGJc` (base-lyra) + torlink palette
 
 Goal: LearnPuppy gets one design system. Rust app stays working. Web lab proves it visually. Tokens/icons/font flow into `lp-ui`.

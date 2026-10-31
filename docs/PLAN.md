@@ -1,3 +1,5 @@
+> **Superseded (2026-11-01):** the Dioxus desktop phases in this plan were replaced by the local web UI, see [ADR-0006](../brain/decisions/0006-web-ui-over-dioxus.md) and [`docs/web/README.md`](./web/README.md). Kept for history; the backend crate plan (`lp-core` .. `lp-ingest`) still applies.
+
 # LearnPuppy (`learnpuppy`) — Master Architecture & Multi-Worktree Execution Plan (Dioxus 0.7 + `lp-ui` Visual Desktop)
 
 **Project Path**: `/Users/pratham/code/learnpuppy`  

@@ -28,3 +28,6 @@ Back to [Brain Index](/index.md). Related: [Overview](/overview.md), [Task DAG](
 - Deleted `lp-ui`, `lp-app`, `lp-tui`, the Dioxus `tests/`, root `e2e.config.ts`/`e2e.web.config.ts`/`package.json`, and `scripts/export-icons.ts`; pruned UI-only workspace deps and `deny.toml` exceptions. Added `crates/lp-server` (binary `learnpuppy`: `serve`, `migrate`, `seed`, `doctor`, `openapi`). Workspace is now 7 crates.
 - Recorded [ADR-0006](/decisions/0006-web-ui-over-dioxus.md) superseding [ADR-0005](/decisions/0005-dioxus-desktop-over-tui.md); archived [Dioxus UI](/architecture/dioxus-ui.md) and [TUI](/architecture/tui.md) specs; added the web rollout to the [Task DAG](/tasks/index.md).
 
+
+## 2026-11-01 — D60 Docs Sweep
+- Added [Web UI](/architecture/web-ui.md) and [Server API](/architecture/server-api.md) specs, root `README.md`, superseded note on `docs/PLAN.md`, archived pointer on `docs/DESIGN_SYSTEM_PLAN.md`; marked `D60` done in the [Task DAG](/tasks/index.md).
