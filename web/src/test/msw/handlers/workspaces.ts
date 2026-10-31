@@ -102,6 +102,22 @@ export const workspaceHandlers = [
     return HttpResponse.json(workspace)
   }),
 
+  http.post(`${API}/workspaces/:ws/repair`, async ({ params }) => {
+    await latency()
+    const ws = state.db.workspaces.get(String(params["ws"]))
+    if (!ws) return notFound("Workspace")
+    // The server rewrites minimal metadata from the folder name; mock the same thing on the id.
+    ws.name = String(params["ws"])
+      .replace(/^ws_/, "")
+      .replace(/[-_]+/g, " ")
+      .trim()
+      .replace(/\b\w/g, (c) => c.toUpperCase())
+    ws.slug = slugify(ws.name)
+    ws.damaged = false
+    bus.emit("workspace.updated", { workspaceId: ws.id })
+    return HttpResponse.json({ ...ws, ...listItem(ws) })
+  }),
+
   http.post(`${API}/workspaces/import`, async () => {
     await latency()
     return apiError("validation", "Not a LearnPuppy export", {
@@ -193,13 +209,47 @@ export const workspaceHandlers = [
   }),
 
   http.get(`${API}/trash`, () => HttpResponse.json(state.db.trash)),
-  http.post(`${API}/trash/:id/restore`, ({ params }) => {
-    const item = state.db.trash.find((t) => t.id === params["id"])
+  http.post(`${API}/trash/:id/restore`, async ({ params }) => {
+    await latency()
+    const index = state.db.trash.findIndex((t) => t.id === params["id"])
+    const item = state.db.trash[index]
     if (!item) return notFound("Trash item")
-    return apiError(
-      "conflict",
-      "Restoring from trash is not available in mock mode"
-    )
+    if (state.db.workspaces.has(item.workspaceId))
+      return apiError("conflict", "A workspace with this id already exists")
+    const ws: WorkspaceDetail = {
+      id: item.workspaceId,
+      name: item.name,
+      slug: slugify(item.name),
+      icon: "book-open",
+      hue: "violet",
+      description: "",
+      archived: false,
+      damaged: false,
+      createdAt: state.db.now,
+      lastOpenedAt: state.db.now,
+      sources: {
+        claude: true,
+        codex: true,
+        agy: true,
+        git: true,
+        allow: [],
+        sinceDays: 30,
+      },
+      overrides: { profiles: {} },
+      stats: {
+        nodes: 0,
+        chains: 0,
+        chats: 0,
+        dueCards: 0,
+        lastActivityAt: null,
+      },
+    }
+    state.db.workspaces.set(ws.id, ws)
+    state.db.chats.set(ws.id, [])
+    state.db.cards.set(ws.id, [])
+    state.db.trash.splice(index, 1)
+    bus.emit("workspace.updated", { workspaceId: ws.id })
+    return HttpResponse.json(ws)
   }),
   http.delete(`${API}/trash/:id`, ({ params }) => {
     const index = state.db.trash.findIndex((t) => t.id === params["id"])
