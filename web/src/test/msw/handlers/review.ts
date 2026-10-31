@@ -95,6 +95,22 @@ export const reviewHandlers = [
     )
   }),
 
+  http.get(`${API}/cards/:id`, async ({ params }) => {
+    await latency()
+    const card = cardsOf(params["ws"])?.find((c) => c.id === params["id"])
+    if (!card) return notFound("Card")
+    const history = Array.from({ length: Math.min(card.reps, 6) }, (_, i) => ({
+      ts: state.db.now - (card.reps - i) * DAY,
+      rating: ((i + card.lapses) % 4) + 1,
+      deviceId: "dev_mock",
+    }))
+    return HttpResponse.json({
+      ...card,
+      rationale: card.explanation,
+      history,
+    })
+  }),
+
   http.post(`${API}/:id/answer`, async ({ params, request }) => {
     await latency()
     const card = cardsOf(params["ws"])?.find((c) => c.id === params["id"])

@@ -378,6 +378,15 @@ export type CardListItem = ReviewCard & {
   lapses: number
 }
 
+export type ReviewLog = { ts: number; rating: Rating; deviceId: string }
+
+/** One card for the browser drawer: the answer, the rationale and the review history. */
+export type CardDetail = CardListItem & {
+  correctKey: string
+  rationale: string
+  history: ReviewLog[]
+}
+
 export type AnswerBody = {
   choiceKey: string
   clientId: string
@@ -409,6 +418,13 @@ export type DigestSession = {
 }
 
 export type DigestDay = { day: string; sessions: DigestSession[] }
+
+/** Result of regenerating a decision's cards; `rejected` lists drafts that failed validation. */
+export type RegenerateResult = {
+  cardIds: string[]
+  saved?: number
+  rejected?: { front: string; reason: string }[]
+}
 
 export type DecisionDetail = DigestDecision & {
   why: string
@@ -666,6 +682,7 @@ export interface PendingPaths {
   "/workspaces/{ws}/review/cards": Path<
     Method<"get", GetOp<CardListItem[], WsP, { state?: CardState; q?: string }>>
   >
+  "/workspaces/{ws}/review/cards/{id}": Path<Method<"get", GetOp<CardDetail, WsId>>>
   "/workspaces/{ws}/review/sync": Path<
     Method<"post", BodylessOp<Record<string, never>, WsP>>
   >
@@ -679,7 +696,7 @@ export interface PendingPaths {
     Method<"get", GetOp<DecisionDetail, WsId>>
   >
   "/workspaces/{ws}/digest/decisions/{id}/cards": Path<
-    Method<"post", BodylessOp<{ cardIds: string[] }, WsId>>
+    Method<"post", BodylessOp<RegenerateResult, WsId>>
   >
   "/workspaces/{ws}/ingest/sources": Path<
     Method<"get", GetOp<IngestSources, WsP>> &

@@ -75,6 +75,20 @@ export function useCards(
   })
 }
 
+export function useCardDetail(ws: string, cardId: string | undefined) {
+  return useQuery({
+    queryKey: [...keys.ws(ws).review(), "card", cardId ?? ""] as const,
+    enabled: Boolean(cardId),
+    queryFn: async ({ signal }) =>
+      unwrap(
+        await pendingApi.GET("/workspaces/{ws}/review/cards/{id}", {
+          params: { path: { ws, id: cardId ?? "" } },
+          signal,
+        })
+      ),
+  })
+}
+
 /** Reveals correctness; the server withholds the answer until this call. */
 export function useAnswerCard(ws: string) {
   return useMutation({
