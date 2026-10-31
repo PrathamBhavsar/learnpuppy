@@ -22,7 +22,7 @@ The authoritative DAG, owned files and done-when criteria are in `docs/web/08-ta
 | `P30` | Motion + polish pass | `F20`–`F24` | `pending` |
 | `Q40` | a11y + RTL + perf pass | `P30` | `pending` |
 | `E50` | Full Playwright E2E + visual baselines | `Q40` | `pending` |
-| `D60` | Docs/brain/CLAUDE.md sweep + legacy cleanup | `E50` | `pending` |
+| `D60` | Docs/brain/CLAUDE.md sweep + legacy cleanup | `E50` | `done` |
 | `A70` | Opus audit vs `docs/web/10-acceptance.md` | `D60` | `pending` |
 
 ---
