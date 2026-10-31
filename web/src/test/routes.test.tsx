@@ -46,8 +46,8 @@ describe("route tree", () => {
     ).toBeInTheDocument()
     first.unmount()
 
-    renderApp("/w/ws_rustasync/learn/chat-42")
-    expect(await screen.findByText(/chat chat-42/)).toBeInTheDocument()
+    renderApp("/w/ws_rustasync/learn/c_teach_quiz")
+    expect(await screen.findByTestId("classroom")).toBeInTheDocument()
     expect(screen.getByTestId("screen-learn")).toBeInTheDocument()
   })
 

@@ -1,6 +1,7 @@
 import { defineConfig, devices } from "@playwright/test"
 
-const PORT = 5173
+// `LP_WEB_PORT` lets parallel worktrees each run their own dev:mock server.
+const PORT = Number(process.env["LP_WEB_PORT"] ?? 5173)
 
 // System Chrome (no browser download). Runs against `bun run dev:mock` (in-browser MSW, no backend).
 export default defineConfig({
@@ -20,7 +21,7 @@ export default defineConfig({
     },
   ],
   webServer: {
-    command: "bun run dev:mock",
+    command: `bun run dev:mock --port ${PORT}`,
     url: `http://localhost:${PORT}`,
     reuseExistingServer: true,
     timeout: 60_000,

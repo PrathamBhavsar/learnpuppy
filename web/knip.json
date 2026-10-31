@@ -6,7 +6,9 @@
     "eslint-rules/index.mjs",
     "src/api/queries/*.ts",
     "src/api/pending-types.ts",
-    "src/hooks/use-streaming-turn.ts"
+    "src/hooks/use-streaming-turn.ts",
+    "playwright.serve.config.ts",
+    "e2e/serve/*.spec.ts"
   ],
   "project": [
     "src/**/*.{ts,tsx}",
