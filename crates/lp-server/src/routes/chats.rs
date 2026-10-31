@@ -12,9 +12,7 @@ use lp_service::workspace::WorkspaceHandle;
 
 use super::common::{blocking, open_writable, open_ws, page};
 use crate::app::AppState;
-use crate::dto::chat::{
-    ChatPageDto, ChatSummaryDto, ChatsQuery, ClassroomViewDto, RenameChat, TurnDto, TurnState,
-};
+use crate::dto::chat::{ChatPageDto, ChatSummaryDto, ChatsQuery, ClassroomViewDto, RenameChat};
 use crate::error::{ApiError, ApiJson, ApiQuery, ErrorEnvelope};
 
 pub fn routes() -> Router<AppState> {
@@ -72,6 +70,7 @@ pub async fn list(
     ApiQuery(q): ApiQuery<ChatsQuery>,
 ) -> Result<Json<ChatPageDto>, ApiError> {
     let h = open_ws(&st, &ws).await?;
+    super::chats_write::ensure_recovered(&st, &h).await?;
     blocking(move || {
         let all = h.stores().chats.list_chats()?;
         let total = all.len();
@@ -109,16 +108,9 @@ pub async fn view(
     Path((ws, id)): Path<(String, String)>,
 ) -> Result<Json<ClassroomViewDto>, ApiError> {
     let h = open_ws(&st, &ws).await?;
-    blocking(move || {
-        let rec = load(&h, &id)?;
-        let turn = TurnDto {
-            state: TurnState::Idle,
-            turn_id: None,
-            started_at: None,
-        };
-        Ok(Json(ClassroomViewDto::new(&rec, &jobs_of(&h), turn)))
-    })
-    .await
+    checked(&id)?;
+    super::chats_write::ensure_recovered(&st, &h).await?;
+    blocking(move || Ok(Json(super::chats_write::view_of(&st, &h, &id)?))).await
 }
 
 /// Renames a chat.
@@ -155,7 +147,12 @@ pub async fn rename(
     }
     let h = open_writable(&st, &ws).await?;
     let now = st.workspaces.core().clock.now();
+    let guard = st
+        .chats
+        .edit_guard(&h, &id)
+        .map_err(|e| super::chats_write::rejected(e, None))?;
     blocking(move || {
+        let _guard = guard;
         let mut rec = load(&h, &id)?;
         rec.title = title;
         rec.updated_at = now.max(rec.updated_at.saturating_add(1));
@@ -187,7 +184,12 @@ pub async fn remove(
 ) -> Result<StatusCode, ApiError> {
     let h: Arc<WorkspaceHandle> = open_writable(&st, &ws).await?;
     let core = super::common::core(&st);
+    let guard = st
+        .chats
+        .edit_guard(&h, &id)
+        .map_err(|e| super::chats_write::rejected(e, None))?;
     blocking(move || {
+        let _guard = guard;
         load(&h, &id)?;
         let chats = h.root().join("chats");
         let trash = chats.join(".trash");

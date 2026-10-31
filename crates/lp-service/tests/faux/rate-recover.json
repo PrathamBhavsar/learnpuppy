@@ -1,0 +1,1 @@
+{"name":"rate-recover","steps":[{"fault":{"kind":"rateLimit","message":"rate limit; try again in 1 seconds"}},{"turn":[{"text":"Recovered after the cooldown."}]}]}

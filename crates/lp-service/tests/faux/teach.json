@@ -1,0 +1,10 @@
+{
+  "name": "probe-plan-teach",
+  "steps": [
+    {"turn": [{"thinking": "Check the baseline."}, {"text": "Let's check ownership."}, {"tool": {"name": "probe", "input": {"question": "How many owners?", "options": [{"label": "One", "value": "a"}, {"label": "Two", "value": "b"}], "correctAnswer": "a", "explanation": "PROBE_SECRET"}}}]},
+    {"turn": [{"tool": {"name": "probe_done", "input": {}}}]},
+    {"turn": [{"tool": {"name": "plan_init", "input": {"mermaid": "graph TD\nown[\"Ownership | One owner\"] --> borrow[\"Borrowing | Shared references\"]"}}}]},
+    {"turn": [{"text": "Each value has one owner."}, {"tool": {"name": "quiz", "input": "{\"type\":\"check\",\"nodeId\":\"own\",\"question\":\"Can a value have two owners?\",\"options\":[{\"label\":\"No\",\"value\":\"a\"},{\"label\":\"Yes\",\"value\":\"b\"}],\"correctAnswer\":\"a\",\"explanation\":\"QUIZ_SECRET\"}"}}]},
+    {"turn": [{"text": "Borrowing gives access without moving ownership."}, {"tool": {"name": "explain", "input": {"type": "check", "nodeId": "borrow", "content": "Explain how a shared borrow works."}}}]}
+  ]
+}

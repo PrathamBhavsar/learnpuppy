@@ -1,10 +1,25 @@
-//! The classroom: turn loop, the view of a session, and learner answers.
+//! The classroom: turn loop, the view of a session, learner answers, and the chat engine that
+//! runs turns for the web server ([`runtime`]).
 
 pub mod answer;
+pub mod export;
+pub mod gate;
+pub mod jobs;
+pub mod meta;
+pub mod runtime;
+pub mod script;
 pub mod turn;
 pub mod view;
 
 pub use answer::{option_lines, render_answer, resolve_option, verdict, Answer, IDK};
+pub use export::export_markdown;
+pub use jobs::{job_artifact, job_title, kind_name};
+pub use meta::ChatMeta;
+pub use runtime::{
+    Accepted, AnswerInput, ChatRuntime, Created, Engines, JobView, NewChat, NewKind, Rejected,
+    RuntimeConfig, Seed, TurnCtx, TurnFailure, TurnInput, TurnState, TurnStatus,
+};
+pub use script::{Fault, FaultKind, FaultPlan, Script};
 pub use turn::{role, run_to_rest};
 pub use view::{classroom_view, pending_call, ClassroomView, Prompt};
 

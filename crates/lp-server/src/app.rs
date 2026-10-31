@@ -8,6 +8,7 @@ use std::time::Duration;
 use axum::Router;
 use lp_cli_driver::accounts::AccountPool;
 use lp_cli_driver::engine::FauxEngine;
+use lp_service::chat::{ChatRuntime, RuntimeConfig};
 use lp_service::engine::CliPoolEngine;
 use lp_service::events::{DeltaPump, EventHub};
 use lp_service::settings::Settings;
@@ -55,6 +56,8 @@ pub struct AppState {
     pub device_id: Arc<str>,
     /// Cancelled on SIGINT/SIGTERM: streams end, turns stop.
     pub shutdown: CancellationToken,
+    /// Chat turns, the CLI semaphore and workbench jobs (docs/web/03 §Turn state machine).
+    pub chats: Arc<ChatRuntime<RoleEngine>>,
     faux: Arc<FauxEngine>,
 }
 
@@ -67,17 +70,34 @@ impl AppState {
         assets: Assets,
         device_id: String,
     ) -> Self {
+        let pump = Arc::new(DeltaPump::new(hub.clone()));
+        let core = workspaces.core().clone();
+        let chats = ChatRuntime::new(
+            pump.clone(),
+            pool.clone(),
+            RuntimeConfig {
+                clock: Arc::new(move || core.clock.now()),
+                ..RuntimeConfig::default()
+            },
+        );
         Self {
             config: Arc::new(config),
-            pump: Arc::new(DeltaPump::new(hub.clone())),
+            pump,
             hub,
             workspaces,
             pool,
             assets: Arc::new(assets),
             device_id: device_id.into(),
             shutdown: CancellationToken::new(),
+            chats,
             faux: Arc::new(FauxEngine::new()),
         }
+    }
+
+    /// Replaces the chat runtime (tests swap in offline web/PDF adapters or a short queue limit).
+    pub fn with_chat_config(mut self, config: RuntimeConfig) -> Self {
+        self.chats = ChatRuntime::new(self.pump.clone(), self.pool.clone(), config);
+        self
     }
 
     /// The engine serving `role`: the shared scripted engine in faux mode, else the CLI pool
@@ -102,6 +122,7 @@ impl AppState {
 
 /// The whole HTTP surface.
 pub fn router(state: AppState) -> Router {
+    crate::routes::chats_write::recover_on_boot(&state);
     let api = crate::routes::api()
         .fallback(crate::error::api_not_found)
         .method_not_allowed_fallback(crate::error::method_not_allowed);

@@ -2,12 +2,16 @@
 //! handlers to `openapi.rs`.
 
 pub mod accounts;
+pub mod artifacts;
 pub mod chats;
+pub mod chats_write;
 pub mod common;
 pub mod digest;
 pub mod graph;
+pub mod jobs;
 pub mod review;
 pub mod search;
+pub mod sources;
 pub mod system;
 #[cfg(feature = "test-hooks")]
 pub mod testhooks;
@@ -24,6 +28,10 @@ pub fn api() -> Router<AppState> {
         .merge(workspaces::routes())
         .merge(graph::routes())
         .merge(chats::routes())
+        .merge(chats_write::routes())
+        .merge(jobs::routes())
+        .merge(artifacts::routes())
+        .merge(sources::routes())
         .merge(review::routes())
         .merge(digest::routes())
         .merge(accounts::routes())

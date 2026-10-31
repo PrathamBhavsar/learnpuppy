@@ -1,0 +1,52 @@
+{
+  "name": "practice-gate",
+  "steps": [
+    {
+      "turn": [
+        {
+          "tool": {
+            "name": "problem",
+            "input": {
+              "statement": "Reverse a three item list.",
+              "mode": "composition",
+              "modelSolution": "PRACTICE_SECRET: reverse the indexes"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "turn": [
+        {
+          "tool": {
+            "name": "problem",
+            "input": {
+              "statement": "Premature second problem",
+              "mode": "recall",
+              "modelSolution": "PRACTICE_SECRET: reverse the indexes"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "turn": [
+        {
+          "text": "Swap the first and last items."
+        },
+        {
+          "tool": {
+            "name": "conclude",
+            "input": {
+              "outcome": "solvedWithHints",
+              "verdict": "Good reversal",
+              "rung": "R1",
+              "missClass": null,
+              "retest": false
+            }
+          }
+        }
+      ]
+    }
+  ]
+}
