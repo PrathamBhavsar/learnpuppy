@@ -14,14 +14,23 @@ lp-ingest = { path = "../lp-ingest" }
 anyhow.workspace = true
 async-trait.workspace = true
 chrono.workspace = true
+hex.workspace = true
 parking_lot.workspace = true
+rand.workspace = true
+rusqlite.workspace = true
 schemars.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+sha2.workspace = true
 smol_str.workspace = true
+thiserror.workspace = true
 tokio.workspace = true
 tokio-util.workspace = true
 tracing.workspace = true
+# Workspace export/import archives: deflate only. zip leaves the flate2 backend to us; pick the
+# pure-Rust miniz_oxide one (MIT/Apache) instead of a C zlib.
+zip = { version = "9", default-features = false, features = ["deflate-flate2"] }
+flate2 = { version = "1", default-features = false, features = ["rust_backend"] }
 
 [dev-dependencies]
 tempfile.workspace = true
