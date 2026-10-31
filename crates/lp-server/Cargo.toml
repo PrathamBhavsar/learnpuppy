@@ -6,15 +6,42 @@ license.workspace = true
 publish.workspace = true
 
 [dependencies]
-clap.workspace = true
+lp-service = { path = "../lp-service" }
+lp-cli-driver = { path = "../lp-cli-driver" }
+anyhow.workspace = true
+async-trait.workspace = true
+axum = { version = "0.8", features = ["macros"] }
+clap = { workspace = true, features = ["env"] }
+futures = "0.3"
+hex.workspace = true
+mime_guess = "2"
+rand.workspace = true
+schemars.workspace = true
+rust-embed = { version = "8", features = ["mime-guess"] }
+serde.workspace = true
 serde_json.workspace = true
+serde_path_to_error = "0.1"
+sha2.workspace = true
+tokio.workspace = true
+tokio-util.workspace = true
+tower-http = { version = "0.6", features = ["compression-gzip", "compression-br"] }
+tracing.workspace = true
+tracing-appender.workspace = true
+tracing-subscriber = { workspace = true, features = ["json"] }
+utoipa = "5"
+uuid.workspace = true
+
+[lib]
+path = "src/lib.rs"
 
 [[bin]]
 name = "learnpuppy"
 path = "src/main.rs"
 
 [dev-dependencies]
+http-body-util = "0.1"
 tempfile.workspace = true
+tower = { version = "0.5", features = ["util"] }
 
 [lints]
 workspace = true

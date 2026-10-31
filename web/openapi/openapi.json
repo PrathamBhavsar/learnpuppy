@@ -1,0 +1,1101 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "LearnPuppy",
+    "description": "Local LearnPuppy server API. Session cookie `lp_session` from the launch link; mutations need same Origin and `X-LP-CSRF: 1`.",
+    "license": {
+      "name": "MIT",
+      "identifier": "MIT"
+    },
+    "version": "0.1.0"
+  },
+  "servers": [
+    {
+      "url": "/api/v1"
+    }
+  ],
+  "paths": {
+    "/bootstrap": {
+      "get": {
+        "tags": [
+          "system"
+        ],
+        "summary": "One call at app start: version, device, workspaces, accounts, banners.",
+        "operationId": "bootstrap",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Bootstrap"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No session",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/events": {
+      "get": {
+        "tags": [
+          "events"
+        ],
+        "summary": "Server-sent events.",
+        "operationId": "events",
+        "parameters": [
+          {
+            "name": "workspace",
+            "in": "query",
+            "description": "Also receive this workspace's events; without it only global events arrive.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Last-Event-ID",
+            "in": "header",
+            "description": "Resume after this event id",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "`text/event-stream`; each frame's `event:` is `type` and `data:` is `data`",
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "$ref": "#/components/schemas/ServerEvent"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad workspace id",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No session",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/health": {
+      "get": {
+        "tags": [
+          "system"
+        ],
+        "summary": "Liveness; needs no session (still Host-checked).",
+        "operationId": "health",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Health"
+                }
+              }
+            }
+          },
+          "421": {
+            "description": "Wrong Host",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "AccountStatus": {
+        "type": "string",
+        "enum": [
+          "ready",
+          "cooldown",
+          "auth_expired",
+          "disabled"
+        ]
+      },
+      "AccountSummaryDto": {
+        "type": "object",
+        "description": "An account without credentials: provider, identity, health.",
+        "required": [
+          "id",
+          "provider",
+          "status"
+        ],
+        "properties": {
+          "cooldownReason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "cooldownUntil": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "Epoch ms when a cooldown ends."
+          },
+          "email": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "id": {
+            "type": "string"
+          },
+          "provider": {
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/AccountStatus"
+          },
+          "tier": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "BannerDto": {
+        "type": "object",
+        "required": [
+          "id",
+          "level",
+          "message"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "level": {
+            "$ref": "#/components/schemas/BannerLevelDto"
+          },
+          "message": {
+            "type": "string"
+          }
+        }
+      },
+      "BannerLevelDto": {
+        "type": "string",
+        "enum": [
+          "info",
+          "warning"
+        ]
+      },
+      "Bootstrap": {
+        "type": "object",
+        "description": "Everything the app needs at start, in one call.",
+        "required": [
+          "version",
+          "serverTime",
+          "deviceId",
+          "engine",
+          "dev",
+          "workspaces",
+          "accounts",
+          "banners"
+        ],
+        "properties": {
+          "accounts": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AccountSummaryDto"
+            }
+          },
+          "banners": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/BannerDto"
+            }
+          },
+          "dev": {
+            "type": "boolean",
+            "description": "The server runs without a launch token (`serve --dev`)."
+          },
+          "deviceId": {
+            "type": "string"
+          },
+          "engine": {
+            "$ref": "#/components/schemas/EngineMode"
+          },
+          "lastWorkspaceId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "serverTime": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "version": {
+            "type": "string"
+          },
+          "workspaces": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/WorkspaceSummaryDto"
+            }
+          }
+        }
+      },
+      "ChatDeltaData": {
+        "type": "object",
+        "required": [
+          "chatId",
+          "turnId",
+          "seq",
+          "kind",
+          "text"
+        ],
+        "properties": {
+          "chatId": {
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/DeltaKind"
+          },
+          "seq": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Counts from 1 per turn without gaps; a gap means the client must refetch.",
+            "minimum": 0
+          },
+          "text": {
+            "type": "string"
+          },
+          "turnId": {
+            "type": "string"
+          }
+        }
+      },
+      "ChatErrorData": {
+        "type": "object",
+        "required": [
+          "chatId",
+          "turnId",
+          "error"
+        ],
+        "properties": {
+          "chatId": {
+            "type": "string"
+          },
+          "error": {
+            "$ref": "#/components/schemas/TurnError"
+          },
+          "turnId": {
+            "type": "string"
+          }
+        }
+      },
+      "ChatRef": {
+        "type": "object",
+        "required": [
+          "chatId"
+        ],
+        "properties": {
+          "chatId": {
+            "type": "string"
+          }
+        }
+      },
+      "ChatRestData": {
+        "type": "object",
+        "required": [
+          "chatId",
+          "viewVersion"
+        ],
+        "properties": {
+          "chatId": {
+            "type": "string"
+          },
+          "viewVersion": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          }
+        }
+      },
+      "ChatToolCallData": {
+        "type": "object",
+        "required": [
+          "chatId",
+          "turnId",
+          "call"
+        ],
+        "properties": {
+          "call": {
+            "$ref": "#/components/schemas/ToolCall"
+          },
+          "chatId": {
+            "type": "string"
+          },
+          "turnId": {
+            "type": "string"
+          }
+        }
+      },
+      "DeltaKind": {
+        "type": "string",
+        "enum": [
+          "text",
+          "thinking"
+        ]
+      },
+      "Empty": {
+        "type": "object",
+        "description": "Payload-less events carry `{}` so `EventSource` still dispatches them."
+      },
+      "EngineMode": {
+        "type": "string",
+        "description": "Which LLM engine the server runs turns with.",
+        "enum": [
+          "real",
+          "faux"
+        ]
+      },
+      "ErrorBody": {
+        "type": "object",
+        "required": [
+          "code",
+          "message",
+          "retryable",
+          "requestId"
+        ],
+        "properties": {
+          "code": {
+            "$ref": "#/components/schemas/ErrorCode"
+          },
+          "details": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "description": "Code-specific data: `fields` for `validation`, `retryAfterMs` for `rate_limited`."
+          },
+          "message": {
+            "type": "string"
+          },
+          "requestId": {
+            "type": "string"
+          },
+          "retryable": {
+            "type": "boolean"
+          }
+        }
+      },
+      "ErrorCode": {
+        "type": "string",
+        "description": "Machine-readable error codes; the UI switches on these, never on messages.",
+        "enum": [
+          "not_found",
+          "validation",
+          "conflict",
+          "turn_in_progress",
+          "stale_question",
+          "workspace_archived",
+          "storage_full",
+          "engine_unavailable",
+          "rate_limited",
+          "auth_required",
+          "forbidden",
+          "bad_host",
+          "method_not_allowed",
+          "internal"
+        ]
+      },
+      "ErrorEnvelope": {
+        "type": "object",
+        "description": "Body of every non-2xx API response.",
+        "required": [
+          "error"
+        ],
+        "properties": {
+          "error": {
+            "$ref": "#/components/schemas/ErrorBody"
+          }
+        }
+      },
+      "ExportReadyData": {
+        "type": "object",
+        "required": [
+          "jobId",
+          "token"
+        ],
+        "properties": {
+          "jobId": {
+            "type": "string"
+          },
+          "token": {
+            "type": "string"
+          }
+        }
+      },
+      "FieldError": {
+        "type": "object",
+        "description": "One invalid input field; `path` is dotted (`profiles.teacher.model`, `items[2].id`).",
+        "required": [
+          "path",
+          "message"
+        ],
+        "properties": {
+          "message": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          }
+        }
+      },
+      "GraphChangedData": {
+        "type": "object",
+        "required": [
+          "version"
+        ],
+        "properties": {
+          "version": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          }
+        }
+      },
+      "Health": {
+        "type": "object",
+        "required": [
+          "ok",
+          "version",
+          "engine",
+          "dataDir"
+        ],
+        "properties": {
+          "dataDir": {
+            "type": "string"
+          },
+          "engine": {
+            "$ref": "#/components/schemas/EngineMode"
+          },
+          "ok": {
+            "type": "boolean"
+          },
+          "version": {
+            "type": "string"
+          }
+        }
+      },
+      "HelloData": {
+        "type": "object",
+        "required": [
+          "serverTime",
+          "version"
+        ],
+        "properties": {
+          "serverTime": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "version": {
+            "type": "string"
+          }
+        }
+      },
+      "IngestDoneData": {
+        "type": "object",
+        "required": [
+          "runId",
+          "report"
+        ],
+        "properties": {
+          "report": {
+            "$ref": "#/components/schemas/IngestReport"
+          },
+          "runId": {
+            "type": "string"
+          }
+        }
+      },
+      "IngestProgressData": {
+        "type": "object",
+        "required": [
+          "runId",
+          "done",
+          "total",
+          "phase"
+        ],
+        "properties": {
+          "done": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "phase": {
+            "type": "string"
+          },
+          "runId": {
+            "type": "string"
+          },
+          "total": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          }
+        }
+      },
+      "IngestReport": {
+        "type": "object",
+        "required": [
+          "sessions",
+          "newDecisions",
+          "newCards",
+          "skipped",
+          "errors"
+        ],
+        "properties": {
+          "errors": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "newCards": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "newDecisions": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "sessions": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "skipped": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          }
+        }
+      },
+      "Job": {
+        "type": "object",
+        "required": [
+          "id",
+          "kind",
+          "status",
+          "title"
+        ],
+        "properties": {
+          "artifactId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          }
+        }
+      },
+      "JobUpdatedData": {
+        "type": "object",
+        "required": [
+          "job"
+        ],
+        "properties": {
+          "job": {
+            "$ref": "#/components/schemas/Job"
+          }
+        }
+      },
+      "ServerEvent": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "data",
+              "type"
+            ],
+            "properties": {
+              "data": {
+                "$ref": "#/components/schemas/HelloData"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "hello"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "data",
+              "type"
+            ],
+            "properties": {
+              "data": {
+                "$ref": "#/components/schemas/WorkspaceRef"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "workspace.created"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "data",
+              "type"
+            ],
+            "properties": {
+              "data": {
+                "$ref": "#/components/schemas/WorkspaceRef"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "workspace.updated"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "data",
+              "type"
+            ],
+            "properties": {
+              "data": {
+                "$ref": "#/components/schemas/WorkspaceRef"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "workspace.deleted"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "data",
+              "type"
+            ],
+            "properties": {
+              "data": {
+                "$ref": "#/components/schemas/Empty"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "accounts.changed"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "data",
+              "type"
+            ],
+            "properties": {
+              "data": {
+                "$ref": "#/components/schemas/GraphChangedData"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "graph.changed"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "data",
+              "type"
+            ],
+            "properties": {
+              "data": {
+                "$ref": "#/components/schemas/ChatRef"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "chat.created"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "data",
+              "type"
+            ],
+            "properties": {
+              "data": {
+                "$ref": "#/components/schemas/ChatRef"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "chat.updated"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "data",
+              "type"
+            ],
+            "properties": {
+              "data": {
+                "$ref": "#/components/schemas/ChatDeltaData"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "chat.delta"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "data",
+              "type"
+            ],
+            "properties": {
+              "data": {
+                "$ref": "#/components/schemas/ChatToolCallData"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "chat.toolCall"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "data",
+              "type"
+            ],
+            "properties": {
+              "data": {
+                "$ref": "#/components/schemas/ChatRestData"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "chat.rest"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "data",
+              "type"
+            ],
+            "properties": {
+              "data": {
+                "$ref": "#/components/schemas/ChatErrorData"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "chat.error"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "data",
+              "type"
+            ],
+            "properties": {
+              "data": {
+                "$ref": "#/components/schemas/JobUpdatedData"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "job.updated"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "data",
+              "type"
+            ],
+            "properties": {
+              "data": {
+                "$ref": "#/components/schemas/IngestProgressData"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "ingest.progress"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "data",
+              "type"
+            ],
+            "properties": {
+              "data": {
+                "$ref": "#/components/schemas/IngestDoneData"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "ingest.done"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "data",
+              "type"
+            ],
+            "properties": {
+              "data": {
+                "$ref": "#/components/schemas/Empty"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "review.changed"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "data",
+              "type"
+            ],
+            "properties": {
+              "data": {
+                "$ref": "#/components/schemas/ExportReadyData"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "export.ready"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "Missed events are gone; refetch everything.",
+            "required": [
+              "data",
+              "type"
+            ],
+            "properties": {
+              "data": {
+                "$ref": "#/components/schemas/Empty",
+                "description": "Missed events are gone; refetch everything."
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "resync"
+                ]
+              }
+            }
+          }
+        ],
+        "description": "One server-sent event."
+      },
+      "ToolCall": {
+        "type": "object",
+        "required": [
+          "id",
+          "name"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          }
+        }
+      },
+      "TurnError": {
+        "type": "object",
+        "required": [
+          "code",
+          "message",
+          "retryable"
+        ],
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "retryable": {
+            "type": "boolean"
+          }
+        }
+      },
+      "WorkspaceRef": {
+        "type": "object",
+        "required": [
+          "workspaceId"
+        ],
+        "properties": {
+          "workspaceId": {
+            "type": "string"
+          }
+        }
+      },
+      "WorkspaceSummaryDto": {
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "slug",
+          "icon",
+          "hue",
+          "archived"
+        ],
+        "properties": {
+          "archived": {
+            "type": "boolean"
+          },
+          "hue": {
+            "type": "string"
+          },
+          "icon": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "lastOpenedAt": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "name": {
+            "type": "string"
+          },
+          "slug": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  },
+  "tags": [
+    {
+      "name": "system",
+      "description": "Health and app bootstrap"
+    },
+    {
+      "name": "events",
+      "description": "Server-sent events"
+    }
+  ]
+}

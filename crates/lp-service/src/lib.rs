@@ -6,6 +6,7 @@ pub mod accounts;
 pub mod chat;
 pub mod digest;
 pub mod engine;
+pub mod events;
 pub mod graph;
 pub mod ingest;
 pub mod paths;
