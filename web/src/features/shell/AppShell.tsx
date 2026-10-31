@@ -82,15 +82,17 @@ export function AppShell() {
           data-testid="main"
           className="lp-pane min-h-0 flex-1 outline-none"
         >
-          <motion.div
-            key={`${ws ?? ""}:${section}`}
-            variants={fadeRise}
-            initial="hidden"
-            animate="visible"
-            className="h-full"
-          >
-            <Outlet />
-          </motion.div>
+          <div key={ws ?? ""} className="lp-ws-enter h-full">
+            <motion.div
+              key={section}
+              variants={fadeRise}
+              initial="hidden"
+              animate="visible"
+              className="h-full"
+            >
+              <Outlet />
+            </motion.div>
+          </div>
         </main>
       </div>
       <div
