@@ -44,7 +44,8 @@ export type RoleProfile = {
   provider: string
   model: string
   effort?: string | null
-  fallback?: string | null
+  /** Let the account pool fall back to other providers. */
+  fallback?: boolean
 }
 
 export type WorkspaceDetail = WorkspaceListItem & {
@@ -84,22 +85,57 @@ export type TrashItem = {
 
 // ───────────────────────────── Accounts / settings ─────────────────────────────
 
+export type AccountStatus = AccountSummary["status"]
+/** `AccountDto`: never carries tokens or credentials. */
 export type AccountDetail = AccountSummary & {
   requests: number
   tokensIn: number
   tokensOut: number
+  /** The command that renews an expired login. */
+  reauthHint?: string | null
+}
+
+export type UiSettings = {
+  theme: "light" | "dark" | "system"
+  direction: "ltr" | "rtl" | "auto"
+  density: "comfortable" | "compact"
+  reduceMotion: boolean
+  confirmDestructive: boolean
+  autoOpenBrowser: boolean
 }
 
 export type SettingsDoc = {
+  /** Role → profile; roles without one are absent. */
   profiles: Record<string, RoleProfile>
+  /** Role → `<provider>:auto` or an account id. */
   pins: Record<string, string>
+  learningStyle: string
+  /** Parallel model calls, 1..=6. */
   concurrencyCap: number
-  themeDefault: "light" | "dark" | "system"
+  ui: UiSettings
 }
 
+/** What the settings forms may offer. */
 export type SettingsCatalog = {
-  providers: { id: string; label: string; models: string[] }[]
-  effortLevels: string[]
+  providers: { id: string; models: string[] }[]
+  efforts: string[]
+  roles: string[]
+  pinRoles: string[]
+  themes: string[]
+  directions: string[]
+  densities: string[]
+}
+
+/** `POST /settings/test`: a 1-token ping through the profile a role would use (docs/web/06 §Accounts). */
+export type ProfilePingBody = {
+  provider: string
+  model: string
+  effort?: string | null
+}
+export type ProfilePingResult = {
+  ok: boolean
+  latencyMs: number
+  message: string
 }
 
 // ───────────────────────────── Graph ─────────────────────────────
@@ -442,22 +478,41 @@ export type IngestCandidate = {
   source: NodeSource
 }
 
-export type IngestSources = {
-  allow: string[]
+export type IngestRun = {
+  id: string
+  startedAt: number
+  finishedAt?: number | null
+  report: IngestReport
+}
+
+export type IngestSourcesBody = {
   claude: boolean
   codex: boolean
   agy: boolean
   git: boolean
-  sinceDays: number | null
-  candidates: IngestCandidate[]
-  overlaps: { path: string; workspaceId: string; workspaceName: string }[]
+  /** Project directories whose sessions belong to this workspace; empty disables ingest. */
+  allow: string[]
+  sinceDays: number
 }
 
-export type IngestRun = {
-  id: string
-  startedAt: number
-  finishedAt: number | null
-  report: IngestReport | null
+/** `IngestSources` on the wire. */
+export type IngestSourcesWire = {
+  sources: IngestSourcesBody
+  enabled: boolean
+  runningId?: string | null
+  candidates: IngestCandidate[]
+  warnings: { path: string; otherPath: string; workspaceId: string }[]
+}
+
+/**
+ * What the screens read: the wire `IngestSources` flattened (`sources.*` next to `candidates`) with the
+ * overlap warnings renamed for display.
+ */
+export type IngestSources = IngestSourcesBody & {
+  enabled: boolean
+  runningId: string | null
+  candidates: IngestCandidate[]
+  overlaps: { path: string; workspaceId: string; otherPath: string }[]
 }
 
 // ───────────────────────────── Path map (openapi-typescript shape) ─────────────────────────────
@@ -528,8 +583,10 @@ export interface PendingPaths {
       GetOp<SearchHit[], Record<string, never>, { q: string; limit?: number }>
     >
   >
-  "/accounts": Path<Method<"get", GetOp<AccountDetail[]>>>
-  "/accounts/rescan": Path<Method<"post", BodylessOp<AccountDetail[]>>>
+  "/accounts": Path<Method<"get", GetOp<{ items: AccountDetail[] }>>>
+  "/accounts/rescan": Path<
+    Method<"post", BodylessOp<{ items: AccountDetail[] }>>
+  >
   "/accounts/claude": Path<
     Method<"post", SendOp<AccountDetail, { path: string }>>
   >
@@ -544,6 +601,9 @@ export interface PendingPaths {
       Method<"put", SendOp<SettingsDoc, SettingsDoc>>
   >
   "/settings/catalog": Path<Method<"get", GetOp<SettingsCatalog>>>
+  "/settings/test": Path<
+    Method<"post", SendOp<ProfilePingResult, ProfilePingBody>>
+  >
   "/diagnostics": Path<Method<"post", BodylessOp<{ text: string }>>>
   "/trash": Path<Method<"get", GetOp<TrashItem[]>>>
   "/trash/{id}/restore": Path<
@@ -699,18 +759,30 @@ export interface PendingPaths {
     Method<"post", BodylessOp<RegenerateResult, WsId>>
   >
   "/workspaces/{ws}/ingest/sources": Path<
-    Method<"get", GetOp<IngestSources, WsP>> &
-      Method<
-        "put",
-        SendOp<
-          IngestSources,
-          Omit<IngestSources, "candidates" | "overlaps">,
-          WsP
-        >
-      >
+    Method<"get", GetOp<IngestSourcesWire, WsP>> &
+      Method<"put", SendOp<IngestSourcesWire, IngestSourcesBody, WsP>>
   >
   "/workspaces/{ws}/ingest/run": Path<
-    Method<"post", SendOp<{ runId: string }, { sinceDays?: number }, WsP>>
+    Method<
+      "post",
+      {
+        parameters: Params<WsP, never>
+        requestBody: Json<{ sinceDays?: number | null }>
+        responses: Accepted<{ runId: string }>
+      }
+    >
   >
-  "/workspaces/{ws}/ingest/runs": Path<Method<"get", GetOp<IngestRun[], WsP>>>
+  "/workspaces/{ws}/ingest/runs": Path<
+    Method<"get", GetOp<{ items: IngestRun[] }, WsP>>
+  >
+  "/workspaces/{ws}/ingest/runs/{id}/cancel": Path<
+    Method<
+      "post",
+      {
+        parameters: Params<WsId, never>
+        requestBody?: never
+        responses: Done
+      }
+    >
+  >
 }

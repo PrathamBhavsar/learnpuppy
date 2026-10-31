@@ -3,10 +3,12 @@ import { storage } from "@/lib/storage"
 export type Theme = "light" | "dark" | "system"
 export type ResolvedTheme = "light" | "dark"
 export type Direction = "ltr" | "rtl"
+export type Density = "comfortable" | "compact"
 
 export const THEME_KEY = "lp-theme"
 export const DIR_KEY = "lp-dir"
 export const REDUCE_MOTION_KEY = "lp-reduce-motion"
+export const DENSITY_KEY = "lp-density"
 export const THEMES: readonly Theme[] = ["light", "dark", "system"]
 
 export function isTheme(value: unknown): value is Theme {
@@ -48,6 +50,17 @@ export function applyResolvedTheme(resolved: ResolvedTheme): void {
 
 export function applyDirection(dir: Direction): void {
   document.documentElement.dir = dir
+}
+
+export function readDensity(): Density {
+  return storage.get(DENSITY_KEY) === "compact" ? "compact" : "comfortable"
+}
+
+/** `html[data-density=compact]` tightens the spacing scale (styles/density.css). */
+export function applyDensity(density: Density): void {
+  if (density === "compact")
+    document.documentElement.dataset.density = "compact"
+  else delete document.documentElement.dataset.density
 }
 
 export function applyReduceMotion(on: boolean): void {
