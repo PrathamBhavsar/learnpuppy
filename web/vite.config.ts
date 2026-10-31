@@ -1,14 +1,34 @@
+import { readFileSync } from "node:fs"
 import { resolve } from "node:path"
 import tailwindcss from "@tailwindcss/vite"
 import { tanstackRouter } from "@tanstack/router-plugin/vite"
 import react from "@vitejs/plugin-react"
-import { defineConfig } from "vite"
+import { type Plugin, defineConfig } from "vite"
 
 const API_TARGET = "http://127.0.0.1:7878"
 
+/** `vite --mode mock` serves MSW's worker script from /mock instead of shipping it in public/. */
+function mockServiceWorker(): Plugin {
+  return {
+    name: "lp-mock-service-worker",
+    apply: "serve",
+    configureServer(server) {
+      server.middlewares.use("/mockServiceWorker.js", (_req, res) => {
+        res.setHeader("content-type", "text/javascript")
+        res.end(
+          readFileSync(
+            resolve(import.meta.dirname, "mock/mockServiceWorker.js")
+          )
+        )
+      })
+    },
+  }
+}
+
 // https://vite.dev/config/
-export default defineConfig({
+export default defineConfig(({ mode }) => ({
   plugins: [
+    ...(mode === "mock" ? [mockServiceWorker()] : []),
     tanstackRouter({
       target: "react",
       autoCodeSplitting: true,
@@ -51,4 +71,4 @@ export default defineConfig({
     },
   },
   build: { sourcemap: false, chunkSizeWarningLimit: 600 },
-})
+}))

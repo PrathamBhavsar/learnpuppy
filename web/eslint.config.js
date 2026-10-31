@@ -29,6 +29,7 @@ const featureZones = features.map((name) => ({
 export default defineConfig([
   globalIgnores([
     "dist",
+    "mock",
     "playwright-report",
     "test-results",
     "src/routeTree.gen.ts",

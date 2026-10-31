@@ -15,10 +15,11 @@ import {
 import { usePageTitle } from "@/hooks/use-page-title"
 import { staggerDelay } from "@/lib/motion"
 import { WorkspaceAvatar } from "@/features/shell/WorkspaceChip"
-import { WORKSPACES } from "@/lib/static-workspaces"
+import { useWorkspaces } from "@/api/queries/workspaces"
 
 function Home() {
   usePageTitle("Workspaces")
+  const workspaces = useWorkspaces(false).data ?? []
   return (
     <div
       className="lp-pane h-dvh w-dvw bg-background text-foreground"
@@ -39,14 +40,14 @@ function Home() {
           className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3"
           role="list"
         >
-          {WORKSPACES.map((w, i) => (
+          {workspaces.map((w, i) => (
             <motion.li
               key={w.id}
               initial={{ opacity: 0, y: 8 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{
                 duration: 0.22,
-                delay: staggerDelay(i, WORKSPACES.length),
+                delay: staggerDelay(i, workspaces.length),
               }}
             >
               <Link
@@ -62,9 +63,9 @@ function Home() {
                       <CardTitle className="flex-1 truncate">
                         {w.name}
                       </CardTitle>
-                      {w.due > 0 ? (
+                      {w.stats.dueCards > 0 ? (
                         <Badge variant="secondary" className="tabular-nums">
-                          {w.due} due
+                          {w.stats.dueCards} due
                         </Badge>
                       ) : null}
                     </div>
@@ -74,7 +75,7 @@ function Home() {
                     </CardDescription>
                   </CardHeader>
                   <CardContent className="text-[11px] text-muted-foreground">
-                    Static sample data
+                    {w.stats.nodes} nodes · {w.stats.chats} chats
                   </CardContent>
                 </Card>
               </Link>
@@ -86,4 +87,10 @@ function Home() {
   )
 }
 
-export const Route = createFileRoute("/")({ component: Home })
+export const Route = createFileRoute("/")({
+  component: Home,
+  validateSearch: (search: Record<string, unknown>): { new?: true } =>
+    search["new"] === true || search["new"] === "1" || search["new"] === 1
+      ? { new: true }
+      : {},
+})

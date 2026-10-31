@@ -2,7 +2,6 @@ import { Link, useRouterState } from "@tanstack/react-router"
 import { SearchIcon } from "lucide-react"
 import { Fragment } from "react"
 
-import { JobsPopover } from "@/components/app/jobs-popover"
 import { DirectionToggle } from "@/components/app/direction-toggle"
 import { Kbd } from "@/components/app/kbd"
 import { ThemeToggle } from "@/components/app/theme-toggle"
@@ -17,23 +16,25 @@ import {
 import { Button } from "@/components/ui/button"
 import { usePalette } from "@/stores/palette"
 
+import type { WorkspaceListItem } from "@/api/pending-types"
+
 import { SECTION_LABELS } from "@/lib/nav"
-import {
-  ACCOUNTS_SUMMARY,
-  RUNNING_JOBS,
-  type WorkspaceSummary,
-} from "@/lib/static-workspaces"
+import { AccountsPill } from "./AccountsPill"
+import { WorkspaceJobs } from "./WorkspaceJobs"
 
 type Crumb = { label: string; to?: string }
 
 export function buildCrumbs(
   pathname: string,
-  workspace: WorkspaceSummary
+  workspace: Pick<WorkspaceListItem, "id" | "name"> | undefined
 ): Crumb[] {
   const segments = pathname.split("/").filter(Boolean)
   const crumbs: Crumb[] = []
   if (segments[0] === "w") {
-    crumbs.push({ label: workspace.name, to: `/w/${workspace.id}/graph` })
+    crumbs.push({
+      label: workspace?.name ?? segments[1] ?? "Workspace",
+      to: `/w/${segments[1]}/graph`,
+    })
     const section = segments[2]
     if (section) crumbs.push({ label: SECTION_LABELS[section] ?? section })
     const item = segments[3]
@@ -45,7 +46,11 @@ export function buildCrumbs(
   return crumbs
 }
 
-function Breadcrumbs({ workspace }: { workspace: WorkspaceSummary }) {
+function Breadcrumbs({
+  workspace,
+}: {
+  workspace: Pick<WorkspaceListItem, "id" | "name"> | undefined
+}) {
   const pathname = useRouterState({ select: (s) => s.location.pathname })
   const crumbs = buildCrumbs(pathname, workspace)
   return (
@@ -75,35 +80,11 @@ function Breadcrumbs({ workspace }: { workspace: WorkspaceSummary }) {
   )
 }
 
-function AccountsPill() {
-  const { ready, total } = ACCOUNTS_SUMMARY
-  const state = ready === 0 ? "none" : ready < total ? "partial" : "all"
-  return (
-    <Button
-      asChild
-      variant="outline"
-      size="sm"
-      className="gap-1.5 tabular-nums"
-    >
-      <Link to="/accounts" data-testid="accounts-pill" data-state={state}>
-        <span
-          aria-hidden
-          className={
-            state === "none"
-              ? "size-1.5 bg-destructive"
-              : state === "partial"
-                ? "size-1.5 bg-warning"
-                : "size-1.5 bg-success"
-          }
-        />
-        <span className="sr-only">Accounts </span>
-        {ready}/{total} ready
-      </Link>
-    </Button>
-  )
-}
-
-export function Topbar({ workspace }: { workspace: WorkspaceSummary }) {
+export function Topbar({
+  workspace,
+}: {
+  workspace: Pick<WorkspaceListItem, "id" | "name"> | undefined
+}) {
   const setPaletteOpen = usePalette((s) => s.setOpen)
   return (
     <header
@@ -121,7 +102,7 @@ export function Topbar({ workspace }: { workspace: WorkspaceSummary }) {
         <span className="flex-1 text-start">Search…</span>
         <Kbd combo="mod+k" />
       </Button>
-      <JobsPopover jobs={RUNNING_JOBS} />
+      <WorkspaceJobs workspaceId={workspace?.id ?? null} />
       <AccountsPill />
       <DirectionToggle />
       <ThemeToggle />

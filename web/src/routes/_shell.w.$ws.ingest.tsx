@@ -2,7 +2,7 @@ import { createFileRoute } from "@tanstack/react-router"
 import { DownloadIcon } from "lucide-react"
 
 import { PlaceholderScreen } from "@/features/screens/PlaceholderScreen"
-import { findWorkspace } from "@/lib/static-workspaces"
+import { useWorkspaceName } from "@/hooks/use-workspace"
 
 function Screen() {
   const { ws } = Route.useParams()
@@ -15,7 +15,7 @@ function Screen() {
       emptyTitle="No sources selected"
       emptyDescription="Pick the tools and project folders to scan, then run an ingest."
       actionLabel="Choose sources"
-      workspace={findWorkspace(ws)?.name}
+      workspace={useWorkspaceName(ws)}
     />
   )
 }

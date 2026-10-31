@@ -11,6 +11,12 @@ import { queryClient, router } from "./router"
 const root = document.getElementById("root")
 if (!root) throw new Error("#root missing from index.html")
 
+// `bun run dev:mock`: serve every endpoint from in-browser MSW handlers, no backend needed.
+if (import.meta.env.MODE === "mock") {
+  const { startMock } = await import("./test/mock/browser")
+  await startMock(queryClient)
+}
+
 createRoot(root).render(
   <StrictMode>
     <QueryClientProvider client={queryClient}>

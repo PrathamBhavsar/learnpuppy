@@ -2,7 +2,7 @@ import { createFileRoute } from "@tanstack/react-router"
 import { SlidersHorizontalIcon } from "lucide-react"
 
 import { PlaceholderScreen } from "@/features/screens/PlaceholderScreen"
-import { findWorkspace } from "@/lib/static-workspaces"
+import { useWorkspaceName } from "@/hooks/use-workspace"
 
 function Screen() {
   const { ws } = Route.useParams()
@@ -15,7 +15,7 @@ function Screen() {
       emptyTitle="Settings load with the workspace"
       emptyDescription="General, sources and the danger zone arrive with the workspace screens."
       actionLabel={undefined}
-      workspace={findWorkspace(ws)?.name}
+      workspace={useWorkspaceName(ws)}
     />
   )
 }

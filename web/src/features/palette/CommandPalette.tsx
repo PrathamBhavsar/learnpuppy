@@ -1,6 +1,10 @@
-import { useNavigate } from "@tanstack/react-router"
-import { MonitorIcon, MoonIcon, SunIcon } from "lucide-react"
+import { useRouterState } from "@tanstack/react-router"
+import { FileTextIcon, MessageSquareIcon } from "lucide-react"
+import { Fragment, useMemo } from "react"
 
+import { useChats } from "@/api/queries/chats"
+import { useGlobalSearch } from "@/api/queries/workspaces"
+import { ShortcutKeys } from "@/components/app/shortcut-keys"
 import {
   Command,
   CommandDialog,
@@ -9,105 +13,245 @@ import {
   CommandInput,
   CommandItem,
   CommandList,
+  CommandSeparator,
+  CommandShortcut,
 } from "@/components/ui/command"
+import { useDebounced } from "@/hooks/use-debounced"
+import { useGoto } from "@/hooks/use-goto"
 import { useHotkey } from "@/hooks/use-hotkey"
-import { useTheme } from "@/hooks/use-theme"
+import { useActiveWorkspace } from "@/hooks/use-workspace"
+import {
+  COMMAND_GROUPS,
+  type Command as PaletteCommand,
+  useCommands,
+} from "@/lib/commands"
 import { usePalette } from "@/stores/palette"
-import { useUi } from "@/stores/ui"
 
-import { SECTIONS } from "@/lib/nav"
-import { DEFAULT_WORKSPACE, findWorkspace } from "@/lib/static-workspaces"
+import { usePaletteCommands } from "./contrib"
 
-/** Navigation + appearance commands. Feature-contributed commands arrive with the registry (F10). */
+const SEARCH_DEBOUNCE_MS = 150
+
+function CommandRow({
+  command,
+  onRun,
+  prefix = "",
+}: {
+  command: PaletteCommand
+  onRun: (command: PaletteCommand) => void
+  prefix?: string
+}) {
+  const Icon = command.icon
+  return (
+    <CommandItem
+      value={`${prefix}${command.label}`}
+      keywords={command.keywords}
+      data-testid={`palette-cmd-${command.id}`}
+      onSelect={() => onRun(command)}
+    >
+      {Icon ? <Icon aria-hidden /> : null}
+      <span className="min-w-0 flex-1 truncate">{command.label}</span>
+      {command.shortcut ? (
+        <CommandShortcut>
+          <ShortcutKeys keys={command.shortcut} />
+        </CommandShortcut>
+      ) : null}
+    </CommandItem>
+  )
+}
+
+/** Global ⌘K palette (docs/web/06): commands from the registry, live node search, recent chats. */
 export function CommandPalette() {
   const open = usePalette((s) => s.open)
   const setOpen = usePalette((s) => s.setOpen)
   const toggle = usePalette((s) => s.toggle)
-  const lastWorkspace = useUi((s) => s.lastWorkspace)
-  const navigate = useNavigate()
-  const { setTheme } = useTheme()
-  const ws = (findWorkspace(lastWorkspace) ?? DEFAULT_WORKSPACE).id
+  const query = usePalette((s) => s.query)
+  const setQuery = usePalette((s) => s.setQuery)
+  const scope = usePalette((s) => s.scope)
+  const setScope = usePalette((s) => s.setScope)
+  const recents = usePalette((s) => s.recents)
+  const remember = usePalette((s) => s.remember)
 
-  useHotkey("mod+k", toggle)
+  const pathname = useRouterState({ select: (s) => s.location.pathname })
+  const { id: ws, workspaces } = useActiveWorkspace()
+  const goto = useGoto()
+  const commands = useCommands()
+  usePaletteCommands(pathname)
+  useHotkey("mod+k", toggle, {
+    id: "palette",
+    label: "Command palette",
+    group: "General",
+  })
 
-  const run = (action: () => void) => {
+  const term = useDebounced(query.trim(), SEARCH_DEBOUNCE_MS)
+  const search = useGlobalSearch(open ? term : "")
+  const chats = useChats(ws ?? "", open && Boolean(ws))
+
+  const run = (command: PaletteCommand) => {
+    remember(command.id)
     setOpen(false)
-    action()
+    command.run()
   }
+
+  const grouped = useMemo(() => {
+    const order = [...COMMAND_GROUPS] as string[]
+    for (const c of commands) if (!order.includes(c.group)) order.push(c.group)
+    return order
+      .map((group) => ({
+        group,
+        items: commands.filter((c) => c.group === group),
+      }))
+      .filter((g) => g.items.length > 0)
+  }, [commands])
+
+  const recentCommands = recents
+    .map((id) => commands.find((c) => c.id === id))
+    .filter((c): c is PaletteCommand => c !== undefined)
+  const recentChats = [...(chats.data ?? [])]
+    .sort((a, b) => b.updatedAt - a.updatedAt)
+    .slice(0, 5)
+
+  const hits = (search.data ?? []).filter(
+    (hit) => scope === "all" || hit.workspaceId === ws
+  )
+  const hitsByWorkspace = [...new Set(hits.map((h) => h.workspaceId))].map(
+    (id) => ({
+      id,
+      name: workspaces.find((w) => w.id === id)?.name ?? id,
+      hits: hits.filter((h) => h.workspaceId === id),
+    })
+  )
+  const searching =
+    term.length > 0 && (search.isFetching || term !== query.trim())
 
   return (
     <CommandDialog
       open={open}
       onOpenChange={setOpen}
       title="Command palette"
-      description="Search screens and actions"
+      description="Search screens, actions and nodes"
     >
-      <Command>
+      <Command
+        loop
+        label="Command palette"
+        onKeyDown={(event) => {
+          if (event.key === "Tab" && !event.shiftKey) {
+            event.preventDefault()
+            setScope(scope === "workspace" ? "all" : "workspace")
+          }
+        }}
+      >
         <CommandInput
-          placeholder="Type a command or search…"
+          value={query}
+          onValueChange={setQuery}
+          placeholder="Type a command or search nodes…"
           data-testid="palette-input"
         />
-        <CommandList>
-          <CommandEmpty>No results.</CommandEmpty>
-          <CommandGroup heading="Navigate">
-            {SECTIONS.map(({ key, label, icon: Icon }) => (
-              <CommandItem
-                key={key}
-                value={`go ${label}`}
-                data-testid={`palette-go-${key}`}
-                onSelect={() =>
-                  run(
-                    () => void navigate({ to: `/w/$ws/${key}`, params: { ws } })
-                  )
-                }
-              >
-                <Icon aria-hidden />
-                {label}
-              </CommandItem>
-            ))}
-            <CommandItem
-              value="go accounts"
-              onSelect={() => run(() => void navigate({ to: "/accounts" }))}
+        <CommandList data-testid="palette-list">
+          <CommandEmpty>
+            {searching ? "Searching…" : "No results."}
+          </CommandEmpty>
+
+          {query.trim() === "" && recentCommands.length > 0 ? (
+            <>
+              <CommandGroup heading="Recent" data-testid="palette-group-recent">
+                {recentCommands.map((c) => (
+                  <CommandRow
+                    key={c.id}
+                    command={c}
+                    onRun={run}
+                    prefix="recent · "
+                  />
+                ))}
+              </CommandGroup>
+              <CommandSeparator />
+            </>
+          ) : null}
+
+          {term !== "" && hitsByWorkspace.length > 0
+            ? hitsByWorkspace.map((group) => (
+                <Fragment key={group.id}>
+                  <CommandGroup
+                    heading={
+                      scope === "all" ? `Nodes · ${group.name}` : "Nodes"
+                    }
+                    data-testid="palette-group-nodes"
+                  >
+                    {group.hits.map((hit) => (
+                      <CommandItem
+                        key={`${hit.workspaceId}:${hit.node.id}`}
+                        value={`node ${hit.workspaceId} ${hit.node.id}`}
+                        forceMount
+                        data-testid={`palette-node-${hit.node.id}`}
+                        onSelect={() => {
+                          setOpen(false)
+                          goto(
+                            `/w/${hit.workspaceId}/graph?node=${hit.node.id}`
+                          )
+                        }}
+                      >
+                        <FileTextIcon aria-hidden />
+                        <span className="min-w-0 flex-1 truncate">
+                          {hit.node.text}
+                        </span>
+                        <span className="text-[11px] text-muted-foreground">
+                          {hit.node.kind}
+                        </span>
+                      </CommandItem>
+                    ))}
+                  </CommandGroup>
+                  <CommandSeparator />
+                </Fragment>
+              ))
+            : null}
+
+          {grouped.map(({ group, items }) => (
+            <CommandGroup
+              key={group}
+              heading={group}
+              data-testid={`palette-group-${group.toLowerCase()}`}
             >
-              Accounts
-            </CommandItem>
-            <CommandItem
-              value="go settings"
-              onSelect={() => run(() => void navigate({ to: "/settings" }))}
+              {items.map((c) => (
+                <CommandRow key={c.id} command={c} onRun={run} />
+              ))}
+            </CommandGroup>
+          ))}
+
+          {recentChats.length > 0 ? (
+            <CommandGroup
+              heading="Recent chats"
+              data-testid="palette-group-chats"
             >
-              Settings
-            </CommandItem>
-            <CommandItem
-              value="go gallery"
-              onSelect={() => run(() => void navigate({ to: "/gallery" }))}
-            >
-              Component gallery
-            </CommandItem>
-          </CommandGroup>
-          <CommandGroup heading="Appearance">
-            <CommandItem
-              value="theme light"
-              onSelect={() => run(() => setTheme("light"))}
-            >
-              <SunIcon aria-hidden />
-              Light theme
-            </CommandItem>
-            <CommandItem
-              value="theme dark"
-              onSelect={() => run(() => setTheme("dark"))}
-            >
-              <MoonIcon aria-hidden />
-              Dark theme
-            </CommandItem>
-            <CommandItem
-              value="theme system"
-              onSelect={() => run(() => setTheme("system"))}
-            >
-              <MonitorIcon aria-hidden />
-              System theme
-            </CommandItem>
-          </CommandGroup>
+              {recentChats.map((chat) => (
+                <CommandItem
+                  key={chat.id}
+                  value={`chat ${chat.title}`}
+                  data-testid={`palette-chat-${chat.id}`}
+                  onSelect={() => {
+                    setOpen(false)
+                    goto(`/w/${ws}/learn/${chat.id}`)
+                  }}
+                >
+                  <MessageSquareIcon aria-hidden />
+                  <span className="min-w-0 flex-1 truncate">{chat.title}</span>
+                  <span className="text-[11px] text-muted-foreground">
+                    {chat.phase}
+                  </span>
+                </CommandItem>
+              ))}
+            </CommandGroup>
+          ) : null}
         </CommandList>
+        <div
+          className="flex items-center gap-3 border-t px-3 py-2 text-[11px] text-muted-foreground"
+          data-testid="palette-footer"
+        >
+          <span>↑↓ move</span>
+          <span>↵ run</span>
+          <span data-testid="palette-scope">
+            Nodes: {scope === "all" ? "all workspaces" : "this workspace"} · Tab
+            to switch
+          </span>
+        </div>
       </Command>
     </CommandDialog>
   )

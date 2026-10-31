@@ -7,6 +7,7 @@ const GLYPHS: Record<string, [mac: string, other: string]> = {
   alt: ["⌥", "Alt"],
   enter: ["↵", "Enter"],
   esc: ["Esc", "Esc"],
+  escape: ["Esc", "Esc"],
 }
 
 function glyph(key: string): string {

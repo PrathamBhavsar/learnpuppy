@@ -2,11 +2,11 @@ import { Outlet, createFileRoute } from "@tanstack/react-router"
 
 import { PageHeader } from "@/components/app/page-header"
 import { usePageTitle } from "@/hooks/use-page-title"
-import { findWorkspace } from "@/lib/static-workspaces"
+import { useWorkspaceName } from "@/hooks/use-workspace"
 
 function Learn() {
   const { ws } = Route.useParams()
-  usePageTitle("Learn", findWorkspace(ws)?.name)
+  usePageTitle("Learn", useWorkspaceName(ws))
   return (
     <div data-testid="screen-learn" className="flex h-full min-h-0">
       <aside

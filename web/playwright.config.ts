@@ -2,7 +2,7 @@ import { defineConfig, devices } from "@playwright/test"
 
 const PORT = 5173
 
-// System Chrome (no browser download). E2E against the real server arrives with the server tasks.
+// System Chrome (no browser download). Runs against `bun run dev:mock` (in-browser MSW, no backend).
 export default defineConfig({
   testDir: "./e2e/specs",
   fullyParallel: true,
@@ -20,7 +20,7 @@ export default defineConfig({
     },
   ],
   webServer: {
-    command: "bun run dev",
+    command: "bun run dev:mock",
     url: `http://localhost:${PORT}`,
     reuseExistingServer: true,
     timeout: 60_000,
