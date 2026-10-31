@@ -2,30 +2,50 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 
 import { pendingApi, unwrap } from "../client"
 import { keys } from "../keys"
-import type { IngestSources } from "../pending-types"
+import type {
+  IngestRun,
+  IngestSources,
+  IngestSourcesBody,
+  IngestSourcesWire,
+} from "../pending-types"
 
 export function useIngestSources(ws: string) {
   return useQuery({
     queryKey: keys.ws(ws).ingestSources(),
-    queryFn: async ({ signal }) =>
-      unwrap(
+    enabled: ws !== "",
+    queryFn: async ({ signal }): Promise<IngestSources> => {
+      const wire = unwrap(
         await pendingApi.GET("/workspaces/{ws}/ingest/sources", {
           params: { path: { ws } },
           signal,
         })
-      ),
+      )
+      return toView(wire)
+    },
   })
+}
+
+function toView(wire: IngestSourcesWire): IngestSources {
+  return {
+    ...wire.sources,
+    enabled: wire.enabled,
+    runningId: wire.runningId ?? null,
+    candidates: wire.candidates,
+    overlaps: wire.warnings,
+  }
 }
 
 export function useSaveIngestSources(ws: string) {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: async (body: Omit<IngestSources, "candidates" | "overlaps">) =>
-      unwrap(
-        await pendingApi.PUT("/workspaces/{ws}/ingest/sources", {
-          params: { path: { ws } },
-          body,
-        })
+    mutationFn: async (body: IngestSourcesBody): Promise<IngestSources> =>
+      toView(
+        unwrap(
+          await pendingApi.PUT("/workspaces/{ws}/ingest/sources", {
+            params: { path: { ws } },
+            body,
+          })
+        )
       ),
     onSuccess: (sources) => {
       qc.setQueryData(keys.ws(ws).ingestSources(), sources)
@@ -37,13 +57,14 @@ export function useSaveIngestSources(ws: string) {
 export function useIngestRuns(ws: string) {
   return useQuery({
     queryKey: keys.ws(ws).ingestRuns(),
-    queryFn: async ({ signal }) =>
+    enabled: ws !== "",
+    queryFn: async ({ signal }): Promise<IngestRun[]> =>
       unwrap(
         await pendingApi.GET("/workspaces/{ws}/ingest/runs", {
           params: { path: { ws } },
           signal,
         })
-      ),
+      ).items,
   })
 }
 
@@ -57,7 +78,24 @@ export function useRunIngest(ws: string) {
           body: sinceDays === undefined ? {} : { sinceDays },
         })
       ),
-    onSuccess: () =>
-      qc.invalidateQueries({ queryKey: keys.ws(ws).ingestRuns() }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: keys.ws(ws).ingestRuns() })
+      void qc.invalidateQueries({ queryKey: keys.ws(ws).ingestSources() })
+    },
+  })
+}
+
+export function useCancelIngest(ws: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async (runId: string) => {
+      await pendingApi.POST("/workspaces/{ws}/ingest/runs/{id}/cancel", {
+        params: { path: { ws, id: runId } },
+      })
+    },
+    onSettled: () => {
+      void qc.invalidateQueries({ queryKey: keys.ws(ws).ingestRuns() })
+      void qc.invalidateQueries({ queryKey: keys.ws(ws).ingestSources() })
+    },
   })
 }

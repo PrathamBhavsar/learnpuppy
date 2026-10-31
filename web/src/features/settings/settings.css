@@ -1,0 +1,12 @@
+/* Settings motion (docs/web/05 #43). Reduced motion is handled globally in motion.css. */
+
+/* The selected theme icon turns in (sun/moon morph: rotate + fade, 220 ms). */
+[data-slot="toggle-group-item"][data-state="on"] .lp-theme-icon {
+  animation: lp-theme-icon var(--dur-base) var(--ease-out) both;
+}
+@keyframes lp-theme-icon {
+  from {
+    opacity: 0;
+    transform: rotate(-90deg) scale(0.6);
+  }
+}

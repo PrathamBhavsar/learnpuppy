@@ -1,10 +1,12 @@
 import type { RequestHandler } from "msw"
 
+import { accountHandlers } from "./handlers/accounts"
 import { chatHandlers } from "./handlers/chats"
 import { digestHandlers } from "./handlers/digest"
 import { graphHandlers } from "./handlers/graph"
 import { ingestHandlers } from "./handlers/ingest"
 import { reviewHandlers } from "./handlers/review"
+import { settingsHandlers } from "./handlers/settings"
 import { systemHandlers } from "./handlers/system"
 import { workspaceHandlers } from "./handlers/workspaces"
 
@@ -15,6 +17,8 @@ import { workspaceHandlers } from "./handlers/workspaces"
  */
 export const handlers: RequestHandler[] = [
   ...systemHandlers,
+  ...accountHandlers,
+  ...settingsHandlers,
   ...workspaceHandlers,
   ...graphHandlers,
   ...chatHandlers,

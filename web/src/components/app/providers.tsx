@@ -5,6 +5,7 @@ import { DirectionProvider } from "@/components/ui/direction"
 import { Toaster } from "@/components/ui/sonner"
 import { TooltipProvider } from "@/components/ui/tooltip"
 import {
+  applyDensity,
   applyDirection,
   applyReduceMotion,
   applyResolvedTheme,
@@ -15,6 +16,7 @@ import { useUi } from "@/stores/ui"
 export function AppProviders({ children }: { children: ReactNode }) {
   const direction = useUi((s) => s.direction)
   const reduceMotion = useUi((s) => s.reduceMotion)
+  const density = useUi((s) => s.density)
   const theme = useUi((s) => s.theme)
   const resolvedTheme = useUi((s) => s.resolvedTheme)
   const syncSystemTheme = useUi((s) => s.syncSystemTheme)
@@ -24,7 +26,8 @@ export function AppProviders({ children }: { children: ReactNode }) {
     applyResolvedTheme(resolvedTheme)
     applyDirection(direction)
     applyReduceMotion(reduceMotion)
-  }, [resolvedTheme, direction, reduceMotion])
+    applyDensity(density)
+  }, [resolvedTheme, direction, reduceMotion, density])
 
   useEffect(() => {
     if (theme !== "system") return

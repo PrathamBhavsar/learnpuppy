@@ -19,6 +19,7 @@ export function resetUi() {
     resolvedTheme: "light",
     direction: "ltr",
     reduceMotion: false,
+    density: "comfortable",
     sidebarCollapsed: false,
     lastWorkspace: null,
   })

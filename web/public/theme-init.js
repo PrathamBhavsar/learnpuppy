@@ -12,6 +12,7 @@
     root.style.colorScheme = dark ? "dark" : "light"
     root.dir = dir === "rtl" ? "rtl" : "ltr"
     if (localStorage.getItem("lp-reduce-motion") === "1") root.dataset.reduceMotion = "true"
+    if (localStorage.getItem("lp-density") === "compact") root.dataset.density = "compact"
   } catch (e) {
     root.classList.add("dark")
     root.dir = "ltr"

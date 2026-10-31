@@ -1,0 +1,4 @@
+/* Settings > Density: compact shrinks Tailwind's spacing unit (p-4, gap-3, h-8 ...) by about 12%. */
+:root[data-density="compact"] {
+  --spacing: 0.22rem;
+}

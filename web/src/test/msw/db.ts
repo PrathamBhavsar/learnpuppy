@@ -4,7 +4,7 @@ import type {
   DecisionDetail,
   DigestDay,
   IngestRun,
-  IngestSources,
+  IngestSourcesWire,
   ReviewStats,
   SettingsDoc,
   TrashItem,
@@ -13,14 +13,12 @@ import type {
 } from "@/api/pending-types"
 
 import { chatFixtures, chatsForOtherWorkspaces } from "./fixtures/chats"
+import { accountFixtures } from "./fixtures/accounts"
 import { digestFixtures } from "./fixtures/digest"
 import { type GraphFixture, buildGraph } from "./fixtures/graph"
+import { ingestFixtures } from "./fixtures/ingest"
 import { type CardFixture, cardFixtures, statsFor } from "./fixtures/review"
-import {
-  accountFixtures,
-  ingestFixtures,
-  settingsFixture,
-} from "./fixtures/system"
+import { settingsFixture } from "./fixtures/settings"
 import {
   WS_DESIGN,
   WS_DIST,
@@ -42,7 +40,7 @@ export type MockDb = {
   digest: { days: DigestDay[]; details: Map<string, DecisionDetail> }
   accounts: AccountDetail[]
   settings: SettingsDoc
-  ingest: Map<string, { sources: IngestSources; runs: IngestRun[] }>
+  ingest: Map<string, { sources: IngestSourcesWire; runs: IngestRun[] }>
   /** clientId → stored result, so retried mutations return the original response. */
   idempotent: Map<string, unknown>
   counters: { id: number }

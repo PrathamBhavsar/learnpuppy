@@ -54,6 +54,7 @@ afterEach(() => {
   localStorage.clear()
   document.documentElement.className = ""
   document.documentElement.removeAttribute("data-reduce-motion")
+  document.documentElement.removeAttribute("data-density")
   document.documentElement.dir = "ltr"
   mockMatchMedia()
 })

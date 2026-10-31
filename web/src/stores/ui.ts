@@ -2,15 +2,19 @@ import { create } from "zustand"
 
 import { storage } from "@/lib/storage"
 import {
+  DENSITY_KEY,
   DIR_KEY,
   REDUCE_MOTION_KEY,
   THEME_KEY,
+  type Density,
   type Direction,
   type ResolvedTheme,
   type Theme,
+  applyDensity,
   applyDirection,
   applyReduceMotion,
   applyResolvedTheme,
+  readDensity,
   readDirection,
   readTheme,
   resolveTheme,
@@ -25,6 +29,7 @@ type UiState = {
   resolvedTheme: ResolvedTheme
   direction: Direction
   reduceMotion: boolean
+  density: Density
   sidebarCollapsed: boolean
   lastWorkspace: string | null
   setLastWorkspace: (id: string) => void
@@ -33,6 +38,7 @@ type UiState = {
   syncSystemTheme: () => void
   setDirection: (direction: Direction) => void
   setReduceMotion: (on: boolean) => void
+  setDensity: (density: Density) => void
   setSidebarCollapsed: (collapsed: boolean) => void
   toggleSidebar: () => void
 }
@@ -44,6 +50,7 @@ export const useUi = create<UiState>((set, get) => {
     resolvedTheme: resolveTheme(theme),
     direction: readDirection(),
     reduceMotion: storage.get(REDUCE_MOTION_KEY) === "1",
+    density: readDensity(),
     sidebarCollapsed: storage.get(SIDEBAR_KEY) === "1",
     lastWorkspace: storage.get(LAST_WS_KEY),
     setLastWorkspace: (id) => {
@@ -72,6 +79,11 @@ export const useUi = create<UiState>((set, get) => {
       storage.set(REDUCE_MOTION_KEY, on ? "1" : "0")
       applyReduceMotion(on)
       set({ reduceMotion: on })
+    },
+    setDensity: (density) => {
+      storage.set(DENSITY_KEY, density)
+      applyDensity(density)
+      set({ density })
     },
     setSidebarCollapsed: (collapsed) => {
       storage.set(SIDEBAR_KEY, collapsed ? "1" : "0")

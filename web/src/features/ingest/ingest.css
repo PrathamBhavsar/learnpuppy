@@ -1,0 +1,84 @@
+/* Ingest motion (docs/web/05 #41). Reduced motion is handled globally in motion.css. */
+
+.lp-sheen {
+  position: relative;
+  overflow: hidden;
+}
+.lp-sheen::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    color-mix(in oklab, var(--primary-foreground) 45%, transparent),
+    transparent
+  );
+  transform: translateX(-100%);
+  animation: lp-sheen 1.4s var(--ease-inout) infinite;
+}
+[dir="rtl"] .lp-sheen::after {
+  animation-name: lp-sheen-rtl;
+}
+@keyframes lp-sheen {
+  to {
+    transform: translateX(100%);
+  }
+}
+@keyframes lp-sheen-rtl {
+  from {
+    transform: translateX(100%);
+  }
+  to {
+    transform: translateX(-100%);
+  }
+}
+
+.lp-fade-swap {
+  animation: lp-fade-swap var(--dur-base) var(--ease-out) both;
+}
+@keyframes lp-fade-swap {
+  from {
+    opacity: 0;
+  }
+}
+
+.lp-slide-down {
+  animation: lp-slide-down var(--dur-slow) var(--ease-out) both;
+}
+@keyframes lp-slide-down {
+  from {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+}
+
+.lp-check-draw {
+  stroke-dasharray: 24;
+  stroke-dashoffset: 24;
+  animation: lp-check-draw var(--dur-slow) var(--ease-out) 120ms forwards;
+}
+@keyframes lp-check-draw {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lp-sheen::after {
+    animation: none;
+    display: none;
+  }
+  .lp-check-draw {
+    stroke-dashoffset: 0;
+    animation: none;
+  }
+}
+:root[data-reduce-motion="true"] .lp-sheen::after {
+  animation: none;
+  display: none;
+}
+:root[data-reduce-motion="true"] .lp-check-draw {
+  stroke-dashoffset: 0;
+  animation: none;
+}

@@ -1,0 +1,22 @@
+/* Accounts motion (docs/web/05 #42). Reduced motion is handled globally in motion.css. */
+
+.lp-ring-arc {
+  transition: stroke-dashoffset 1s linear;
+}
+
+.lp-status-dot {
+  transition: background-color var(--dur-base) var(--ease-out);
+}
+
+/* A rate-limit event pulses the card border once. */
+.lp-border-pulse {
+  animation: lp-border-pulse 900ms var(--ease-out) 1;
+}
+@keyframes lp-border-pulse {
+  0% {
+    box-shadow: 0 0 0 0 color-mix(in oklab, var(--warning) 70%, transparent);
+  }
+  100% {
+    box-shadow: 0 0 0 8px transparent;
+  }
+}

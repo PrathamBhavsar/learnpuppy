@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 
 import { pendingApi, unwrap } from "../client"
 import { keys } from "../keys"
-import type { SettingsDoc } from "../pending-types"
+import type { ProfilePingBody, SettingsDoc } from "../pending-types"
 
 export function useSettings() {
   return useQuery({
@@ -36,5 +36,13 @@ export function useSaveSettings() {
 export function useDiagnostics() {
   return useMutation({
     mutationFn: async () => unwrap(await pendingApi.POST("/diagnostics")),
+  })
+}
+
+/** 1-token ping through a role profile; the server answers `ok: false` rather than erroring on a bad model. */
+export function usePingProfile() {
+  return useMutation({
+    mutationFn: async (body: ProfilePingBody) =>
+      unwrap(await pendingApi.POST("/settings/test", { body })),
   })
 }
