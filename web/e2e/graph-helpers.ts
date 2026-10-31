@@ -10,7 +10,12 @@ type GraphHook = {
   hover: () => string | null
   camera: () => { x: number; y: number; k: number; z: number }
   screenPosition: (id: string) => { x: number; y: number } | null
-  frameStats: () => { frames: number; costP95: number; gapP95: number; gapMax: number }
+  frameStats: () => {
+    frames: number
+    costP95: number
+    gapP95: number
+    gapMax: number
+  }
   resetFrameStats: () => void
   loadFixture: (nodes: number) => Promise<void>
 }
@@ -21,7 +26,9 @@ export async function openGraph(page: Page, path = GRAPH) {
   page.on("pageerror", (e) => errors.push(e.message))
   page.on("console", (m) => m.type() === "error" && errors.push(m.text()))
   await page.goto(path)
-  await page.waitForFunction(() => (window as LpWindow).__lp?.graph?.nodeCount() ?? 0 > 0)
+  await page.waitForFunction(
+    () => (window as LpWindow).__lp?.graph?.nodeCount() ?? 0 > 0
+  )
   await settle(page)
   return errors
 }
@@ -37,9 +44,12 @@ export async function settle(page: Page) {
   }
 }
 
-export const cam = (page: Page) => page.evaluate(() => (window as LpWindow).__lp?.graph?.camera())
-export const selection = (page: Page) => page.evaluate(() => (window as LpWindow).__lp?.graph?.selection() ?? [])
-export const count = (page: Page) => page.evaluate(() => (window as LpWindow).__lp?.graph?.nodeCount() ?? 0)
+export const cam = (page: Page) =>
+  page.evaluate(() => (window as LpWindow).__lp?.graph?.camera())
+export const selection = (page: Page) =>
+  page.evaluate(() => (window as LpWindow).__lp?.graph?.selection() ?? [])
+export const count = (page: Page) =>
+  page.evaluate(() => (window as LpWindow).__lp?.graph?.nodeCount() ?? 0)
 
 /** Most connected propositions first; read from the accessible list (ids are `graph-list-<id>`). */
 export async function listedIds(page: Page, n = 12): Promise<string[]> {

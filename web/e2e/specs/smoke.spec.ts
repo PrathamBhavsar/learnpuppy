@@ -100,7 +100,7 @@ test("reduced motion leaves no running animation longer than 150 ms", async ({
 }) => {
   await page.emulateMedia({ reducedMotion: "reduce" })
   await page.goto(SHELL)
-  await expect(page.getByTestId("empty-state")).toBeVisible()
+  await expect(page.getByTestId("graph-counts")).toBeVisible()
   await page.waitForTimeout(300)
   const long = await page.evaluate(() =>
     document
