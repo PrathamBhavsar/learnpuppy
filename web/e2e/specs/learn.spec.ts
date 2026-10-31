@@ -156,6 +156,7 @@ for (const theme of ["dark", "light"] as const) {
       await page.waitForTimeout(700)
       expect(await seriousViolations(page)).toEqual([])
       await page.getByTestId("tab-jobs").click()
+      await page.waitForTimeout(700) // let the pop-in animation settle (axe reads mid-fade opacity)
       expect(await seriousViolations(page)).toEqual([])
     })
   }
