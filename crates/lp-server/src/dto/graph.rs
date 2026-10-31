@@ -121,7 +121,7 @@ pub struct GraphDto {
     pub clusters: Vec<ClusterDto>,
     /// Node id → `[x, y]`; `null` while the layout is computed.
     pub positions: Option<BTreeMap<String, [f64; 2]>>,
-    /// The graph version the positions were computed for (equals `version` when present).
+    /// Cached layout revision; advances when graph mutations or explicit relayout replace positions.
     pub layout_version: Option<u64>,
     /// The layout is being computed; a `graph.changed` event follows when it is ready.
     pub layout_pending: bool,
@@ -142,7 +142,7 @@ impl GraphDto {
                 .map_or_else(|| id.to_owned(), |n| n.name.clone())
         };
         let (layout_version, positions) = match positions {
-            Some(p) => (Some(p.version), Some(p.positions)),
+            Some(p) => (Some(p.layout_version.max(p.version)), Some(p.positions)),
             None => (None, None),
         };
         Self {
@@ -428,6 +428,7 @@ mod tests {
         assert_eq!(g.clusters[0].label, "Session");
 
         let pos = Positions {
+            layout_version: 7,
             version: 7,
             positions: BTreeMap::from([("a".to_owned(), [1.0, 2.0])]),
         };

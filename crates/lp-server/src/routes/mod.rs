@@ -5,7 +5,10 @@ pub mod accounts;
 pub mod chats;
 pub mod common;
 pub mod digest;
+pub mod exports;
 pub mod graph;
+pub mod graph_write;
+pub mod ingest;
 pub mod review;
 pub mod search;
 pub mod system;
@@ -23,6 +26,9 @@ pub fn api() -> Router<AppState> {
         .merge(system::routes())
         .merge(workspaces::routes())
         .merge(graph::routes())
+        .merge(graph_write::routes())
+        .merge(ingest::routes())
+        .merge(exports::routes())
         .merge(chats::routes())
         .merge(review::routes())
         .merge(digest::routes())

@@ -66,7 +66,9 @@ pub async fn snapshot(
     }
     let etag = format!(
         "\"g{}-{}\"",
-        loaded.version,
+        positions
+            .as_ref()
+            .map_or(loaded.version, |p| p.layout_version.max(p.version)),
         if pending { "pending" } else { "ready" }
     );
     let mut res = if not_modified(&headers, &etag) {

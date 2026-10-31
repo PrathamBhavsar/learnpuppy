@@ -10,3 +10,5 @@ pub mod search;
 pub mod settings;
 pub mod system;
 pub mod workspace;
+
+pub mod mutations;

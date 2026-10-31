@@ -175,6 +175,8 @@ impl SnapshotCache {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Positions {
     pub version: u64,
+    #[serde(default)]
+    pub layout_version: u64,
     pub positions: BTreeMap<String, [f64; 2]>,
 }
 
@@ -198,6 +200,7 @@ pub fn compute_positions(l: &Loaded) -> Positions {
         .collect();
     Positions {
         version: l.version,
+        layout_version: l.version,
         positions,
     }
 }
