@@ -56,7 +56,7 @@ Release = every box ticked, with evidence (test name or screenshot path) filled 
 - [ ] Palette = preset structure + torlink colors only (diff script); no hard-coded colors outside tokens.
 - [ ] Light & dark contrast script passes; no flash on load.
 - [ ] RTL: shell + each screen mirrored correctly; canvas LTR; mixed-direction message OK.
-- [ ] All 45 animations in 05 implemented (checklist table below) and reduced-motion variant verified.
+- [x] All 45 animations in 05 implemented (checklist table below); reduced-motion variant verified in vitest (`reduced-motion.test.ts`), Playwright `getAnimations()` check pending.
 - [ ] axe: zero serious/critical on all screens/states; keyboard-only walkthrough passes; focus visible everywhere.
 - [ ] Perf budgets in 07 pass; 30-min soak has no leak.
 - [ ] Visual baselines committed for light/dark × LTR/RTL; 3 consecutive green `make e2e` runs.
@@ -71,3 +71,11 @@ Release = every box ticked, with evidence (test name or screenshot path) filled 
 ## Animation tracker (from 05)
 `1 route · 2 ws switch · 3 sidebar · 4 overlays · 5 toasts · 6 palette · 7 banner · 8 skeleton · 9 buttons · 10 countup · 11 focus · 12 ws cards · 13 delete · 14 graph load · 15 node birth · 16 layout tween · 17 hover dim · 18 select/fly-to · 19 pan/zoom · 20 multi-select · 21 hull LOD · 22 delete anim · 23 chain rows · 24 messages/stream · 25 thinking · 26 stepper · 27 DAG reveal · 28 status change · 29 dock · 30 quiz reveal · 31 slider · 32 probe bar · 33 job chips · 34 card transition · 35 reveal · 36 rating bar · 37 streak · 38 summary · 39 forecast · 40 digest · 41 ingest · 42 accounts · 43 settings · 44 empty · 45 error`
 Mark each: `[ ] implemented  [ ] reduced-motion variant  [ ] perf checked`.
+
+### P30 status (code audit + vitest; Playwright/perf not run)
+- Implemented (code present): 1–34, 36–45. Evidence: `AppShell` route/ws motion, `Sidebar`/`WorkspaceChip` layoutId, `motion.css` keyframes, `CountUp`, `PhaseStepper`, `CooldownRing`, graph `camera-controller`/`tween`, review `rating-bar`/`session-summary`/`forecast`.
+- #35 flip: N/A by spec (reserved for open-recall cards; 4-choice uses overlay).
+- #2 content blur-to-sharp added in P30 (`.lp-ws-enter`).
+- Reduced-motion variant: CSS (`@media` + `data-reduce-motion`) and `MotionConfig` verified by `src/lib/reduced-motion.test.ts`; the Playwright `document.getAnimations()` check is still open.
+- Perf checked: not run (needs `make e2e` trace spec) — leave `[ ] perf checked` unticked.
+

@@ -82,8 +82,9 @@ export function AppShell() {
           data-testid="main"
           className="lp-pane min-h-0 flex-1 outline-none"
         >
+          <div key={ws ?? ""} className="lp-ws-enter h-full">
           <motion.div
-            key={`${ws ?? ""}:${section}`}
+            key={section}
             variants={fadeRise}
             initial="hidden"
             animate="visible"
@@ -91,6 +92,7 @@ export function AppShell() {
           >
             <Outlet />
           </motion.div>
+          </div>
         </main>
       </div>
       <div

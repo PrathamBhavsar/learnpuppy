@@ -102,3 +102,13 @@
 :root[data-reduce-motion="true"] .lp-shimmer::after {
   display: none;
 }
+
+/* Workspace switch (#2): content settles from an 8 px blur. Keyed on workspace id in AppShell. */
+.lp-ws-enter {
+  animation: lp-ws-enter var(--dur-base) var(--ease-out) both;
+}
+@keyframes lp-ws-enter {
+  from {
+    filter: blur(8px);
+  }
+}
