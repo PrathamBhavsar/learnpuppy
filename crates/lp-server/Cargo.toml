@@ -8,13 +8,19 @@ publish.workspace = true
 [dependencies]
 lp-service = { path = "../lp-service" }
 lp-cli-driver = { path = "../lp-cli-driver" }
+lp-core = { path = "../lp-core" }
+lp-store = { path = "../lp-store" }
+lp-agent = { path = "../lp-agent" }
+lp-ingest = { path = "../lp-ingest" }
 anyhow.workspace = true
 async-trait.workspace = true
+chrono.workspace = true
 axum = { version = "0.8", features = ["macros"] }
 clap = { workspace = true, features = ["env"] }
 futures = "0.3"
 hex.workspace = true
 mime_guess = "2"
+parking_lot.workspace = true
 rand.workspace = true
 schemars.workspace = true
 rust-embed = { version = "8", features = ["mime-guess"] }
@@ -22,6 +28,7 @@ serde.workspace = true
 serde_json.workspace = true
 serde_path_to_error = "0.1"
 sha2.workspace = true
+smol_str.workspace = true
 tokio.workspace = true
 tokio-util.workspace = true
 tower-http = { version = "0.6", features = ["compression-gzip", "compression-br"] }
@@ -30,6 +37,10 @@ tracing-appender.workspace = true
 tracing-subscriber = { workspace = true, features = ["json"] }
 utoipa = "5"
 uuid.workspace = true
+
+[features]
+# Test-only server hooks (`POST /__test/clock`, `serve --now`); never in release builds.
+test-hooks = []
 
 [lib]
 path = "src/lib.rs"

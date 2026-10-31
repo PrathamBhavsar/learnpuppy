@@ -15,6 +15,162 @@
     }
   ],
   "paths": {
+    "/accounts": {
+      "get": {
+        "tags": [
+          "accounts"
+        ],
+        "summary": "The account pool: status, cooldowns and usage. Never secrets.",
+        "operationId": "list",
+        "responses": {
+          "200": {
+            "description": "",
+            "headers": {
+              "ETag": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "Changes with the pool"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccountsDto"
+                }
+              }
+            }
+          },
+          "304": {
+            "description": "Unchanged since `If-None-Match`"
+          }
+        }
+      }
+    },
+    "/accounts/claude": {
+      "post": {
+        "tags": [
+          "accounts"
+        ],
+        "summary": "Adds another Claude profile directory (`CLAUDE_CONFIG_DIR`) after checking its login.",
+        "operationId": "add_claude",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AddClaudeProfile"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccountDto"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "No Claude login in that directory",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/accounts/rescan": {
+      "post": {
+        "tags": [
+          "accounts"
+        ],
+        "summary": "Re-runs account discovery into the live pool.",
+        "operationId": "rescan",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RescanDto"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/accounts/{id}": {
+      "patch": {
+        "tags": [
+          "accounts"
+        ],
+        "summary": "Excludes an account from the pool, or puts it back.",
+        "operationId": "patch_account",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Account id, e.g. `claude:me@example.com`",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PatchAccount"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccountDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/bootstrap": {
       "get": {
         "tags": [
@@ -150,10 +306,1874 @@
           }
         }
       }
+    },
+    "/search": {
+      "get": {
+        "tags": [
+          "system"
+        ],
+        "summary": "Searches every live workspace's propositions. A workspace slower than 300 ms is skipped and\nnamed in `timedOut`.",
+        "operationId": "search",
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "Hits to return in total; default 30, at most 100.",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SearchDto"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Empty query",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/settings": {
+      "get": {
+        "tags": [
+          "settings"
+        ],
+        "summary": "Global settings: role profiles, pins, concurrency and UI preferences.",
+        "operationId": "get_settings",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SettingsDto"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "settings"
+        ],
+        "summary": "Replaces the editable settings after validating them against the catalog and the pool.",
+        "operationId": "put_settings",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SettingsDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SettingsDto"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Fields outside the catalog",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/settings/catalog": {
+      "get": {
+        "tags": [
+          "settings"
+        ],
+        "summary": "Providers, model ids, effort levels and the other choices settings forms offer.",
+        "operationId": "catalog",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CatalogDto"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/trash": {
+      "get": {
+        "tags": [
+          "workspaces"
+        ],
+        "summary": "Deleted workspaces waiting in the trash, newest first.",
+        "operationId": "trash_list",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TrashListDto"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/trash/{id}": {
+      "delete": {
+        "tags": [
+          "workspaces"
+        ],
+        "summary": "Deletes a trashed workspace for good.",
+        "operationId": "trash_purge",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Trash entry id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/trash/{id}/restore": {
+      "post": {
+        "tags": [
+          "workspaces"
+        ],
+        "summary": "Restores a trashed workspace (renamed with a suffix if its name was taken).",
+        "operationId": "trash_restore",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Trash entry id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkspaceDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/workspaces": {
+      "get": {
+        "tags": [
+          "workspaces"
+        ],
+        "summary": "Workspaces with stats, most recently opened first; damaged directories are listed apart.",
+        "operationId": "list",
+        "parameters": [
+          {
+            "name": "archived",
+            "in": "query",
+            "description": "Include archived workspaces.",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkspaceListDto"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "workspaces"
+        ],
+        "summary": "Creates a workspace.",
+        "operationId": "create",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateWorkspace"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkspaceDto"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Name already in use",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid field",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/workspaces/{ws}": {
+      "get": {
+        "tags": [
+          "workspaces"
+        ],
+        "summary": "One workspace's metadata and stats.",
+        "operationId": "get_one",
+        "parameters": [
+          {
+            "name": "ws",
+            "in": "path",
+            "description": "Workspace id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkspaceDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "workspaces"
+        ],
+        "summary": "Moves a workspace to the trash. The body must repeat its exact name.",
+        "operationId": "remove",
+        "parameters": [
+          {
+            "name": "ws",
+            "in": "path",
+            "description": "Workspace id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DeleteWorkspace"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TrashEntryDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Name does not match",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "workspaces"
+        ],
+        "summary": "Edits name, icon, hue, description, sources or overrides.",
+        "operationId": "patch",
+        "parameters": [
+          {
+            "name": "ws",
+            "in": "path",
+            "description": "Workspace id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PatchWorkspace"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkspaceDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Archived, or name in use",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid field",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/workspaces/{ws}/archive": {
+      "post": {
+        "tags": [
+          "workspaces"
+        ],
+        "summary": "Makes a workspace read-only and hides it from the default list.",
+        "operationId": "archive",
+        "parameters": [
+          {
+            "name": "ws",
+            "in": "path",
+            "description": "Workspace id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkspaceDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/workspaces/{ws}/chats": {
+      "get": {
+        "tags": [
+          "chats"
+        ],
+        "summary": "Chats, most recently updated first.",
+        "operationId": "list",
+        "parameters": [
+          {
+            "name": "ws",
+            "in": "path",
+            "description": "Workspace id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChatPageDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/workspaces/{ws}/chats/{id}": {
+      "get": {
+        "tags": [
+          "chats"
+        ],
+        "summary": "Everything the Classroom renders for one chat. A pending question never carries its answer.",
+        "operationId": "view",
+        "parameters": [
+          {
+            "name": "ws",
+            "in": "path",
+            "description": "Workspace id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Chat id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClassroomViewDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "chats"
+        ],
+        "summary": "Moves a chat to the workspace's `chats/.trash`.",
+        "operationId": "remove",
+        "parameters": [
+          {
+            "name": "ws",
+            "in": "path",
+            "description": "Workspace id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Chat id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Workspace archived",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "chats"
+        ],
+        "summary": "Renames a chat.",
+        "operationId": "rename",
+        "parameters": [
+          {
+            "name": "ws",
+            "in": "path",
+            "description": "Workspace id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Chat id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RenameChat"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChatSummaryDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Workspace archived",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid title",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/workspaces/{ws}/digest": {
+      "get": {
+        "tags": [
+          "digest"
+        ],
+        "summary": "Decisions grouped by day, then coding session, newest first.",
+        "operationId": "digest",
+        "parameters": [
+          {
+            "name": "ws",
+            "in": "path",
+            "description": "Workspace id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "description": "Sessions started at or after this: epoch ms or `YYYY-MM-DD` (UTC).",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "description": "Sessions started before this: epoch ms or `YYYY-MM-DD` (UTC, start of that day).",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "source",
+            "in": "query",
+            "description": "Comma-separated: `claude`, `codex`, `agy`.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DigestDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Bad date or source",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/workspaces/{ws}/digest/decisions/{id}": {
+      "get": {
+        "tags": [
+          "digest"
+        ],
+        "summary": "One decision with its session, linked cards and the git commits made while it ran.",
+        "operationId": "decision",
+        "parameters": [
+          {
+            "name": "ws",
+            "in": "path",
+            "description": "Workspace id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Decision id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DecisionDetailDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/workspaces/{ws}/digest/decisions/{id}/cards": {
+      "post": {
+        "tags": [
+          "digest"
+        ],
+        "summary": "Generates 4-choice cards for a decision. Drafts that fail the card-shape check come back in\n`rejected`.",
+        "operationId": "regenerate",
+        "parameters": [
+          {
+            "name": "ws",
+            "in": "path",
+            "description": "Workspace id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Decision id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RegenerateDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Workspace archived",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Engine unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/workspaces/{ws}/graph": {
+      "get": {
+        "tags": [
+          "graph"
+        ],
+        "summary": "The whole graph, clusters and cached layout. `positions` is `null` and `layoutPending` true\nwhile the layout is computed; `graph.changed` follows when it is ready.",
+        "operationId": "snapshot",
+        "parameters": [
+          {
+            "name": "ws",
+            "in": "path",
+            "description": "Workspace id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "headers": {
+              "ETag": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "Changes with the graph or its layout"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GraphDto"
+                }
+              }
+            }
+          },
+          "304": {
+            "description": "Unchanged since `If-None-Match`"
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/workspaces/{ws}/graph/chains": {
+      "get": {
+        "tags": [
+          "graph"
+        ],
+        "summary": "Chains touching the selected nodes, grouped by the conclusion's birth session.",
+        "operationId": "chains",
+        "parameters": [
+          {
+            "name": "ws",
+            "in": "path",
+            "description": "Workspace id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "selection",
+            "in": "query",
+            "description": "Comma-separated node ids.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChainTableDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/workspaces/{ws}/graph/nodes/{id}": {
+      "get": {
+        "tags": [
+          "graph"
+        ],
+        "summary": "One node with its provenance, chains, related nodes and linked cards.",
+        "operationId": "node",
+        "parameters": [
+          {
+            "name": "ws",
+            "in": "path",
+            "description": "Workspace id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Node id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NodeDetailDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/workspaces/{ws}/graph/search": {
+      "get": {
+        "tags": [
+          "graph"
+        ],
+        "summary": "Full-text search over propositions, best match first.",
+        "operationId": "search",
+        "parameters": [
+          {
+            "name": "ws",
+            "in": "path",
+            "description": "Workspace id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GraphSearchDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Empty query",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/workspaces/{ws}/repair": {
+      "post": {
+        "tags": [
+          "workspaces"
+        ],
+        "summary": "Rewrites minimal metadata for a damaged workspace from its directory name.",
+        "operationId": "repair",
+        "parameters": [
+          {
+            "name": "ws",
+            "in": "path",
+            "description": "Workspace id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkspaceDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Not damaged",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/workspaces/{ws}/restore": {
+      "post": {
+        "tags": [
+          "workspaces"
+        ],
+        "summary": "Brings an archived workspace back.",
+        "operationId": "restore",
+        "parameters": [
+          {
+            "name": "ws",
+            "in": "path",
+            "description": "Workspace id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkspaceDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/workspaces/{ws}/review/cards": {
+      "get": {
+        "tags": [
+          "review"
+        ],
+        "summary": "Browse every card, soonest due first.",
+        "operationId": "cards",
+        "parameters": [
+          {
+            "name": "ws",
+            "in": "path",
+            "description": "Workspace id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "state",
+            "in": "query",
+            "description": "`new`, `learning`, `review` or `relearning`.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CardPageDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Unknown state",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/workspaces/{ws}/review/cards/{card}": {
+      "get": {
+        "tags": [
+          "review"
+        ],
+        "summary": "One card with its answer, rationale and review history (the browser's drawer).",
+        "operationId": "card_detail",
+        "parameters": [
+          {
+            "name": "ws",
+            "in": "path",
+            "description": "Workspace id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "card",
+            "in": "path",
+            "description": "Card id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CardDetailDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/workspaces/{ws}/review/preview/{card}": {
+      "get": {
+        "tags": [
+          "review"
+        ],
+        "summary": "`[again, hard, good, easy]` intervals for a card.",
+        "operationId": "preview",
+        "parameters": [
+          {
+            "name": "ws",
+            "in": "path",
+            "description": "Workspace id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "card",
+            "in": "path",
+            "description": "Card id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PreviewListDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/workspaces/{ws}/review/queue": {
+      "get": {
+        "tags": [
+          "review"
+        ],
+        "summary": "Due cards at the server's `now`, oldest due first. Answers are withheld.",
+        "operationId": "queue",
+        "parameters": [
+          {
+            "name": "ws",
+            "in": "path",
+            "description": "Workspace id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QueueDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/workspaces/{ws}/review/stats": {
+      "get": {
+        "tags": [
+          "review"
+        ],
+        "summary": "Review header numbers: due counts, streak, retention and a 14-day forecast.",
+        "operationId": "stats",
+        "parameters": [
+          {
+            "name": "ws",
+            "in": "path",
+            "description": "Workspace id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "headers": {
+              "ETag": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "Changes with the stats, not with the clock"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StatsDto"
+                }
+              }
+            }
+          },
+          "304": {
+            "description": "Unchanged since `If-None-Match`"
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/workspaces/{ws}/review/sync": {
+      "post": {
+        "tags": [
+          "review"
+        ],
+        "summary": "Merges other devices' review logs, then ships this device's cards.",
+        "operationId": "sync",
+        "parameters": [
+          {
+            "name": "ws",
+            "in": "path",
+            "description": "Workspace id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SyncDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Workspace archived",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/workspaces/{ws}/review/{card}/answer": {
+      "post": {
+        "tags": [
+          "review"
+        ],
+        "summary": "Checks a choice without changing the schedule: correctness, the rationale, the suggested\ngrade and what each grade would schedule.",
+        "operationId": "answer",
+        "parameters": [
+          {
+            "name": "ws",
+            "in": "path",
+            "description": "Workspace id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "card",
+            "in": "path",
+            "description": "Card id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AnswerRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AnswerDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Unknown choice or confidence",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/workspaces/{ws}/review/{card}/grade": {
+      "post": {
+        "tags": [
+          "review"
+        ],
+        "summary": "Grades a card (1 again .. 4 easy). A retry with the same `clientId` returns the first result.",
+        "operationId": "grade",
+        "parameters": [
+          {
+            "name": "ws",
+            "in": "path",
+            "description": "Workspace id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "card",
+            "in": "path",
+            "description": "Card id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GradeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GradeDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Workspace archived",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Rating out of range",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
     "schemas": {
+      "AccountDto": {
+        "type": "object",
+        "description": "One CLI account as the accounts screen shows it. Never carries tokens or credentials.",
+        "required": [
+          "id",
+          "provider",
+          "status",
+          "requests",
+          "tokensIn",
+          "tokensOut"
+        ],
+        "properties": {
+          "cooldownReason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "cooldownUntil": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "Epoch ms when a cooldown ends."
+          },
+          "email": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "id": {
+            "type": "string"
+          },
+          "provider": {
+            "type": "string",
+            "description": "`claude`, `codex` or `agy`."
+          },
+          "reauthHint": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The command that renews an expired login."
+          },
+          "requests": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Requests in the current rate-limit window.",
+            "minimum": 0
+          },
+          "status": {
+            "$ref": "#/components/schemas/AccountStatus"
+          },
+          "tier": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "tokensIn": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "tokensOut": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          }
+        }
+      },
       "AccountStatus": {
         "type": "string",
         "enum": [
@@ -209,6 +2229,118 @@
           }
         }
       },
+      "AccountsDto": {
+        "type": "object",
+        "required": [
+          "items"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AccountDto"
+            }
+          }
+        }
+      },
+      "AddClaudeProfile": {
+        "type": "object",
+        "required": [
+          "path"
+        ],
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "A `CLAUDE_CONFIG_DIR` holding `.claude.json`."
+          }
+        }
+      },
+      "AlternativeDto": {
+        "type": "object",
+        "required": [
+          "option",
+          "rejectedBecause"
+        ],
+        "properties": {
+          "option": {
+            "type": "string"
+          },
+          "rejectedBecause": {
+            "type": "string"
+          }
+        }
+      },
+      "AnswerDto": {
+        "type": "object",
+        "required": [
+          "correct",
+          "correctKey",
+          "explanation",
+          "rating",
+          "next",
+          "preview"
+        ],
+        "properties": {
+          "correct": {
+            "type": "boolean"
+          },
+          "correctKey": {
+            "type": "string"
+          },
+          "explanation": {
+            "type": "string"
+          },
+          "next": {
+            "$ref": "#/components/schemas/NextDto",
+            "description": "What the suggested grade would schedule."
+          },
+          "preview": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PreviewDto"
+            }
+          },
+          "rating": {
+            "type": "integer",
+            "format": "int32",
+            "description": "The grade the server suggests (1..=4).",
+            "minimum": 0
+          }
+        }
+      },
+      "AnswerRequest": {
+        "type": "object",
+        "required": [
+          "choiceKey",
+          "clientId"
+        ],
+        "properties": {
+          "choiceKey": {
+            "type": "string",
+            "description": "`a`..`d`."
+          },
+          "clientId": {
+            "type": "string"
+          },
+          "confidence": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "description": "1..=5.",
+            "minimum": 0
+          },
+          "latencyMs": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "How long the learner took, measured by the client."
+          }
+        }
+      },
       "BannerDto": {
         "type": "object",
         "required": [
@@ -233,6 +2365,13 @@
         "enum": [
           "info",
           "warning"
+        ]
+      },
+      "BasisDto": {
+        "type": "string",
+        "enum": [
+          "stated",
+          "inferred"
         ]
       },
       "Bootstrap": {
@@ -292,6 +2431,317 @@
           }
         }
       },
+      "CallDto": {
+        "type": "object",
+        "required": [
+          "id",
+          "name"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          }
+        }
+      },
+      "CardBriefDto": {
+        "type": "object",
+        "description": "A card as lists show it: scheduling, never the answer.",
+        "required": [
+          "id",
+          "front",
+          "state",
+          "due",
+          "reps",
+          "lapses",
+          "mastery",
+          "isDue"
+        ],
+        "properties": {
+          "due": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Epoch ms."
+          },
+          "front": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "isDue": {
+            "type": "boolean",
+            "description": "Due at the server's `now`."
+          },
+          "lapses": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "lastReview": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "mastery": {
+            "type": "number",
+            "format": "double",
+            "description": "`0..=1`."
+          },
+          "reps": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "sourceDecisionId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "state": {
+            "$ref": "#/components/schemas/CardState"
+          }
+        }
+      },
+      "CardDetailDto": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/CardBriefDto"
+          },
+          {
+            "type": "object",
+            "required": [
+              "options",
+              "correctKey",
+              "rationale",
+              "stability",
+              "difficulty",
+              "history",
+              "preview"
+            ],
+            "properties": {
+              "correctKey": {
+                "type": "string"
+              },
+              "difficulty": {
+                "type": "number",
+                "format": "double"
+              },
+              "history": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/ReviewLogDto"
+                }
+              },
+              "options": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/ChoiceDto"
+                }
+              },
+              "preview": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/PreviewDto"
+                }
+              },
+              "rationale": {
+                "type": "string"
+              },
+              "stability": {
+                "type": "number",
+                "format": "double"
+              }
+            }
+          }
+        ],
+        "description": "A card with everything, for the browser's detail drawer. Includes the answer."
+      },
+      "CardPageDto": {
+        "type": "object",
+        "required": [
+          "items",
+          "total"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CardBriefDto"
+            }
+          },
+          "nextCursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "total": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      },
+      "CardState": {
+        "type": "string",
+        "enum": [
+          "new",
+          "learning",
+          "review",
+          "relearning"
+        ]
+      },
+      "CatalogDto": {
+        "type": "object",
+        "description": "What the settings forms may offer.",
+        "required": [
+          "providers",
+          "efforts",
+          "roles",
+          "pinRoles",
+          "themes",
+          "directions",
+          "densities"
+        ],
+        "properties": {
+          "densities": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "directions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "efforts": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "pinRoles": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Slots that take a pin, in display order."
+          },
+          "providers": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CatalogProviderDto"
+            }
+          },
+          "roles": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Roles that take a profile."
+          },
+          "themes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "CatalogProviderDto": {
+        "type": "object",
+        "required": [
+          "id",
+          "models"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "models": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "ChainGroupDto": {
+        "type": "object",
+        "description": "Chains touching the selection, grouped for the 3-level chain table.",
+        "required": [
+          "sessionId",
+          "label",
+          "chains"
+        ],
+        "properties": {
+          "chains": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ChainRowDto"
+            }
+          },
+          "label": {
+            "type": "string"
+          },
+          "sessionId": {
+            "type": "string",
+            "description": "Birth session of the chain's conclusion."
+          }
+        }
+      },
+      "ChainRowDto": {
+        "type": "object",
+        "required": [
+          "chain",
+          "nodes"
+        ],
+        "properties": {
+          "chain": {
+            "$ref": "#/components/schemas/GraphChainDto"
+          },
+          "nodes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/NodeBriefDto"
+            },
+            "description": "Premises then conclusion, as propositions."
+          }
+        }
+      },
+      "ChainTableDto": {
+        "type": "object",
+        "required": [
+          "selection",
+          "groups",
+          "total"
+        ],
+        "properties": {
+          "groups": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ChainGroupDto"
+            }
+          },
+          "selection": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "total": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      },
       "ChatDeltaData": {
         "type": "object",
         "required": [
@@ -341,6 +2791,49 @@
           }
         }
       },
+      "ChatKind": {
+        "type": "string",
+        "enum": [
+          "teach",
+          "practice"
+        ]
+      },
+      "ChatPageDto": {
+        "type": "object",
+        "required": [
+          "items",
+          "total"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ChatSummaryDto"
+            },
+            "description": "Most recently updated first."
+          },
+          "nextCursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "total": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      },
+      "ChatPhase": {
+        "type": "string",
+        "enum": [
+          "probe",
+          "plan",
+          "teach",
+          "practice",
+          "done"
+        ]
+      },
       "ChatRef": {
         "type": "object",
         "required": [
@@ -369,6 +2862,50 @@
           }
         }
       },
+      "ChatSummaryDto": {
+        "type": "object",
+        "required": [
+          "id",
+          "kind",
+          "title",
+          "phase",
+          "updatedAt",
+          "messageCount",
+          "pending",
+          "jobs"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "jobs": {
+            "type": "integer",
+            "description": "Workbench jobs still running for this chat.",
+            "minimum": 0
+          },
+          "kind": {
+            "$ref": "#/components/schemas/ChatKind"
+          },
+          "messageCount": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "pending": {
+            "type": "boolean",
+            "description": "A question waits for the learner."
+          },
+          "phase": {
+            "$ref": "#/components/schemas/ChatPhase"
+          },
+          "title": {
+            "type": "string"
+          },
+          "updatedAt": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
       "ChatToolCallData": {
         "type": "object",
         "required": [
@@ -388,12 +2925,434 @@
           }
         }
       },
+      "ChoiceDto": {
+        "type": "object",
+        "description": "An answer choice. `key` is `a`..`d` and is what `answer` takes.",
+        "required": [
+          "key",
+          "text"
+        ],
+        "properties": {
+          "key": {
+            "type": "string"
+          },
+          "text": {
+            "type": "string"
+          }
+        }
+      },
+      "ClassroomViewDto": {
+        "type": "object",
+        "description": "Everything the Classroom renders, derived server-side from the stored session.",
+        "required": [
+          "id",
+          "kind",
+          "title",
+          "phase",
+          "viewVersion",
+          "messages",
+          "probeProgress",
+          "verdicts",
+          "jobs",
+          "turn"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "jobs": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/JobDto"
+            }
+          },
+          "kind": {
+            "$ref": "#/components/schemas/ChatKind"
+          },
+          "messages": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MessageDto"
+            }
+          },
+          "pending": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/PendingDto"
+              }
+            ]
+          },
+          "phase": {
+            "$ref": "#/components/schemas/ChatPhase"
+          },
+          "plan": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/PlanDto"
+              }
+            ]
+          },
+          "probeProgress": {
+            "$ref": "#/components/schemas/ProbeProgressDto"
+          },
+          "title": {
+            "type": "string"
+          },
+          "turn": {
+            "$ref": "#/components/schemas/TurnDto"
+          },
+          "verdicts": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/VerdictDto"
+            }
+          },
+          "viewVersion": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Changes with every saved turn; `chat.rest` carries the version to expect.",
+            "minimum": 0
+          }
+        }
+      },
+      "ClusterDto": {
+        "type": "object",
+        "required": [
+          "id",
+          "label",
+          "nodeIds"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "nodeIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "CommitDto": {
+        "type": "object",
+        "required": [
+          "sha",
+          "subject",
+          "body",
+          "files",
+          "diff"
+        ],
+        "properties": {
+          "body": {
+            "type": "string"
+          },
+          "diff": {
+            "type": "string",
+            "description": "Unified diff, capped at 6,000 characters."
+          },
+          "files": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "sha": {
+            "type": "string"
+          },
+          "subject": {
+            "type": "string"
+          }
+        }
+      },
+      "CreateWorkspace": {
+        "type": "object",
+        "required": [
+          "name"
+        ],
+        "properties": {
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "hue": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "icon": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "name": {
+            "type": "string"
+          },
+          "sources": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/SourcesDto"
+              }
+            ]
+          }
+        }
+      },
+      "DamagedWorkspaceDto": {
+        "type": "object",
+        "description": "A workspace directory whose `workspace.json` is missing or corrupt.",
+        "required": [
+          "id",
+          "path",
+          "reason"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string",
+            "description": "Where the directory is, for \"Reveal\"."
+          },
+          "reason": {
+            "type": "string"
+          }
+        }
+      },
+      "DecisionDetailDto": {
+        "type": "object",
+        "required": [
+          "decision",
+          "commits",
+          "cards"
+        ],
+        "properties": {
+          "cards": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CardBriefDto"
+            }
+          },
+          "commits": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CommitDto"
+            },
+            "description": "Commits made while the session ran (allow-listed repos only)."
+          },
+          "commitsError": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Why `commits` could not be read, when it could not."
+          },
+          "decision": {
+            "$ref": "#/components/schemas/DecisionDto"
+          },
+          "session": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/SessionBriefDto"
+              }
+            ]
+          }
+        }
+      },
+      "DecisionDto": {
+        "type": "object",
+        "required": [
+          "id",
+          "title",
+          "basis",
+          "chosen",
+          "why",
+          "risk",
+          "alternatives",
+          "files",
+          "cardIds",
+          "folded"
+        ],
+        "properties": {
+          "alternatives": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AlternativeDto"
+            }
+          },
+          "basis": {
+            "$ref": "#/components/schemas/BasisDto"
+          },
+          "cardIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Cards generated from this decision."
+          },
+          "chosen": {
+            "type": "string",
+            "description": "What was chosen."
+          },
+          "commitSha": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "files": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "folded": {
+            "type": "boolean",
+            "description": "Already folded into the knowledge graph."
+          },
+          "id": {
+            "type": "string"
+          },
+          "risk": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "why": {
+            "type": "string"
+          }
+        }
+      },
+      "DeleteWorkspace": {
+        "type": "object",
+        "required": [
+          "confirmName"
+        ],
+        "properties": {
+          "confirmName": {
+            "type": "string",
+            "description": "The workspace's exact name (its id for a damaged one)."
+          }
+        }
+      },
       "DeltaKind": {
         "type": "string",
         "enum": [
           "text",
           "thinking"
         ]
+      },
+      "DigestDayDto": {
+        "type": "object",
+        "required": [
+          "day",
+          "decisionCount",
+          "sessions"
+        ],
+        "properties": {
+          "day": {
+            "type": "string",
+            "description": "`YYYY-MM-DD` (UTC), or `undated`."
+          },
+          "decisionCount": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "sessions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DigestSessionDto"
+            }
+          }
+        }
+      },
+      "DigestDto": {
+        "type": "object",
+        "required": [
+          "days",
+          "totalDecisions",
+          "totalSessions"
+        ],
+        "properties": {
+          "days": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DigestDayDto"
+            },
+            "description": "Newest day first."
+          },
+          "totalDecisions": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "totalSessions": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      },
+      "DigestSessionDto": {
+        "type": "object",
+        "required": [
+          "sessionId",
+          "source",
+          "project",
+          "summary",
+          "cardCount",
+          "decisions"
+        ],
+        "properties": {
+          "cardCount": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "decisions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DecisionDto"
+            }
+          },
+          "project": {
+            "type": "string"
+          },
+          "sessionId": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string",
+            "description": "`claude`, `codex` or `agy`."
+          },
+          "startedAt": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "summary": {
+            "type": "string",
+            "description": "One line: the first decision, plus how many more."
+          }
+        }
       },
       "Empty": {
         "type": "object",
@@ -500,6 +3459,88 @@
           }
         }
       },
+      "GradeDto": {
+        "type": "object",
+        "required": [
+          "card",
+          "preview"
+        ],
+        "properties": {
+          "card": {
+            "$ref": "#/components/schemas/CardBriefDto"
+          },
+          "preview": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PreviewDto"
+            }
+          }
+        }
+      },
+      "GradeRequest": {
+        "type": "object",
+        "required": [
+          "rating",
+          "clientId"
+        ],
+        "properties": {
+          "clientId": {
+            "type": "string",
+            "description": "Retries with the same id return the first result instead of grading twice."
+          },
+          "rating": {
+            "type": "integer",
+            "format": "int32",
+            "description": "1 again, 2 hard, 3 good, 4 easy.",
+            "minimum": 0
+          }
+        }
+      },
+      "GraphChainDto": {
+        "type": "object",
+        "description": "A reasoning chain: `premises` together imply `conclusion`.",
+        "required": [
+          "id",
+          "from",
+          "to",
+          "kind",
+          "premises",
+          "conclusion"
+        ],
+        "properties": {
+          "conclusion": {
+            "type": "string"
+          },
+          "from": {
+            "type": "string",
+            "description": "The first premise; with `to` this is the drawn edge."
+          },
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string",
+            "description": "`implication` for one premise, `conjunction` for several."
+          },
+          "premises": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "text": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "`A ∧ B ⟹ C` with node names."
+          },
+          "to": {
+            "type": "string",
+            "description": "The conclusion."
+          }
+        }
+      },
       "GraphChangedData": {
         "type": "object",
         "required": [
@@ -510,6 +3551,139 @@
             "type": "integer",
             "format": "int64",
             "minimum": 0
+          }
+        }
+      },
+      "GraphDto": {
+        "type": "object",
+        "description": "The whole graph, as one snapshot.",
+        "required": [
+          "version",
+          "nodes",
+          "chains",
+          "clusters",
+          "layoutPending"
+        ],
+        "properties": {
+          "chains": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/GraphChainDto"
+            }
+          },
+          "clusters": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ClusterDto"
+            }
+          },
+          "layoutPending": {
+            "type": "boolean",
+            "description": "The layout is being computed; a `graph.changed` event follows when it is ready."
+          },
+          "layoutVersion": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "The graph version the positions were computed for (equals `version` when present).",
+            "minimum": 0
+          },
+          "nodes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/GraphNodeDto"
+            }
+          },
+          "positions": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "description": "Node id → `[x, y]`; `null` while the layout is computed.",
+            "additionalProperties": {
+              "type": "array",
+              "items": {
+                "type": "number",
+                "format": "double"
+              }
+            },
+            "propertyNames": {
+              "type": "string"
+            }
+          },
+          "version": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Content hash; changes whenever a node or chain does. Same as `graph.changed.version`.",
+            "minimum": 0
+          }
+        }
+      },
+      "GraphNodeDto": {
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "text",
+          "kind",
+          "provenance",
+          "createdAt",
+          "degree"
+        ],
+        "properties": {
+          "createdAt": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "degree": {
+            "type": "integer",
+            "description": "Chains touching the node.",
+            "minimum": 0
+          },
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string",
+            "description": "Where it came from: `claude`, `codex`, `agy`, `git` or `chat`."
+          },
+          "name": {
+            "type": "string",
+            "description": "Short name."
+          },
+          "provenance": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ProvenanceDto"
+            }
+          },
+          "sessionId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The session or chat that first produced it."
+          },
+          "text": {
+            "type": "string",
+            "description": "The full proposition."
+          }
+        }
+      },
+      "GraphSearchDto": {
+        "type": "object",
+        "required": [
+          "items"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/NodeBriefDto"
+            },
+            "description": "Best match first."
           }
         }
       },
@@ -661,6 +3835,44 @@
           }
         }
       },
+      "JobDto": {
+        "type": "object",
+        "required": [
+          "id",
+          "kind",
+          "status",
+          "title"
+        ],
+        "properties": {
+          "artifactId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string",
+            "description": "`research`, `pdf`, `visual` or `demo`."
+          },
+          "status": {
+            "$ref": "#/components/schemas/JobStatusDto"
+          },
+          "title": {
+            "type": "string"
+          }
+        }
+      },
+      "JobStatusDto": {
+        "type": "string",
+        "enum": [
+          "running",
+          "done",
+          "failed"
+        ]
+      },
       "JobUpdatedData": {
         "type": "object",
         "required": [
@@ -669,6 +3881,793 @@
         "properties": {
           "job": {
             "$ref": "#/components/schemas/Job"
+          }
+        }
+      },
+      "MessageDto": {
+        "type": "object",
+        "required": [
+          "id",
+          "role",
+          "text",
+          "calls"
+        ],
+        "properties": {
+          "answersCallId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "For an answer: the question call it answers."
+          },
+          "calls": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CallDto"
+            },
+            "description": "Tool calls the assistant made in this message (names only, never arguments)."
+          },
+          "createdAt": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "Epoch ms; null for messages the transcript did not time-stamp."
+          },
+          "id": {
+            "type": "string",
+            "description": "`m<index>` in the stored transcript."
+          },
+          "interrupted": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "role": {
+            "$ref": "#/components/schemas/MessageRole"
+          },
+          "text": {
+            "type": "string",
+            "description": "Markdown."
+          },
+          "thinking": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "MessageRole": {
+        "type": "string",
+        "enum": [
+          "user",
+          "assistant",
+          "tool",
+          "steer",
+          "compaction"
+        ]
+      },
+      "NextDto": {
+        "type": "object",
+        "required": [
+          "due",
+          "intervalDays"
+        ],
+        "properties": {
+          "due": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "intervalDays": {
+            "type": "number",
+            "format": "double"
+          }
+        }
+      },
+      "NodeBriefDto": {
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "text",
+          "kind"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "text": {
+            "type": "string"
+          }
+        }
+      },
+      "NodeDetailDto": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/GraphNodeDto"
+          },
+          {
+            "type": "object",
+            "required": [
+              "aliases",
+              "provenanceDetail",
+              "incoming",
+              "outgoing",
+              "related",
+              "cards"
+            ],
+            "properties": {
+              "aliases": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "cards": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/CardBriefDto"
+                },
+                "description": "Cards generated from the decisions this node was distilled from."
+              },
+              "incoming": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/GraphChainDto"
+                }
+              },
+              "mastery": {
+                "type": [
+                  "number",
+                  "null"
+                ],
+                "format": "double",
+                "description": "Mean mastery of `cards`, `0..=1`."
+              },
+              "outgoing": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/GraphChainDto"
+                }
+              },
+              "provenanceDetail": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/ProvenanceDetailDto"
+                }
+              },
+              "related": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/NodeBriefDto"
+                }
+              }
+            }
+          }
+        ],
+        "description": "One node with everything the drawer shows."
+      },
+      "OptionDto": {
+        "type": "object",
+        "required": [
+          "key",
+          "text"
+        ],
+        "properties": {
+          "key": {
+            "type": "string",
+            "description": "What to send back as the answer."
+          },
+          "text": {
+            "type": "string"
+          }
+        }
+      },
+      "OverridesDto": {
+        "type": "object",
+        "required": [
+          "profiles"
+        ],
+        "properties": {
+          "profiles": {
+            "type": "object",
+            "description": "Role → profile, replacing the global one in this workspace.",
+            "additionalProperties": {
+              "$ref": "#/components/schemas/ProfileDto"
+            },
+            "propertyNames": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "PatchAccount": {
+        "type": "object",
+        "required": [
+          "disabled"
+        ],
+        "properties": {
+          "disabled": {
+            "type": "boolean",
+            "description": "Exclude the account from the pool (or put it back)."
+          }
+        }
+      },
+      "PatchWorkspace": {
+        "type": "object",
+        "description": "Fields left out stay as they are.",
+        "properties": {
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "hue": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "icon": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "overrides": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/OverridesDto"
+              }
+            ]
+          },
+          "sources": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/SourcesDto"
+              }
+            ]
+          }
+        }
+      },
+      "PendingDto": {
+        "type": "object",
+        "description": "The question waiting for the learner. Has no field for the correct answer.",
+        "required": [
+          "callId",
+          "tool",
+          "prompt",
+          "allowFreeText",
+          "multiSelect"
+        ],
+        "properties": {
+          "allowFreeText": {
+            "type": "boolean"
+          },
+          "callId": {
+            "type": "string"
+          },
+          "confidenceScale": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32",
+            "description": "Confidence slider `1..=n`; absent when the tool takes no confidence.",
+            "minimum": 0
+          },
+          "idkKey": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The answer value that means \"I don't know\" (options only)."
+          },
+          "multiSelect": {
+            "type": "boolean"
+          },
+          "options": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/OptionDto"
+            },
+            "description": "Already shuffled for this call."
+          },
+          "problem": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/ProblemDto"
+              }
+            ]
+          },
+          "prompt": {
+            "type": "string"
+          },
+          "tool": {
+            "type": "string",
+            "description": "`probe`, `recall`, `quiz`, `explain`, `ask_user_question` or `problem`."
+          }
+        }
+      },
+      "PlanDto": {
+        "type": "object",
+        "required": [
+          "nodes",
+          "edges"
+        ],
+        "properties": {
+          "currentId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "edges": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PlanEdgeDto"
+            }
+          },
+          "nodes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PlanNodeDto"
+            }
+          }
+        }
+      },
+      "PlanEdgeDto": {
+        "type": "object",
+        "required": [
+          "from",
+          "to"
+        ],
+        "properties": {
+          "from": {
+            "type": "string"
+          },
+          "to": {
+            "type": "string"
+          }
+        }
+      },
+      "PlanNodeDto": {
+        "type": "object",
+        "required": [
+          "id",
+          "title",
+          "summary",
+          "status"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/PlanStatus"
+          },
+          "summary": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          }
+        }
+      },
+      "PlanStatus": {
+        "type": "string",
+        "enum": [
+          "current",
+          "visited",
+          "upcoming"
+        ]
+      },
+      "PreviewDto": {
+        "type": "object",
+        "description": "What grading with one rating would schedule.",
+        "required": [
+          "rating",
+          "label",
+          "intervalMs",
+          "intervalLabel",
+          "due"
+        ],
+        "properties": {
+          "due": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "intervalLabel": {
+            "type": "string",
+            "description": "`1m`, `3h`, `5d`."
+          },
+          "intervalMs": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "label": {
+            "type": "string"
+          },
+          "rating": {
+            "type": "integer",
+            "format": "int32",
+            "description": "1 again, 2 hard, 3 good, 4 easy.",
+            "minimum": 0
+          }
+        }
+      },
+      "PreviewListDto": {
+        "type": "object",
+        "required": [
+          "items"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PreviewDto"
+            },
+            "description": "`[again, hard, good, easy]`."
+          }
+        }
+      },
+      "ProbeProgressDto": {
+        "type": "object",
+        "required": [
+          "asked",
+          "max"
+        ],
+        "properties": {
+          "asked": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "max": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      },
+      "ProblemDto": {
+        "type": "object",
+        "required": [
+          "mode",
+          "statement"
+        ],
+        "properties": {
+          "mode": {
+            "type": "string",
+            "description": "`recall`, `discrimination` or `composition`."
+          },
+          "rungs": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string"
+            },
+            "description": "Hint rungs, when the mode has a ladder."
+          },
+          "statement": {
+            "type": "string"
+          }
+        }
+      },
+      "ProfileDto": {
+        "type": "object",
+        "description": "Which CLI, model and reasoning effort a role runs on.",
+        "required": [
+          "provider",
+          "model"
+        ],
+        "properties": {
+          "effort": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "fallback": {
+            "type": "boolean",
+            "description": "Let the account pool fall back to other providers."
+          },
+          "model": {
+            "type": "string"
+          },
+          "provider": {
+            "type": "string"
+          }
+        }
+      },
+      "ProvenanceDetailDto": {
+        "type": "object",
+        "required": [
+          "chatId",
+          "messageId",
+          "snippet"
+        ],
+        "properties": {
+          "chatId": {
+            "type": "string"
+          },
+          "chatTitle": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "messageId": {
+            "type": "string"
+          },
+          "messageIndex": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "description": "Position in the chat transcript, when the message is still there.",
+            "minimum": 0
+          },
+          "snippet": {
+            "type": "string"
+          }
+        }
+      },
+      "ProvenanceDto": {
+        "type": "object",
+        "required": [
+          "chatId",
+          "messageId"
+        ],
+        "properties": {
+          "chatId": {
+            "type": "string"
+          },
+          "messageId": {
+            "type": "string"
+          }
+        }
+      },
+      "QueueCardDto": {
+        "type": "object",
+        "description": "A due card to answer. The correct option and rationale are withheld until `answer`.",
+        "required": [
+          "id",
+          "front",
+          "options",
+          "kind",
+          "due",
+          "state"
+        ],
+        "properties": {
+          "due": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "front": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string",
+            "description": "`decision` for cards made from an ingested decision, else `card`."
+          },
+          "options": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ChoiceDto"
+            }
+          },
+          "sourceDecisionId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "state": {
+            "$ref": "#/components/schemas/CardState"
+          }
+        }
+      },
+      "QueueDto": {
+        "type": "object",
+        "required": [
+          "items",
+          "dueNow",
+          "now"
+        ],
+        "properties": {
+          "dueNow": {
+            "type": "integer",
+            "description": "Cards due now, beyond the page.",
+            "minimum": 0
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/QueueCardDto"
+            }
+          },
+          "now": {
+            "type": "integer",
+            "format": "int64",
+            "description": "The server clock the queue was computed at (epoch ms)."
+          }
+        }
+      },
+      "RegenerateDto": {
+        "type": "object",
+        "required": [
+          "saved",
+          "cardIds",
+          "rejected"
+        ],
+        "properties": {
+          "cardIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "rejected": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RejectedCardDto"
+            }
+          },
+          "saved": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      },
+      "RejectedCardDto": {
+        "type": "object",
+        "required": [
+          "front",
+          "reason"
+        ],
+        "properties": {
+          "front": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string",
+            "description": "Why `validate_card_shape` refused it."
+          }
+        }
+      },
+      "RenameChat": {
+        "type": "object",
+        "required": [
+          "title"
+        ],
+        "properties": {
+          "title": {
+            "type": "string"
+          }
+        }
+      },
+      "RescanDto": {
+        "type": "object",
+        "required": [
+          "items",
+          "added"
+        ],
+        "properties": {
+          "added": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Ids of accounts that were not in the pool before."
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AccountDto"
+            }
+          }
+        }
+      },
+      "ReviewLogDto": {
+        "type": "object",
+        "required": [
+          "ts",
+          "rating",
+          "deviceId"
+        ],
+        "properties": {
+          "deviceId": {
+            "type": "string"
+          },
+          "rating": {
+            "type": "integer",
+            "format": "int32",
+            "description": "1..=4.",
+            "minimum": 0
+          },
+          "ts": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
+      "SearchDto": {
+        "type": "object",
+        "required": [
+          "items",
+          "timedOut"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SearchHitDto"
+            },
+            "description": "Best match first."
+          },
+          "timedOut": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Workspaces that did not answer in time; their hits are missing."
+          }
+        }
+      },
+      "SearchHitDto": {
+        "type": "object",
+        "required": [
+          "workspaceId",
+          "workspaceName",
+          "node",
+          "score"
+        ],
+        "properties": {
+          "node": {
+            "$ref": "#/components/schemas/NodeBriefDto"
+          },
+          "score": {
+            "type": "number",
+            "format": "double",
+            "description": "`0..=1`, higher is better; comparable across workspaces."
+          },
+          "workspaceId": {
+            "type": "string"
+          },
+          "workspaceName": {
+            "type": "string"
           }
         }
       },
@@ -1003,6 +5002,202 @@
         ],
         "description": "One server-sent event."
       },
+      "SessionBriefDto": {
+        "type": "object",
+        "required": [
+          "id",
+          "source",
+          "project",
+          "cwd",
+          "startedAt"
+        ],
+        "properties": {
+          "cwd": {
+            "type": "string"
+          },
+          "gitBranch": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "id": {
+            "type": "string"
+          },
+          "project": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string"
+          },
+          "startedAt": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
+      "SettingsDto": {
+        "type": "object",
+        "description": "The global settings the UI edits.",
+        "required": [
+          "profiles",
+          "pins",
+          "learningStyle",
+          "concurrencyCap",
+          "ui"
+        ],
+        "properties": {
+          "concurrencyCap": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Parallel model calls, `1..=6`.",
+            "minimum": 0
+          },
+          "learningStyle": {
+            "type": "string",
+            "description": "`default` or `visual`."
+          },
+          "pins": {
+            "type": "object",
+            "description": "Role → `<provider>:auto` or an account id.",
+            "additionalProperties": {
+              "type": "string"
+            },
+            "propertyNames": {
+              "type": "string"
+            }
+          },
+          "profiles": {
+            "type": "object",
+            "description": "Role → profile; roles without one are absent.",
+            "additionalProperties": {
+              "$ref": "#/components/schemas/ProfileDto"
+            },
+            "propertyNames": {
+              "type": "string"
+            }
+          },
+          "ui": {
+            "$ref": "#/components/schemas/UiSettingsDto"
+          }
+        }
+      },
+      "SourcesDto": {
+        "type": "object",
+        "required": [
+          "claude",
+          "codex",
+          "agy",
+          "git",
+          "allow",
+          "sinceDays"
+        ],
+        "properties": {
+          "agy": {
+            "type": "boolean"
+          },
+          "allow": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Project directories whose sessions belong to this workspace; empty disables ingest."
+          },
+          "claude": {
+            "type": "boolean"
+          },
+          "codex": {
+            "type": "boolean"
+          },
+          "git": {
+            "type": "boolean"
+          },
+          "sinceDays": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          }
+        }
+      },
+      "StatsDto": {
+        "type": "object",
+        "required": [
+          "dueNow",
+          "dueToday",
+          "newToday",
+          "streak",
+          "reviewedToday",
+          "forecast",
+          "forecastStart",
+          "now"
+        ],
+        "properties": {
+          "dueNow": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "dueToday": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "forecast": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "format": "int32",
+              "minimum": 0
+            },
+            "description": "Cards due per UTC day, starting `forecast_start`; day 0 includes overdue cards."
+          },
+          "forecastStart": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "newToday": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "now": {
+            "type": "integer",
+            "format": "int64",
+            "description": "The server clock the stats were computed at (epoch ms)."
+          },
+          "retention30d": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double",
+            "description": "Share of recent reviews that were not `Again`, `0..=1`; null with no data."
+          },
+          "reviewedToday": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "streak": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          }
+        }
+      },
+      "SyncDto": {
+        "type": "object",
+        "required": [
+          "cards",
+          "reviews"
+        ],
+        "properties": {
+          "cards": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "reviews": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      },
       "ToolCall": {
         "type": "object",
         "required": [
@@ -1015,6 +5210,76 @@
           },
           "name": {
             "type": "string"
+          }
+        }
+      },
+      "TrashEntryDto": {
+        "type": "object",
+        "required": [
+          "id",
+          "workspaceId",
+          "name",
+          "deletedAt",
+          "bytes"
+        ],
+        "properties": {
+          "bytes": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Bytes the trashed workspace takes on disk.",
+            "minimum": 0
+          },
+          "deletedAt": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "id": {
+            "type": "string",
+            "description": "Key for restore and purge."
+          },
+          "name": {
+            "type": "string"
+          },
+          "workspaceId": {
+            "type": "string"
+          }
+        }
+      },
+      "TrashListDto": {
+        "type": "object",
+        "required": [
+          "items"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TrashEntryDto"
+            }
+          }
+        }
+      },
+      "TurnDto": {
+        "type": "object",
+        "required": [
+          "state"
+        ],
+        "properties": {
+          "startedAt": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "state": {
+            "$ref": "#/components/schemas/TurnState"
+          },
+          "turnId": {
+            "type": [
+              "string",
+              "null"
+            ]
           }
         }
       },
@@ -1037,6 +5302,161 @@
           }
         }
       },
+      "TurnState": {
+        "type": "string",
+        "enum": [
+          "idle",
+          "running",
+          "queued",
+          "error"
+        ]
+      },
+      "UiSettingsDto": {
+        "type": "object",
+        "required": [
+          "theme",
+          "direction",
+          "density",
+          "reduceMotion",
+          "confirmDestructive",
+          "autoOpenBrowser"
+        ],
+        "properties": {
+          "autoOpenBrowser": {
+            "type": "boolean"
+          },
+          "confirmDestructive": {
+            "type": "boolean"
+          },
+          "density": {
+            "type": "string",
+            "description": "`comfortable` or `compact`."
+          },
+          "direction": {
+            "type": "string",
+            "description": "`ltr`, `rtl` or `auto`."
+          },
+          "reduceMotion": {
+            "type": "boolean"
+          },
+          "theme": {
+            "type": "string",
+            "description": "`dark`, `light` or `system`."
+          }
+        }
+      },
+      "VerdictDto": {
+        "type": "object",
+        "description": "The grade of an answered quiz or probe. Exists only after the answer.",
+        "required": [
+          "callId",
+          "correct"
+        ],
+        "properties": {
+          "callId": {
+            "type": "string"
+          },
+          "correct": {
+            "type": "boolean"
+          },
+          "explanation": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "WorkspaceDto": {
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "slug",
+          "icon",
+          "hue",
+          "description",
+          "createdAt",
+          "lastOpenedAt",
+          "archived",
+          "sources",
+          "overrides"
+        ],
+        "properties": {
+          "archived": {
+            "type": "boolean",
+            "description": "Archived workspaces are read-only: mutations answer `409 workspace_archived`."
+          },
+          "createdAt": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "description": {
+            "type": "string"
+          },
+          "hue": {
+            "type": "string",
+            "description": "One of the 8 palette accents."
+          },
+          "icon": {
+            "type": "string",
+            "description": "A lucide icon name from the fixed allow-list."
+          },
+          "id": {
+            "type": "string",
+            "description": "`ws_` + 8 hex digits; routing always uses this."
+          },
+          "lastOpenedAt": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "name": {
+            "type": "string"
+          },
+          "overrides": {
+            "$ref": "#/components/schemas/OverridesDto"
+          },
+          "slug": {
+            "type": "string"
+          },
+          "sources": {
+            "$ref": "#/components/schemas/SourcesDto"
+          },
+          "stats": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/WorkspaceStatsDto",
+                "description": "Only in listings."
+              }
+            ]
+          }
+        }
+      },
+      "WorkspaceListDto": {
+        "type": "object",
+        "required": [
+          "items",
+          "damaged"
+        ],
+        "properties": {
+          "damaged": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DamagedWorkspaceDto"
+            }
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/WorkspaceDto"
+            },
+            "description": "Most recently opened first."
+          }
+        }
+      },
       "WorkspaceRef": {
         "type": "object",
         "required": [
@@ -1045,6 +5465,40 @@
         "properties": {
           "workspaceId": {
             "type": "string"
+          }
+        }
+      },
+      "WorkspaceStatsDto": {
+        "type": "object",
+        "required": [
+          "nodes",
+          "chains",
+          "chats",
+          "dueCards"
+        ],
+        "properties": {
+          "chains": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "chats": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "dueCards": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "lastActivityAt": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "nodes": {
+            "type": "integer",
+            "minimum": 0
           }
         }
       },
@@ -1096,6 +5550,34 @@
     {
       "name": "events",
       "description": "Server-sent events"
+    },
+    {
+      "name": "workspaces",
+      "description": "Workspace lifecycle and trash"
+    },
+    {
+      "name": "graph",
+      "description": "Knowledge graph"
+    },
+    {
+      "name": "chats",
+      "description": "Learn chats and the Classroom view"
+    },
+    {
+      "name": "review",
+      "description": "FSRS spaced repetition"
+    },
+    {
+      "name": "digest",
+      "description": "Decision digest"
+    },
+    {
+      "name": "accounts",
+      "description": "CLI accounts"
+    },
+    {
+      "name": "settings",
+      "description": "Global settings"
     }
   ]
 }

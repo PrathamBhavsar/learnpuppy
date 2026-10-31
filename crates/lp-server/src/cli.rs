@@ -57,8 +57,12 @@ pub enum Cmd {
     },
     /// Write a deterministic fixture data root for tests and demos.
     Seed {
-        /// Directory to create the fixture in.
-        dir: PathBuf,
+        /// Fixture size: small (40 nodes), medium (800), large (5k) or huge (10k).
+        #[arg(long, value_enum)]
+        fixture: crate::seed::Fixture,
+        /// Directory to create the fixture in; must not already hold workspaces.
+        #[arg(long)]
+        out: PathBuf,
     },
     /// Check CLI logins, data root, disk and ports.
     Doctor,
@@ -148,7 +152,9 @@ mod tests {
             Cmd::Migrate { revert: true }
         ));
         assert!(matches!(
-            parse(&["seed", "/tmp/x"]).unwrap().cmd,
+            parse(&["seed", "--fixture", "medium", "--out", "/tmp/x"])
+                .unwrap()
+                .cmd,
             Cmd::Seed { .. }
         ));
         assert!(matches!(parse(&["doctor"]).unwrap().cmd, Cmd::Doctor));
@@ -180,6 +186,7 @@ mod tests {
         assert!(parse(&["serve", "--engine", "gpt"]).is_err());
         assert!(parse(&["serve", "--engine", "cli"]).is_err());
         assert!(parse(&["seed"]).is_err());
+        assert!(parse(&["seed", "--fixture", "tiny", "--out", "/tmp/x"]).is_err());
         let v = parse(&["--version"]).unwrap_err();
         assert_eq!(v.kind(), clap::error::ErrorKind::DisplayVersion);
     }

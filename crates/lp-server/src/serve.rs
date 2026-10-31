@@ -22,7 +22,7 @@ use tokio_util::sync::CancellationToken;
 use crate::app::{AppState, EngineMode, ServerConfig, VERSION};
 use crate::assets::Assets;
 use crate::auth;
-use crate::directory::DiskWorkspaces;
+use crate::directory::{RegistryDirectory, WorkspaceDirectory};
 
 /// How many ports above the requested one are tried before giving up.
 pub const PORT_TRIES: u16 = 50;
@@ -219,6 +219,21 @@ pub async fn run(
         Err(e) => tracing::debug!(error = %e, port, "no [::1] listener"),
     }
 
+    // The legacy-store migration takes its own lock on `server.lock`, so it runs before ours.
+    let hub = Arc::new(EventHub::new());
+    let (dir_root, dir_hub, dir_home, dir_ccd) = (
+        root.clone(),
+        hub.clone(),
+        opts.home.clone(),
+        opts.claude_config_dir.clone(),
+    );
+    let directory = tokio::task::spawn_blocking(move || {
+        let directory = RegistryDirectory::open(dir_root, dir_hub, dir_home, dir_ccd)?;
+        directory.core().migrate_on_start();
+        anyhow::Ok(directory)
+    })
+    .await??;
+
     let token = (!opts.dev).then(auth::new_token);
     let info = LockInfo {
         pid: std::process::id(),
@@ -246,6 +261,7 @@ pub async fn run(
         let mut settings = Settings::load(&settings_root)?;
         let device = settings.ensure_device(&settings_root)?.to_owned();
         let pool = accounts::discover_pool(&accounts::roots(&home, ccd, &settings));
+        accounts::apply_disabled(&pool, &settings);
         anyhow::Ok((device, pool))
     })
     .await??;
@@ -259,8 +275,8 @@ pub async fn run(
     };
     let mut state = AppState::new(
         config,
-        Arc::new(EventHub::new()),
-        Arc::new(DiskWorkspaces::new(root.clone())),
+        hub,
+        Arc::new(directory),
         pool,
         opts.assets,
         device_id,

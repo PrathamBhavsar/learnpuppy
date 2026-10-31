@@ -12,5 +12,6 @@ pub mod engine;
 pub mod error;
 pub mod openapi;
 pub mod routes;
+pub mod seed;
 pub mod serve;
 pub mod sse;

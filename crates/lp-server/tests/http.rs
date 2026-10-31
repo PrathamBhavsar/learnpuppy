@@ -12,7 +12,7 @@ use http_body_util::BodyExt;
 use lp_cli_driver::accounts::{AccountPool, DiscoverRoots, Strategy};
 use lp_server::app::{router, AppState, EngineMode, ServerConfig};
 use lp_server::assets::{Assets, CSP};
-use lp_server::directory::DiskWorkspaces;
+use lp_server::directory::RegistryDirectory;
 use lp_server::error::{ErrorCode, ErrorEnvelope};
 use lp_service::events::{Event, EventHub, Scope};
 use serde_json::Value;
@@ -60,7 +60,7 @@ fn env_with(token: Option<&str>, hub: EventHub, heartbeat: Duration, dist: Optio
     )
     .unwrap();
     let pool = lp_service::accounts::discover_pool(&DiscoverRoots {
-        home,
+        home: home.clone(),
         ..DiscoverRoots::default()
     });
     let dist_dir = dir.path().join("dist");
@@ -70,6 +70,8 @@ fn env_with(token: Option<&str>, hub: EventHub, heartbeat: Duration, dist: Optio
         std::fs::write(dist_dir.join("assets/index-3f9a1c.js"), "console.log(1)").unwrap();
         std::fs::write(dist_dir.join("favicon.svg"), "<svg/>").unwrap();
     }
+    let hub = Arc::new(hub);
+    let directory = RegistryDirectory::open(root.clone(), hub.clone(), home.clone(), None).unwrap();
     let state = AppState::new(
         ServerConfig {
             port: PORT,
@@ -78,8 +80,8 @@ fn env_with(token: Option<&str>, hub: EventHub, heartbeat: Duration, dist: Optio
             data_root: root.clone(),
             heartbeat,
         },
-        Arc::new(hub),
-        Arc::new(DiskWorkspaces::new(root.clone())),
+        hub,
+        Arc::new(directory),
         pool,
         Assets::Dir(dist_dir),
         "dev-test".into(),

@@ -78,6 +78,7 @@ impl AccountSummaryDto {
         let (status, cooldown_until, cooldown_reason) = match a.status {
             Status::Ready => (AccountStatus::Ready, None, None),
             Status::AuthExpired => (AccountStatus::AuthExpired, None, None),
+            Status::Disabled => (AccountStatus::Disabled, None, None),
             Status::Cooldown { secs_left, reason } => (
                 AccountStatus::Cooldown,
                 Some(now_ms.saturating_add(
@@ -179,6 +180,8 @@ mod tests {
                 reason: "usage limit".into(),
             },
             requests: 3,
+            tokens_in: 0,
+            tokens_out: 0,
         };
         let acct = AccountSummaryDto::from_account(cooldown, 1_000);
         assert_eq!(acct.status, AccountStatus::Cooldown);
