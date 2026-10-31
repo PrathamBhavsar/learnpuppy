@@ -174,6 +174,61 @@ impl CliPoolEngine {
     }
 }
 
+/// Outcome of a role-slot test ping.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PingOutcome {
+    pub ok: bool,
+    pub latency_ms: u64,
+    pub message: String,
+}
+
+/// How long a test ping may take before it counts as failed.
+pub const PING_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(45);
+
+/// A tiny turn through `engine`. Never errors: a bad model or a missing login is `ok: false`
+/// with the reason in `message`.
+pub async fn ping<E: LlmEngine>(
+    engine: &E,
+    model: &str,
+    effort: Option<&str>,
+    cancel: CancellationToken,
+) -> PingOutcome {
+    let req = TurnRequest {
+        prompt: "Reply with the single word: pong".into(),
+        model: Some(model.into()),
+        effort: effort.map(Into::into),
+        tools: vec![],
+    };
+    let (tx, mut rx) = mpsc::channel(STREAM_CAP);
+    let drain = async { while rx.recv().await.is_some() {} };
+    let started = Instant::now();
+    let run = tokio::time::timeout(PING_TIMEOUT, engine.stream_turn(req, tx, cancel));
+    let (res, ()) = tokio::join!(run, drain);
+    let latency_ms = u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX);
+    match res {
+        Ok(Ok(r)) if !r.text.trim().is_empty() => PingOutcome {
+            ok: true,
+            latency_ms,
+            message: r.text.trim().chars().take(80).collect(),
+        },
+        Ok(Ok(_)) => PingOutcome {
+            ok: false,
+            latency_ms,
+            message: "the model returned an empty reply".into(),
+        },
+        Ok(Err(e)) => PingOutcome {
+            ok: false,
+            latency_ms,
+            message: e.to_string().chars().take(300).collect(),
+        },
+        Err(_) => PingOutcome {
+            ok: false,
+            latency_ms,
+            message: format!("no reply within {}s", PING_TIMEOUT.as_secs()),
+        },
+    }
+}
+
 #[derive(Debug, PartialEq, Eq)]
 enum Failure {
     Auth,

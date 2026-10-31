@@ -449,3 +449,21 @@ mod tests {
         assert!(j.get("configDir").is_none());
     }
 }
+
+/// A profile to try: provider, model and optional effort.
+#[derive(Clone, Debug, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ProfilePingBody {
+    pub provider: String,
+    pub model: String,
+    pub effort: Option<String>,
+}
+
+/// What the test ping found. `ok: false` carries the reason; it is not an HTTP error.
+#[derive(Clone, Debug, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ProfilePingResult {
+    pub ok: bool,
+    pub latency_ms: u64,
+    pub message: String,
+}

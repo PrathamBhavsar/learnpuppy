@@ -1444,3 +1444,32 @@ async fn the_clock_hook_does_not_exist_in_normal_builds() {
     let r = a.post("/__test/clock", json!({"now": 1})).await;
     assert_eq!(r.status, StatusCode::NOT_FOUND);
 }
+
+#[tokio::test]
+async fn settings_test_pings_a_profile_without_erroring_on_failure() {
+    let a = api();
+    a.state.faux().faux_text("pong");
+    let ok = a
+        .post(
+            "/settings/test",
+            json!({"provider": "claude", "model": "sonnet", "effort": "low"}),
+        )
+        .await;
+    assert_eq!(ok.status, 200);
+    assert_eq!(ok.json()["ok"], true);
+    assert_eq!(ok.json()["message"], "pong");
+    // Nothing scripted: the failure is reported in the body.
+    let bad = a
+        .post(
+            "/settings/test",
+            json!({"provider": "claude", "model": "nope"}),
+        )
+        .await;
+    assert_eq!(bad.status, 200);
+    assert_eq!(bad.json()["ok"], false);
+    assert!(!bad.json()["message"].as_str().unwrap().is_empty());
+    let unknown = a
+        .post("/settings/test", json!({"provider": "gpt", "model": "x"}))
+        .await;
+    assert_eq!(unknown.status, 400);
+}
