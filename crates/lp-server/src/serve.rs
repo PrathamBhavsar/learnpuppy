@@ -45,7 +45,7 @@ pub struct ServeOptions {
 pub struct Launch {
     pub url: String,
     pub port: u16,
-    /// `None` in dev mode, and when pointing at an already running server.
+    /// `None` in dev mode, or when an existing server's token is not on disk.
     pub token: Option<String>,
     /// An already running server was found; this process starts nothing.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
@@ -153,6 +153,7 @@ impl Drop for LockGuard {
             .and_then(|b| serde_json::from_slice::<LockInfo>(&b).ok())
             .is_some_and(|l| l.pid == self.pid);
         if ours {
+            let _ = std::fs::remove_file(self.path.with_file_name("server.token"));
             let _ = std::fs::remove_file(&self.path);
         }
     }
@@ -175,6 +176,31 @@ pub async fn bind_from(port: u16) -> std::io::Result<TcpListener> {
         ErrorKind::AddrInUse,
         format!("ports {port}..={last} on 127.0.0.1 are all in use"),
     ))
+}
+
+/// Writes the session token next to the lock, readable by the owner only.
+fn write_token(root: &Path, token: &str) -> std::io::Result<()> {
+    use std::os::unix::fs::OpenOptionsExt;
+    let path = paths::server_token(root);
+    let _ = std::fs::remove_file(&path);
+    let mut f = std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .mode(0o600)
+        .open(path)?;
+    f.write_all(token.as_bytes())
+}
+
+/// The token saved by the running server, if it matches the hash in the lock.
+fn read_token(root: &Path, lock: &LockInfo) -> Option<String> {
+    let token = std::fs::read_to_string(paths::server_token(root)).ok()?;
+    let token = token.trim().to_owned();
+    (lock.token_hash.as_deref() == Some(auth::token_hash(&token).as_str())).then_some(token)
+}
+
+/// Launch info for a server that is already running, with a working URL when its token is on disk.
+fn existing_launch(root: &Path, other: &LockInfo) -> Launch {
+    Launch::new(other.port, read_token(root, other), true)
 }
 
 /// Opens the browser at `url` (best effort).
@@ -207,7 +233,7 @@ pub async fn run(
 
     let probe_root = root.clone();
     if let Some(other) = tokio::task::spawn_blocking(move || running_instance(&probe_root)).await? {
-        on_ready(&Launch::new(other.port, None, true));
+        on_ready(&existing_launch(&root, &other));
         return Ok(());
     }
 
@@ -243,14 +269,19 @@ pub async fn run(
         version: VERSION.to_owned(),
     };
     let lock_root = root.clone();
+    let token_for_file = token.clone();
     let guard =
         match tokio::task::spawn_blocking(move || LockGuard::acquire(&lock_root, &info)).await?? {
             Ok(g) => g,
             Err(other) => {
-                on_ready(&Launch::new(other.port, None, true));
+                on_ready(&existing_launch(&root, &other));
                 return Ok(());
             }
         };
+
+    if let Some(t) = &token_for_file {
+        write_token(&root, t).context("writing server.token")?;
+    }
 
     let (home, ccd, settings_root) = (
         opts.home.clone(),
@@ -451,10 +482,20 @@ mod tests {
         .await
         .unwrap();
         let second = rx2.await.unwrap();
+        // The second serve gets a working URL from the 0600 token file.
         assert_eq!(
-            (second.existing, second.port, second.token),
-            (true, port, None)
+            (second.existing, second.port, second.token.clone()),
+            (true, port, Some(token.clone()))
         );
+        assert_eq!(second.url, launch.url);
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mode = std::fs::metadata(paths::server_token(&root))
+                .unwrap()
+                .permissions()
+                .mode();
+            assert_eq!(mode & 0o777, 0o600);
+        }
 
         stop.cancel();
         tokio::time::timeout(Duration::from_secs(5), server)
@@ -463,6 +504,10 @@ mod tests {
             .unwrap()
             .unwrap();
         assert!(read_lock(&root).is_none(), "lock removed on shutdown");
+        assert!(
+            !paths::server_token(&root).exists(),
+            "token removed on shutdown"
+        );
         assert!(!tokio::task::spawn_blocking(move || probe_health(
             port,
             Duration::from_millis(300)

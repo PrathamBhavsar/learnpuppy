@@ -54,6 +54,11 @@ pub fn server_lock(root: &Path) -> PathBuf {
     root.join("server.lock")
 }
 
+/// The running server's session token (0600), so a second `serve` can build a working URL.
+pub fn server_token(root: &Path) -> PathBuf {
+    root.join("server.token")
+}
+
 pub fn logs_dir(root: &Path) -> PathBuf {
     root.join("logs")
 }

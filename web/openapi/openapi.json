@@ -479,6 +479,47 @@
         }
       }
     },
+    "/settings/test": {
+      "post": {
+        "tags": [
+          "settings"
+        ],
+        "summary": "A tiny test turn through the profile a role would use. A bad model or a missing login comes\nback as `ok: false` with the reason, not as an HTTP error.",
+        "operationId": "test_profile",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProfilePingBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProfilePingResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Unknown provider or effort",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/trash": {
       "get": {
         "tags": [
@@ -5952,6 +5993,50 @@
           },
           "provider": {
             "type": "string"
+          }
+        }
+      },
+      "ProfilePingBody": {
+        "type": "object",
+        "description": "A profile to try: provider, model and optional effort.",
+        "required": [
+          "provider",
+          "model"
+        ],
+        "properties": {
+          "effort": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "model": {
+            "type": "string"
+          },
+          "provider": {
+            "type": "string"
+          }
+        }
+      },
+      "ProfilePingResult": {
+        "type": "object",
+        "description": "What the test ping found. `ok: false` carries the reason; it is not an HTTP error.",
+        "required": [
+          "ok",
+          "latencyMs",
+          "message"
+        ],
+        "properties": {
+          "latencyMs": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "message": {
+            "type": "string"
+          },
+          "ok": {
+            "type": "boolean"
           }
         }
       },

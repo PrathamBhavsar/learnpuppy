@@ -13,7 +13,8 @@ use lp_service::settings::Settings;
 use super::common::{blocking, conditional_body, core};
 use crate::app::AppState;
 use crate::dto::settings::{
-    AccountDto, AccountsDto, AddClaudeProfile, CatalogDto, PatchAccount, RescanDto, SettingsDto,
+    AccountDto, AccountsDto, AddClaudeProfile, CatalogDto, PatchAccount, ProfilePingBody,
+    ProfilePingResult, RescanDto, SettingsDto,
 };
 use crate::error::{ApiError, ApiJson, ErrorEnvelope};
 
@@ -25,6 +26,7 @@ pub fn routes() -> Router<AppState> {
         .route("/accounts/{id}", patch(patch_account))
         .route("/settings", get(get_settings).put(put_settings))
         .route("/settings/catalog", get(catalog))
+        .route("/settings/test", post(test_profile))
 }
 
 fn dtos(st: &AppState) -> Vec<AccountDto> {
@@ -220,4 +222,40 @@ pub async fn catalog(State(st): State<AppState>) -> Result<Json<CatalogDto>, Api
         )?)))
     })
     .await
+}
+
+/// A tiny test turn through the profile a role would use. A bad model or a missing login comes
+/// back as `ok: false` with the reason, not as an HTTP error.
+#[utoipa::path(
+    post,
+    path = "/settings/test",
+    tag = "settings",
+    request_body = ProfilePingBody,
+    responses(
+        (status = 200, body = ProfilePingResult),
+        (status = 400, description = "Unknown provider or effort", body = ErrorEnvelope),
+    )
+)]
+pub async fn test_profile(
+    State(st): State<AppState>,
+    ApiJson(body): ApiJson<ProfilePingBody>,
+) -> Result<Json<ProfilePingResult>, ApiError> {
+    let profile =
+        lp_service::settings::Profile::new(&body.provider, &body.model, body.effort.as_deref())
+            .map_err(|e| ApiError::invalid("provider", format!("{e:#}")))?;
+    let mut settings = Settings::default();
+    settings.profiles.insert("ping".into(), profile.clone());
+    let engine = st.engine_for(&settings, "ping");
+    let out = lp_service::engine::ping(
+        &engine,
+        &profile.model,
+        profile.effort.as_deref(),
+        st.shutdown.child_token(),
+    )
+    .await;
+    Ok(Json(ProfilePingResult {
+        ok: out.ok,
+        latency_ms: out.latency_ms,
+        message: out.message,
+    }))
 }

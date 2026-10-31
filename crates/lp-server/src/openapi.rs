@@ -75,6 +75,7 @@ use crate::error::{ErrorBody, ErrorCode, ErrorEnvelope, FieldError};
         crate::routes::accounts::get_settings,
         crate::routes::accounts::put_settings,
         crate::routes::accounts::catalog,
+        crate::routes::accounts::test_profile,
     ),
     components(schemas(
         ErrorEnvelope,
