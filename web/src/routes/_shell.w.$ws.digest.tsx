@@ -2,7 +2,7 @@ import { createFileRoute } from "@tanstack/react-router"
 import { NewspaperIcon } from "lucide-react"
 
 import { PlaceholderScreen } from "@/features/screens/PlaceholderScreen"
-import { findWorkspace } from "@/lib/static-workspaces"
+import { useWorkspaceName } from "@/hooks/use-workspace"
 
 function Screen() {
   const { ws } = Route.useParams()
@@ -15,7 +15,7 @@ function Screen() {
       emptyTitle="Nothing to digest yet"
       emptyDescription="Run an ingest to see decisions from your recent sessions."
       actionLabel="Go to ingest"
-      workspace={findWorkspace(ws)?.name}
+      workspace={useWorkspaceName(ws)}
     />
   )
 }

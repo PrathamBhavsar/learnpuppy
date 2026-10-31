@@ -1,7 +1,7 @@
 import AxeBuilder from "@axe-core/playwright"
 import { type Page, expect, test } from "@playwright/test"
 
-const SHELL = "/w/learnpuppy/graph"
+const SHELL = "/w/ws_rustasync/graph"
 
 async function collectErrors(page: Page) {
   const errors: string[] = []
@@ -120,7 +120,7 @@ test("command palette opens with the search trigger and navigates", async ({
   await page.getByTestId("search-trigger").click()
   await expect(page.getByRole("dialog")).toBeVisible()
   expect(await seriousViolations(page)).toEqual([])
-  await page.getByTestId("palette-go-review").click()
-  await expect(page).toHaveURL(/\/w\/learnpuppy\/review$/)
+  await page.getByTestId("palette-cmd-go-review").click()
+  await expect(page).toHaveURL(/\/w\/ws_rustasync\/review$/)
   expect(errors).toEqual([])
 })

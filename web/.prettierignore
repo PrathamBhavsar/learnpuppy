@@ -12,3 +12,4 @@ src/index.css
 dist
 playwright-report
 test-results
+src/api/schema.d.ts

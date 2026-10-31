@@ -6,11 +6,11 @@ import { renderApp, resetUi } from "@/test/render"
 beforeEach(resetUi)
 
 const SCREENS: [path: string, testId: string, heading: string][] = [
-  ["/w/learnpuppy/graph", "screen-graph", "Graph"],
-  ["/w/learnpuppy/review", "screen-review", "Review"],
-  ["/w/learnpuppy/digest", "screen-digest", "Digest"],
-  ["/w/learnpuppy/ingest", "screen-ingest", "Ingest"],
-  ["/w/learnpuppy/settings", "screen-settings", "Workspace settings"],
+  ["/w/ws_rustasync/graph", "screen-graph", "Graph"],
+  ["/w/ws_rustasync/review", "screen-review", "Review"],
+  ["/w/ws_rustasync/digest", "screen-digest", "Digest"],
+  ["/w/ws_rustasync/ingest", "screen-ingest", "Ingest"],
+  ["/w/ws_rustasync/settings", "screen-settings", "Workspace settings"],
   ["/accounts", "screen-accounts", "Accounts"],
   ["/settings", "screen-settings", "Settings"],
   ["/trash", "screen-trash", "Trash"],
@@ -39,14 +39,14 @@ describe("route tree", () => {
   )
 
   it("learn shows the two-pane layout with an empty classroom, and a chat inside it", async () => {
-    const first = renderApp("/w/learnpuppy/learn")
+    const first = renderApp("/w/ws_rustasync/learn")
     await screen.findByTestId("screen-learn")
     expect(
       await screen.findByText("Start learning something")
     ).toBeInTheDocument()
     first.unmount()
 
-    renderApp("/w/learnpuppy/learn/chat-42")
+    renderApp("/w/ws_rustasync/learn/chat-42")
     expect(await screen.findByText(/chat chat-42/)).toBeInTheDocument()
     expect(screen.getByTestId("screen-learn")).toBeInTheDocument()
   })
@@ -54,10 +54,9 @@ describe("route tree", () => {
   it("home lists the workspaces", async () => {
     renderApp("/")
     expect(await screen.findByTestId("home")).toBeInTheDocument()
-    expect(screen.getByTestId("workspace-card-learnpuppy")).toHaveAttribute(
-      "href",
-      "/w/learnpuppy/graph"
-    )
+    expect(
+      await screen.findByTestId("workspace-card-ws_rustasync")
+    ).toHaveAttribute("href", "/w/ws_rustasync/graph")
   })
 
   it("unknown paths show the not-found state with a way back", async () => {
@@ -69,8 +68,10 @@ describe("route tree", () => {
   })
 
   it("sets the document title as Section · Workspace · LearnPuppy", async () => {
-    renderApp("/w/rust-systems/digest")
+    renderApp("/w/ws_rustasync/digest")
     await screen.findByTestId("screen-digest")
-    expect(document.title).toBe("Digest · Rust systems · LearnPuppy")
+    await waitFor(() =>
+      expect(document.title).toBe("Digest · Rust async · LearnPuppy")
+    )
   })
 })

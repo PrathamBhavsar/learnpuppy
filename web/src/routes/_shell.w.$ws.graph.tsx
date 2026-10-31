@@ -2,7 +2,7 @@ import { createFileRoute } from "@tanstack/react-router"
 import { NetworkIcon } from "lucide-react"
 
 import { PlaceholderScreen } from "@/features/screens/PlaceholderScreen"
-import { findWorkspace } from "@/lib/static-workspaces"
+import { useWorkspaceName } from "@/hooks/use-workspace"
 
 function Screen() {
   const { ws } = Route.useParams()
@@ -15,7 +15,7 @@ function Screen() {
       emptyTitle="No propositions yet"
       emptyDescription="The graph fills as you learn in chats and ingest sessions."
       actionLabel="Start learning"
-      workspace={findWorkspace(ws)?.name}
+      workspace={useWorkspaceName(ws)}
     />
   )
 }

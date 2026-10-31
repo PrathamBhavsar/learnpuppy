@@ -7,13 +7,22 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover"
-import type { JobSummary } from "@/lib/static-workspaces"
+import { Skeleton } from "@/components/ui/skeleton"
+
+export type JobRow = {
+  id: string
+  label: string
+  detail: string
+  cancellable?: boolean
+}
 
 export function JobsPopover({
   jobs,
+  loading = false,
   onCancel,
 }: {
-  jobs: readonly JobSummary[]
+  jobs: readonly JobRow[]
+  loading?: boolean
   onCancel?: (id: string) => void
 }) {
   return (
@@ -32,7 +41,10 @@ export function JobsPopover({
         >
           <ActivityIcon />
           {jobs.length > 0 ? (
-            <Badge className="absolute -end-1 -top-1 h-4 min-w-4 px-1 tabular-nums">
+            <Badge
+              data-testid="jobs-count"
+              className="absolute -end-1 -top-1 h-4 min-w-4 px-1 tabular-nums"
+            >
               {jobs.length}
             </Badge>
           ) : null}
@@ -44,28 +56,39 @@ export function JobsPopover({
         data-testid="jobs-popover"
       >
         <p className="text-[12px] font-medium">Running jobs</p>
-        {jobs.length === 0 ? (
+        {loading ? (
+          <div className="flex flex-col gap-2" data-testid="jobs-loading">
+            <Skeleton className="h-8 w-full" />
+            <Skeleton className="h-8 w-full" />
+          </div>
+        ) : jobs.length === 0 ? (
           <p className="text-[13px] text-muted-foreground">
             Nothing is running in this workspace.
           </p>
         ) : (
           <ul className="flex flex-col gap-2">
             {jobs.map((job) => (
-              <li key={job.id} className="flex items-center gap-2 text-[13px]">
+              <li
+                key={job.id}
+                data-testid={`job-${job.id}`}
+                className="flex items-center gap-2 text-[13px]"
+              >
                 <span className="min-w-0 flex-1">
                   <span className="block truncate">{job.label}</span>
                   <span className="block truncate text-[11px] text-muted-foreground">
                     {job.detail}
                   </span>
                 </span>
-                <Button
-                  variant="outline"
-                  size="xs"
-                  onClick={() => onCancel?.(job.id)}
-                  aria-label={`Cancel ${job.label}`}
-                >
-                  Cancel
-                </Button>
+                {onCancel && job.cancellable ? (
+                  <Button
+                    variant="outline"
+                    size="xs"
+                    onClick={() => onCancel(job.id)}
+                    aria-label={`Cancel ${job.label}`}
+                  >
+                    Cancel
+                  </Button>
+                ) : null}
               </li>
             ))}
           </ul>

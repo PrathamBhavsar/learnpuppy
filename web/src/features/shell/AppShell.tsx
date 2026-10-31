@@ -1,13 +1,18 @@
-import { Outlet, useParams, useRouterState } from "@tanstack/react-router"
+import { Link, Outlet, useParams, useRouterState } from "@tanstack/react-router"
+import { CompassIcon } from "lucide-react"
 import { motion } from "motion/react"
 import { useEffect, useRef, useState } from "react"
 
+import { EmptyState } from "@/components/app/empty-state"
+import { Button } from "@/components/ui/button"
 import { useHotkey } from "@/hooks/use-hotkey"
+import { useShellHotkeys } from "@/hooks/use-shell-hotkeys"
+import { useActiveWorkspace } from "@/hooks/use-workspace"
 import { fadeRise } from "@/lib/motion"
 import { useUi } from "@/stores/ui"
 
+import { ConnectionBanner, EngineBanner } from "./ConnectionBanner"
 import { Sidebar } from "./Sidebar"
-import { DEFAULT_WORKSPACE, findWorkspace } from "@/lib/static-workspaces"
 import { Topbar } from "./Topbar"
 
 /** Moves focus to the page h1 and announces the new title after each navigation. */
@@ -34,21 +39,24 @@ function useRouteAnnouncer() {
 export function AppShell() {
   const collapsed = useUi((s) => s.sidebarCollapsed)
   const toggleSidebar = useUi((s) => s.toggleSidebar)
-  const lastWorkspace = useUi((s) => s.lastWorkspace)
   const setLastWorkspace = useUi((s) => s.setLastWorkspace)
   const { ws } = useParams({ strict: false })
   const section = useRouterState({
     select: (s) => s.location.pathname.split("/")[ws ? 3 : 1] ?? "",
   })
   const announcement = useRouteAnnouncer()
+  const active = useActiveWorkspace()
 
-  const workspace =
-    findWorkspace(ws) ?? findWorkspace(lastWorkspace) ?? DEFAULT_WORKSPACE
   useEffect(() => {
-    if (ws && findWorkspace(ws)) setLastWorkspace(ws)
-  }, [ws, setLastWorkspace])
+    if (ws && active.workspace) setLastWorkspace(ws)
+  }, [ws, active.workspace, setLastWorkspace])
 
-  useHotkey("[", toggleSidebar)
+  useShellHotkeys()
+  useHotkey("[", toggleSidebar, {
+    id: "sidebar",
+    label: "Toggle sidebar",
+    group: "General",
+  })
 
   return (
     <div
@@ -62,12 +70,15 @@ export function AppShell() {
         Skip to content
       </a>
       <Sidebar
-        workspace={workspace}
+        workspaceId={active.id ?? ""}
+        workspace={active.workspace}
         collapsed={collapsed}
         onToggle={toggleSidebar}
       />
       <div className="flex min-w-0 flex-1 flex-col">
-        <Topbar workspace={workspace} />
+        <Topbar workspace={active.workspace} />
+        <ConnectionBanner />
+        <EngineBanner />
         <main
           id="main"
           tabIndex={-1}
@@ -81,7 +92,20 @@ export function AppShell() {
             animate="visible"
             className="h-full"
           >
-            <Outlet />
+            {active.notFound ? (
+              <EmptyState
+                icon={CompassIcon}
+                title="Workspace not found"
+                description="It may have been deleted or moved to the trash."
+                action={
+                  <Button asChild variant="outline">
+                    <Link to="/">All workspaces</Link>
+                  </Button>
+                }
+              />
+            ) : (
+              <Outlet />
+            )}
           </motion.div>
         </main>
       </div>

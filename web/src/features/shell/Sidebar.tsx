@@ -21,7 +21,8 @@ import { dur, ease, spring } from "@/lib/motion"
 import { cn } from "@/lib/utils"
 
 import { SECTIONS, type SectionKey } from "@/lib/nav"
-import { NAV_BADGES, type WorkspaceSummary } from "@/lib/static-workspaces"
+import type { WorkspaceListItem } from "@/api/pending-types"
+import { useChats } from "@/api/queries/chats"
 import { WorkspaceChip } from "./WorkspaceChip"
 
 const SIDEBAR_WIDTH = 232
@@ -108,17 +109,29 @@ function NavItem({
 }
 
 type SidebarProps = {
-  workspace: WorkspaceSummary
+  /** Id from the URL; the link targets stay valid while the workspace list is still loading. */
+  workspaceId: string
+  workspace: WorkspaceListItem | undefined
   collapsed: boolean
   onToggle: () => void
 }
 
-export function Sidebar({ workspace, collapsed, onToggle }: SidebarProps) {
+export function Sidebar({
+  workspaceId,
+  workspace,
+  collapsed,
+  onToggle,
+}: SidebarProps) {
+  const chats = useChats(workspaceId, workspaceId !== "")
+  const badges: Partial<Record<SectionKey, number>> = {
+    review: workspace?.stats.dueCards,
+    learn: chats.data?.filter((c) => c.pending).length,
+  }
   const reduced = useReducedMotion()
   const endSide = useEndSide()
   const pathname = useRouterState({ select: (s) => s.location.pathname })
   const sectionActive = (key: SectionKey) =>
-    pathname.startsWith(`/w/${workspace.id}/${key}`)
+    pathname.startsWith(`/w/${workspaceId}/${key}`)
 
   return (
     <motion.aside
@@ -144,17 +157,13 @@ export function Sidebar({ workspace, collapsed, onToggle }: SidebarProps) {
             icon={icon}
             collapsed={collapsed}
             active={sectionActive(key)}
-            badge={
-              key === "learn" || key === "review" || key === "ingest"
-                ? NAV_BADGES[key]
-                : undefined
-            }
+            badge={badges[key] || undefined}
             testId={`nav-${key}`}
           >
             {(content, className) => (
               <Link
                 to={`/w/$ws/${key}`}
-                params={{ ws: workspace.id }}
+                params={{ ws: workspaceId }}
                 data-testid={`nav-${key}`}
                 aria-label={collapsed ? label : undefined}
                 aria-current={sectionActive(key) ? "page" : undefined}

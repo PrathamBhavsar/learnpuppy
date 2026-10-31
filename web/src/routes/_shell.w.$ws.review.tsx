@@ -2,7 +2,7 @@ import { createFileRoute } from "@tanstack/react-router"
 import { LayersIcon } from "lucide-react"
 
 import { PlaceholderScreen } from "@/features/screens/PlaceholderScreen"
-import { findWorkspace } from "@/lib/static-workspaces"
+import { useWorkspaceName } from "@/hooks/use-workspace"
 
 function Screen() {
   const { ws } = Route.useParams()
@@ -15,7 +15,7 @@ function Screen() {
       emptyTitle="All caught up"
       emptyDescription="Cards appear here once decisions are ingested or a chat produces them."
       actionLabel="Browse cards"
-      workspace={findWorkspace(ws)?.name}
+      workspace={useWorkspaceName(ws)}
     />
   )
 }

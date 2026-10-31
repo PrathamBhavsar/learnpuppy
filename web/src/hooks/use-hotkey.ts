@@ -1,59 +1,96 @@
-import { useEffect, useRef } from "react"
+import { useEffect, useRef, useState } from "react"
 
-const isMac =
-  typeof navigator !== "undefined" &&
-  /mac|iphone|ipad/i.test(navigator.platform)
+import {
+  type Shortcut,
+  isMac,
+  matchesCombo,
+  registerShortcut,
+} from "@/lib/keys"
 
-function isEditable(target: EventTarget | null): boolean {
-  if (!(target instanceof HTMLElement)) return false
-  return (
-    target.isContentEditable ||
-    target.closest("input, textarea, select, [contenteditable='true']") !== null
-  )
-}
-
-/** `combo` is a key with optional `mod+` (⌘ on macOS, Ctrl elsewhere) and `shift+` prefixes, e.g. `[`, `mod+k`. */
-export function matchesCombo(event: KeyboardEvent, combo: string): boolean {
-  const parts = combo.toLowerCase().split("+")
-  const key = parts[parts.length - 1]
-  const wantMod = parts.includes("mod")
-  const wantShift = parts.includes("shift")
-  const mod = isMac ? event.metaKey : event.ctrlKey
-  if (wantMod !== mod) return false
-  if (event.altKey) return false
-  if (!wantMod && (event.metaKey || event.ctrlKey)) return false
-  if (wantShift && !event.shiftKey) return false
-  return event.key.toLowerCase() === key
-}
+export { isMac, matchesCombo }
 
 type Options = {
   enabled?: boolean
   /** Fire even while an input/textarea is focused (default: only with `mod`). */
   allowInInput?: boolean
+  /** Set `label` to list the binding in the Shortcuts sheet. */
+  label?: string
+  group?: string
+  id?: string
 }
 
+let anonymous = 0
+
+/** Binds `combo` (`mod+k`, `[`, or a chord such as `g l`) while the component is mounted. */
 export function useHotkey(
   combo: string,
   handler: (event: KeyboardEvent) => void,
   options: Options = {}
 ): void {
-  const { enabled = true, allowInInput = combo.includes("mod") } = options
-  const latest = useRef(handler)
+  const { enabled = true, allowInInput, label, group = "General", id } = options
+  const handlerRef = useRef(handler)
+  const enabledRef = useRef(enabled)
+  const [fallbackId] = useState(() => `anon-${(anonymous += 1)}`)
   useEffect(() => {
-    latest.current = handler
+    handlerRef.current = handler
+    enabledRef.current = enabled
   })
+  const shortcutId = id ?? fallbackId
   useEffect(() => {
-    if (!enabled) return
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.repeat || event.defaultPrevented) return
-      if (!allowInInput && isEditable(event.target)) return
-      if (!matchesCombo(event, combo)) return
-      event.preventDefault()
-      latest.current(event)
+    const shortcut: Shortcut = {
+      id: shortcutId,
+      keys: combo,
+      label: label ?? "",
+      group,
+      hidden: label === undefined,
+      allowInInput,
     }
-    window.addEventListener("keydown", onKeyDown)
-    return () => window.removeEventListener("keydown", onKeyDown)
-  }, [combo, enabled, allowInInput])
+    return registerShortcut(shortcut, handlerRef, enabledRef)
+  }, [combo, shortcutId, label, group, allowInInput])
 }
 
-export { isMac }
+export type HotkeyBinding = {
+  id: string
+  keys: string
+  handler: (event: KeyboardEvent) => void
+  label?: string
+  group?: string
+  enabled?: boolean
+  allowInInput?: boolean
+}
+
+/** Registers a dynamic list of bindings (e.g. one per workspace) from a single hook call. */
+export function useHotkeys(bindings: HotkeyBinding[]): void {
+  const latest = useRef(bindings)
+  useEffect(() => {
+    latest.current = bindings
+  })
+  const signature = bindings
+    .map((b) =>
+      [b.id, b.keys, b.label ?? "", b.group ?? "", b.allowInInput ?? ""].join(
+        "\u0000"
+      )
+    )
+    .join("\u0001")
+  useEffect(() => {
+    const disposers = latest.current.map((b, index) =>
+      registerShortcut(
+        {
+          id: b.id,
+          keys: b.keys,
+          label: b.label ?? "",
+          group: b.group ?? "General",
+          hidden: b.label === undefined,
+          allowInInput: b.allowInInput,
+        },
+        { current: (event) => latest.current[index]?.handler(event) },
+        {
+          get current() {
+            return latest.current[index]?.enabled ?? true
+          },
+        }
+      )
+    )
+    return () => disposers.forEach((dispose) => dispose())
+  }, [signature])
+}
