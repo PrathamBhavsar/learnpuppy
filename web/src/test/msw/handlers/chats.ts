@@ -1,6 +1,7 @@
 import { HttpResponse, http } from "msw"
 
 import type {
+  AnswerInput,
   ClassroomView,
   CreateChatBody,
   TurnBody,
@@ -8,7 +9,7 @@ import type {
 
 import { bus } from "../../mock/bus"
 import { nextId, state } from "../db"
-import { summarize } from "../fixtures/chats"
+import { ARTIFACTS, summarize } from "../fixtures/chats"
 import { apiError, latency, notFound, once } from "../respond"
 
 const API = "*/api/v1/workspaces/:ws"
@@ -57,13 +58,25 @@ function streamReply(ws: string, chat: ClassroomView, turnId: string): void {
   }, 60)
 }
 
+/** How an answer reads in the transcript (the server renders it from the question's options). */
+function renderAnswer(chat: ClassroomView, answer: AnswerInput): string {
+  const options = chat.pending?.options ?? []
+  const picked = (answer.choice ?? []).map((key) => {
+    if (key === chat.pending?.idkKey) return "I don't know"
+    const index = options.findIndex((o) => o.key === key)
+    const option = options[index]
+    return option ? `${String.fromCharCode(65 + index)}. ${option.text}` : key
+  })
+  return [picked.join(", "), answer.text ?? ""].filter(Boolean).join("; ")
+}
+
 export const chatHandlers = [
   http.get(`${API}/chats`, async ({ params }) => {
     await latency()
     const chats = chatsOf(params["ws"])
     if (!chats) return notFound("Workspace")
     const items = chats.map(summarize).sort((a, b) => b.updatedAt - a.updatedAt)
-    return HttpResponse.json(items)
+    return HttpResponse.json({ items, nextCursor: null, total: items.length })
   }),
 
   http.post(`${API}/chats`, async ({ params, request }) => {
@@ -72,7 +85,8 @@ export const chatHandlers = [
     const chats = chatsOf(wsId)
     if (!chats) return notFound("Workspace")
     const body = (await request.json()) as CreateChatBody
-    if (body.kind === "teach" && body.topic.trim() === "")
+    const topic = (body.topic ?? "").trim()
+    if (body.kind === "teach" && topic === "")
       return apiError("validation", "Add a topic", {
         details: {
           fields: [{ path: "topic", message: "Say what you want to learn" }],
@@ -83,18 +97,20 @@ export const chatHandlers = [
     const chat: ClassroomView = {
       id,
       kind: body.kind,
-      title: body.topic.trim().slice(0, 60) || "Practice",
+      title: topic.slice(0, 60) || "Practice",
       phase: body.kind === "teach" ? "probe" : "practice",
       viewVersion: 1,
-      messages: [
-        {
-          id: nextId("m"),
-          role: "user",
-          text: body.topic,
-          calls: [],
-          createdAt: Date.now(),
-        },
-      ],
+      messages: topic
+        ? [
+            {
+              id: nextId("m"),
+              role: "user",
+              text: topic,
+              calls: [],
+              createdAt: Date.now(),
+            },
+          ]
+        : [],
       pending: null,
       plan: null,
       probeProgress: { asked: 0, max: 8 },
@@ -105,7 +121,7 @@ export const chatHandlers = [
     chats.unshift(chat)
     bus.emit("chat.created", { chatId: id }, wsId)
     if (state.db.simulateTurns) streamReply(wsId, chat, turnId)
-    return HttpResponse.json({ chatId: id })
+    return HttpResponse.json({ chatId: id, turnId }, { status: 202 })
   }),
 
   http.get(`${API}/chats/:id`, async ({ params }) => {
@@ -142,6 +158,18 @@ export const chatHandlers = [
     return new HttpResponse(null, { status: 204 })
   }),
 
+  http.get(`${API}/chats/:id/export.md`, ({ params }) => {
+    const chat = find(params["ws"], params["id"])
+    if (!chat) return notFound("Chat")
+    const body = [
+      `# ${chat.title}`,
+      ...chat.messages.map((m) => `**${m.role}:** ${m.text}`),
+    ].join("\n\n")
+    return new HttpResponse(body, {
+      headers: { "content-type": "text/markdown" },
+    })
+  }),
+
   http.post(`${API}/chats/:id/turn`, async ({ params, request }) => {
     await latency()
     const wsId = String(params["ws"])
@@ -149,7 +177,8 @@ export const chatHandlers = [
     if (!chat) return notFound("Chat")
     const body = (await request.json()) as TurnBody
     const replay = state.db.idempotent.get(`once:${body.clientId}`)
-    if (replay) return HttpResponse.json(replay, { status: 202 })
+    if (replay && body.type !== "resume")
+      return HttpResponse.json(replay, { status: 202 })
     if (chat.turn.state === "running" && body.type !== "steer")
       return apiError(
         "turn_in_progress",
@@ -159,16 +188,40 @@ export const chatHandlers = [
       return apiError("stale_question", "That question is no longer pending", {
         details: { view: chat },
       })
-    const result = once(body.clientId, () => ({ turnId: nextId("turn") }))
-    const text = body.type === "answer" ? body.answer : body.text
-    chat.messages.push({
-      id: nextId("m"),
-      role: body.type === "steer" ? "steer" : "user",
-      text,
-      calls: [],
-      createdAt: Date.now(),
-    })
-    if (body.type === "answer") chat.pending = null
+    if (body.type === "user" && chat.pending)
+      return apiError("conflict", "Answer the open question first")
+    const result = once(body.clientId, () => ({
+      turnId: nextId("turn"),
+      status: "started" as const,
+    }))
+    if (body.type === "user" || body.type === "steer") {
+      chat.messages.push({
+        id: nextId("m"),
+        role: body.type === "steer" ? "steer" : "user",
+        text: body.text,
+        calls: [],
+        createdAt: Date.now(),
+      })
+    }
+    if (body.type === "answer") {
+      const pending = chat.pending
+      chat.messages.push({
+        id: nextId("m"),
+        role: "user",
+        text: renderAnswer(chat, body.answer),
+        answersCallId: body.callId,
+        calls: [],
+        createdAt: Date.now(),
+      })
+      if (pending && (pending.tool === "quiz" || pending.tool === "probe")) {
+        chat.verdicts.push({
+          callId: body.callId,
+          correct: body.answer.choice?.[0] === pending.options?.[0]?.key,
+          explanation: "Poll returns Pending after registering the waker.",
+        })
+      }
+      chat.pending = null
+    }
     chat.turn = {
       state: "running",
       turnId: result.turnId,
@@ -183,6 +236,8 @@ export const chatHandlers = [
   http.post(`${API}/chats/:id/cancel`, ({ params }) => {
     const chat = find(params["ws"], params["id"])
     if (!chat) return notFound("Chat")
+    const wasRunning = chat.turn.state === "running"
+    const turnId = chat.turn.turnId ?? null
     chat.turn = { state: "idle" }
     const last = chat.messages[chat.messages.length - 1]
     if (last?.role === "assistant") last.interrupted = true
@@ -192,20 +247,26 @@ export const chatHandlers = [
       { chatId: chat.id, viewVersion: chat.viewVersion },
       String(params["ws"])
     )
-    return HttpResponse.json({})
+    return HttpResponse.json({ cancelled: wasRunning, turnId })
   }),
 
   http.get(`${API}/jobs`, ({ params }) => {
-    const jobs = (chatsOf(params["ws"]) ?? []).flatMap((c) => c.jobs)
-    return HttpResponse.json(jobs)
+    const items = (chatsOf(params["ws"]) ?? []).flatMap((c) =>
+      c.jobs.map((job) => ({ ...job, chatId: c.id, createdAt: state.db.now }))
+    )
+    return HttpResponse.json({ items })
   }),
   http.post(`${API}/jobs/:id/abort`, ({ params }) => {
     for (const chat of chatsOf(params["ws"]) ?? []) {
       const job = chat.jobs.find((j) => j.id === params["id"])
       if (job) {
-        job.status = "aborted"
+        job.status = "failed"
         bus.emit("job.updated", { job }, String(params["ws"]))
-        return HttpResponse.json(job)
+        return HttpResponse.json({
+          ...job,
+          chatId: chat.id,
+          createdAt: state.db.now,
+        })
       }
     }
     return notFound("Job")
@@ -213,15 +274,31 @@ export const chatHandlers = [
   http.post(`${API}/sources/pdf`, ({ params, request }) => {
     const chatId = new URL(request.url).searchParams.get("chat")
     const chat = chatId ? find(params["ws"], chatId) : undefined
+    if (!chat) return notFound("Chat")
     const job = {
       id: nextId("job"),
       kind: "pdf",
-      status: "running",
+      status: "running" as const,
       title: "Reading uploaded PDF",
       artifactId: null,
     }
-    chat?.jobs.push(job)
+    chat.jobs.push(job)
     bus.emit("job.updated", { job }, String(params["ws"]))
-    return HttpResponse.json(job)
+    return HttpResponse.json(
+      {
+        jobId: job.id,
+        artifactId: nextId("art"),
+        chatId: chat.id,
+        bytes: 1024,
+      },
+      { status: 202 }
+    )
+  }),
+  http.get(`${API}/artifacts/:id`, ({ params }) => {
+    const artifact = ARTIFACTS[String(params["id"])]
+    if (!artifact) return notFound("Artifact")
+    return new HttpResponse(artifact.body, {
+      headers: { "content-type": artifact.type },
+    })
   }),
 ]

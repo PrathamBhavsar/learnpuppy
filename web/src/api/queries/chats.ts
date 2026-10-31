@@ -1,11 +1,14 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 
-import { newClientId, pendingApi, unwrap } from "../client"
+import { API_PREFIX, newClientId, pendingApi, unwrap } from "../client"
 import { keys } from "../keys"
+import { ApiError, errorFromResponse } from "../errors"
 import type {
+  AnswerInput,
   ChatSummary,
   ClassroomView,
   CreateChatBody,
+  JobItem,
   TurnBody,
 } from "../pending-types"
 
@@ -13,13 +16,13 @@ export function useChats(ws: string, enabled = true) {
   return useQuery({
     queryKey: keys.ws(ws).chats(),
     enabled: enabled && ws !== "",
-    queryFn: async ({ signal }) =>
+    queryFn: async ({ signal }): Promise<ChatSummary[]> =>
       unwrap(
         await pendingApi.GET("/workspaces/{ws}/chats", {
           params: { path: { ws } },
           signal,
         })
-      ),
+      ).items,
   })
 }
 
@@ -53,8 +56,19 @@ export function useCreateChat(ws: string) {
 
 export type TurnInput =
   | { type: "user"; text: string }
-  | { type: "answer"; callId: string; answer: string }
+  | { type: "answer"; callId: string; answer: AnswerInput }
   | { type: "steer"; text: string }
+  | { type: "resume" }
+
+/** The fresh view the server embeds in a `stale_question` 409, when present. */
+function staleView(error: unknown): ClassroomView | undefined {
+  if (!(error instanceof ApiError) || error.code !== "stale_question")
+    return undefined
+  const view = error.details?.["view"]
+  return typeof view === "object" && view !== null
+    ? (view as ClassroomView)
+    : undefined
+}
 
 /**
  * Posts a turn. The `clientId` is minted once per attempt of the same intent: pass it back on retry
@@ -102,8 +116,10 @@ export function useSendTurn(ws: string, chatId: string) {
       }
       return { previous }
     },
-    onError: (_error, _input, context) => {
-      if (context?.previous) qc.setQueryData(key, context.previous)
+    onError: (error, _input, context) => {
+      const fresh = staleView(error)
+      if (fresh) qc.setQueryData(key, fresh)
+      else if (context?.previous) qc.setQueryData(key, context.previous)
     },
     onSettled: () => qc.invalidateQueries({ queryKey: key }),
   })
@@ -170,13 +186,13 @@ export function useJobs(ws: string) {
   return useQuery({
     queryKey: keys.ws(ws).jobs(),
     enabled: ws !== "",
-    queryFn: async ({ signal }) =>
+    queryFn: async ({ signal }): Promise<JobItem[]> =>
       unwrap(
         await pendingApi.GET("/workspaces/{ws}/jobs", {
           params: { path: { ws } },
           signal,
         })
-      ),
+      ).items,
   })
 }
 
@@ -194,7 +210,7 @@ export function useAbortJob(ws: string) {
 }
 
 /** Attaches a PDF to a chat; the server starts a `pdf` workbench job. */
-export function useUploadPdf(ws: string, chatId?: string) {
+export function useUploadPdf(ws: string, chatId: string) {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: async (file: File) => {
@@ -202,7 +218,7 @@ export function useUploadPdf(ws: string, chatId?: string) {
       form.set("file", file)
       return unwrap(
         await pendingApi.POST("/workspaces/{ws}/sources/pdf", {
-          params: { path: { ws }, query: chatId ? { chat: chatId } : {} },
+          params: { path: { ws }, query: { chat: chatId } },
           body: form as unknown as { file: string },
           bodySerializer: (body) => body as unknown as FormData,
         })
@@ -214,4 +230,46 @@ export function useUploadPdf(ws: string, chatId?: string) {
         qc.invalidateQueries({ queryKey: keys.ws(ws).chats() }),
       ]),
   })
+}
+
+export type Artifact =
+  | { kind: "text"; contentType: string; text: string }
+  | { kind: "image"; contentType: string; url: string }
+
+/** Job output with the server's content type; images come back as an object URL. */
+export function useArtifact(ws: string, artifactId: string | null) {
+  return useQuery({
+    queryKey: [...keys.ws(ws).jobs(), "artifact", artifactId] as const,
+    enabled: artifactId !== null && ws !== "",
+    staleTime: Infinity,
+    queryFn: async ({ signal }): Promise<Artifact> => {
+      const response = await fetch(
+        `${API_PREFIX}/workspaces/${encodeURIComponent(ws)}/artifacts/${encodeURIComponent(artifactId ?? "")}`,
+        { signal, credentials: "same-origin", headers: { "X-LP-CSRF": "1" } }
+      )
+      if (!response.ok) throw await errorFromResponse(response)
+      const contentType = response.headers.get("content-type") ?? "text/plain"
+      if (contentType.startsWith("image/") && !contentType.includes("svg")) {
+        return {
+          kind: "image",
+          contentType,
+          url: URL.createObjectURL(await response.blob()),
+        }
+      }
+      return { kind: "text", contentType, text: await response.text() }
+    },
+  })
+}
+
+/** Markdown transcript of a chat, fetched on demand and handed back for download. */
+export async function fetchChatExport(
+  ws: string,
+  chatId: string
+): Promise<string> {
+  const response = await fetch(
+    `${API_PREFIX}/workspaces/${encodeURIComponent(ws)}/chats/${encodeURIComponent(chatId)}/export.md`,
+    { credentials: "same-origin", headers: { "X-LP-CSRF": "1" } }
+  )
+  if (!response.ok) throw await errorFromResponse(response)
+  return response.text()
 }

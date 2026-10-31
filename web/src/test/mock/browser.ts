@@ -6,6 +6,7 @@ import { setSseManager } from "@/hooks/use-server-events"
 import { useConnection } from "@/stores/connection"
 
 import { FakeEventSource } from "../fake-event-source"
+import { state } from "../msw/db"
 import { handlers } from "../msw/handlers"
 
 import { bus } from "./bus"
@@ -24,6 +25,8 @@ declare global {
 
 /** Boots MSW and swaps the SSE manager onto the in-page event bus. */
 export async function startMock(queryClient: QueryClient): Promise<void> {
+  // Browser-only: stream scripted assistant replies so Learn has something to render live.
+  state.db.simulateTurns = true
   const worker = setupWorker(...handlers)
   await worker.start({
     onUnhandledFrame: "bypass",

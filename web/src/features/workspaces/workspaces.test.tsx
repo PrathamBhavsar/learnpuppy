@@ -61,7 +61,7 @@ describe("home: five states", () => {
     expect(within(card).getByText(/Futures, executors/)).toBeInTheDocument()
     expect(card).toHaveTextContent("150 nodes")
     expect(card).toHaveTextContent("201 chains")
-    expect(card).toHaveTextContent("7 chats")
+    expect(card).toHaveTextContent("10 chats")
     expect(within(card).getByTestId(`workspace-due-${RUST}`)).toHaveTextContent(
       "7 due"
     )

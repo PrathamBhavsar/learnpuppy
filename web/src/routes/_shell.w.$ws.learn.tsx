@@ -1,11 +1,12 @@
-import { Outlet, createFileRoute } from "@tanstack/react-router"
+import { Outlet, createFileRoute, useParams } from "@tanstack/react-router"
 
-import { PageHeader } from "@/components/app/page-header"
+import { ChatList } from "@/features/classroom/ChatList"
 import { usePageTitle } from "@/hooks/use-page-title"
 import { useWorkspaceName } from "@/hooks/use-workspace"
 
 function Learn() {
   const { ws } = Route.useParams()
+  const { chat } = useParams({ strict: false })
   usePageTitle("Learn", useWorkspaceName(ws))
   return (
     <div data-testid="screen-learn" className="flex h-full min-h-0">
@@ -13,10 +14,9 @@ function Learn() {
         aria-label="Chats"
         className="lp-pane hidden w-70 shrink-0 flex-col gap-4 border-e p-4 md:flex"
       >
-        <PageHeader title="Learn" description="Teach and practice chats." />
-        <p className="text-[13px] text-muted-foreground">No chats yet.</p>
+        <ChatList ws={ws} activeChatId={chat} />
       </aside>
-      <div className="lp-pane min-w-0 flex-1">
+      <div className="min-h-0 min-w-0 flex-1 overflow-hidden">
         <Outlet />
       </div>
     </div>

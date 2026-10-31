@@ -2,6 +2,20 @@ import type { ChatSummary, ClassroomView } from "@/api/pending-types"
 
 import { DAY, HOUR, MINUTE } from "./rng"
 
+type ClassroomPlanNode = NonNullable<ClassroomView["plan"]>["nodes"][number]
+
+/** Job output served by the mock `GET …/artifacts/:id`. */
+export const ARTIFACTS: Record<string, { type: string; body: string }> = {
+  art_research_1: {
+    type: "text/markdown",
+    body: "# Cancel-safe APIs in tokio\n\n- `mpsc::Receiver::recv` is cancel safe.\n- `AsyncReadExt::read_exact` is **not**: bytes may be lost.\n\n| API | Cancel safe |\n|---|---|\n| `recv` | yes |\n| `read_exact` | no |\n",
+  },
+  art_visual_1: {
+    type: "text/html",
+    body: '<!doctype html><html><body style="font-family:monospace;padding:16px"><h3>Poll loop</h3><p>executor -> poll -> Pending -> waker -> poll</p></body></html>',
+  },
+}
+
 const msg = (
   id: string,
   role: ClassroomView["messages"][number]["role"],
@@ -19,19 +33,31 @@ const msg = (
 
 const PLAN = (statuses: ("current" | "visited" | "upcoming")[]) => ({
   nodes: [
-    { id: "p1", title: "What a future is", status: statuses[0] ?? "upcoming" },
+    {
+      id: "p1",
+      title: "What a future is",
+      summary: "A future is a lazy value describing unfinished work.",
+      status: statuses[0] ?? "upcoming",
+    },
     {
       id: "p2",
       title: "Polling and wakers",
+      summary: "poll returns Pending after storing the waker.",
       status: statuses[1] ?? "upcoming",
     },
-    { id: "p3", title: "Pinning", status: statuses[2] ?? "upcoming" },
-    { id: "p4", title: "Executors", status: statuses[3] ?? "upcoming" },
-  ] as {
-    id: string
-    title: string
-    status: "current" | "visited" | "upcoming"
-  }[],
+    {
+      id: "p3",
+      title: "Pinning",
+      summary: "Self-referential futures must not move once polled.",
+      status: statuses[2] ?? "upcoming",
+    },
+    {
+      id: "p4",
+      title: "Executors",
+      summary: "An executor owns tasks and polls them when woken.",
+      status: statuses[3] ?? "upcoming",
+    },
+  ] as ClassroomPlanNode[],
   edges: [
     { from: "p1", to: "p2" },
     { from: "p2", to: "p3" },
@@ -76,6 +102,7 @@ export function chatFixtures(now: number): ClassroomView[] {
         prompt:
           "What do you think happens when you call an `async fn` without awaiting the result?",
         allowFreeText: true,
+        multiSelect: false,
       },
       plan: null,
       probeProgress: { asked: 3, max: 8 },
@@ -130,23 +157,67 @@ export function chatFixtures(now: number): ClassroomView[] {
         msg(
           "m4",
           "assistant",
-          "Let me check the idea landed.",
+          "Quick check first. Is a future eager or lazy?",
           now - 2 * DAY + 3 * MINUTE,
+          { calls: [{ id: "call_quiz_1", name: "quiz" }] }
+        ),
+        msg(
+          "m5",
+          "user",
+          "B. Lazy: nothing runs until polled",
+          now - 2 * DAY + 4 * MINUTE,
+          {
+            answersCallId: "call_quiz_1",
+          }
+        ),
+        msg(
+          "m6",
+          "assistant",
+          "Let me check the idea landed.",
+          now - 2 * DAY + 5 * MINUTE,
           { calls: [{ id: "call_quiz_2", name: "quiz" }] }
         ),
+      ],
+      jobs: [
+        {
+          id: "job_research_done",
+          kind: "research",
+          status: "done",
+          title: "Research: cancel-safe APIs in tokio",
+          artifactId: "art_research_1",
+        },
+        {
+          id: "job_visual_done",
+          kind: "visual",
+          status: "done",
+          title: "Diagram: the poll loop",
+          artifactId: "art_visual_1",
+        },
+        {
+          id: "job_pdf_failed",
+          kind: "pdf",
+          status: "failed",
+          title: "Reading async-book.pdf",
+          artifactId: null,
+        },
       ],
       pending: {
         callId: "call_quiz_2",
         tool: "quiz",
         prompt: "What does poll return when a future is not finished?",
         options: [
-          { key: "A", text: "Poll::Pending, after registering a waker" },
-          { key: "B", text: "Poll::Ready(None)" },
-          { key: "C", text: "It blocks the thread until the future is ready" },
-          { key: "D", text: "It panics unless the future was pinned" },
+          { key: "pending", text: "Poll::Pending, after registering a waker" },
+          { key: "ready-none", text: "Poll::Ready(None)" },
+          {
+            key: "blocks",
+            text: "It blocks the thread until the future is ready",
+          },
+          { key: "panics", text: "It panics unless the future was pinned" },
         ],
         allowFreeText: false,
+        multiSelect: false,
         confidenceScale: 5,
+        idkKey: "__idk__",
       },
       plan: PLAN(["visited", "current", "upcoming", "upcoming"]),
       probeProgress: { asked: 8, max: 8 },
@@ -178,6 +249,7 @@ export function chatFixtures(now: number): ClassroomView[] {
         tool: "problem",
         prompt: "Solve the problem below.",
         allowFreeText: true,
+        multiSelect: false,
         problem: {
           mode: "composition",
           statement:
@@ -274,7 +346,128 @@ export function chatFixtures(now: number): ClassroomView[] {
       pending: null,
       plan: PLAN(["current", "upcoming", "upcoming", "upcoming"]),
       probeProgress: { asked: 8, max: 8 },
-      turn: { state: "error", turnId: "turn_err_1", startedAt: now - 4 * HOUR },
+      turn: {
+        state: "error",
+        turnId: "turn_err_1",
+        startedAt: now - 4 * HOUR,
+        clientId: "client_err_1",
+        error: {
+          code: "engine_unavailable",
+          message: "No model account answered. Check Accounts.",
+          retryable: true,
+          interrupted: false,
+        },
+      },
+    },
+    {
+      ...base,
+      id: "c_queued",
+      kind: "teach",
+      title: "Send and Sync",
+      phase: "teach",
+      messages: [
+        msg("m1", "user", "When is a type Send but not Sync?", now - MINUTE),
+      ],
+      pending: null,
+      plan: PLAN(["current", "upcoming", "upcoming", "upcoming"]),
+      probeProgress: { asked: 8, max: 8 },
+      turn: {
+        state: "queued",
+        turnId: "turn_q_1",
+        startedAt: now - MINUTE,
+        clientId: "client_q_1",
+        retryAt: now + 42_000,
+        error: {
+          code: "rate_limited",
+          message: "Every model account is cooling down.",
+          retryable: true,
+          retryAfterMs: 42_000,
+          interrupted: false,
+        },
+      },
+    },
+    {
+      ...base,
+      id: "c_interrupted",
+      kind: "teach",
+      title: "Drop order",
+      phase: "teach",
+      messages: [
+        msg(
+          "m1",
+          "user",
+          "In what order are struct fields dropped?",
+          now - HOUR
+        ),
+        msg(
+          "m2",
+          "assistant",
+          "Fields drop in declaration order, and",
+          now - HOUR + MINUTE,
+          {
+            interrupted: true,
+          }
+        ),
+      ],
+      pending: null,
+      plan: PLAN(["current", "upcoming", "upcoming", "upcoming"]),
+      probeProgress: { asked: 8, max: 8 },
+      turn: {
+        state: "error",
+        turnId: "turn_int_1",
+        clientId: "client_int_1",
+        error: {
+          code: "interrupted",
+          message: "The server stopped during this turn. Resume to continue.",
+          retryable: true,
+          interrupted: true,
+        },
+      },
+    },
+    {
+      ...base,
+      id: "c_practice_done",
+      kind: "practice",
+      title: "Practice: lifetimes",
+      phase: "done",
+      messages: [
+        msg(
+          "m1",
+          "assistant",
+          "Last problem: return the longer of two strings.",
+          now - 8 * HOUR,
+          {
+            calls: [{ id: "call_problem_9", name: "problem" }],
+          }
+        ),
+        msg(
+          "m2",
+          "user",
+          "fn longest<'a>(a: &'a str, b: &'a str) -> &'a str",
+          now - 8 * HOUR + MINUTE,
+          {
+            answersCallId: "call_problem_9",
+          }
+        ),
+        msg(
+          "m3",
+          "tool",
+          "Model solution: both inputs share lifetime 'a.",
+          now - 8 * HOUR + 2 * MINUTE
+        ),
+      ],
+      pending: null,
+      plan: null,
+      probeProgress: { asked: 0, max: 8 },
+      problemResult: {
+        callId: "call_problem_9",
+        outcome: "solved",
+        verdict:
+          "You tied both borrows to one lifetime, which is exactly right.",
+        rung: "r2",
+        missClass: null,
+        retest: false,
+      },
     },
   ]
 }
@@ -311,7 +504,7 @@ export function summarize(view: ClassroomView): ChatSummary {
     phase: view.phase,
     updatedAt: last?.createdAt ?? 0,
     messageCount: view.messages.length,
-    pending: view.pending !== null,
+    pending: view.pending != null,
     jobs: view.jobs.filter((j) => j.status === "running").length,
   }
 }

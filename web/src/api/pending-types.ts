@@ -167,6 +167,8 @@ export type ChainTableRow = {
 }
 
 // ───────────────────────────── Chats ─────────────────────────────
+// Mirrors ChatPageDto / ClassroomViewDto / TurnBody in openapi/openapi.json (the generated schema.d.ts
+// cannot be regenerated yet: the spec has duplicate operationIds, a server-side fix).
 
 export type ChatKind = "teach" | "practice"
 export type ChatPhase = "probe" | "plan" | "teach" | "practice" | "done"
@@ -185,27 +187,78 @@ export type ChatSummary = {
   jobs: number
 }
 
+export type ChatPage = {
+  items: ChatSummary[]
+  nextCursor?: string | null
+  total: number
+}
+
 export type ClassroomMessage = {
   id: string
   role: "user" | "assistant" | "tool" | "steer" | "compaction"
   text: string
-  thinking?: string
-  interrupted?: boolean
+  thinking?: string | null
+  interrupted?: boolean | null
   calls: { id: string; name: string }[]
-  createdAt: number
+  /** For an answer: the question call it answers. */
+  answersCallId?: string | null
+  createdAt: number | null
 }
 
 export type PendingQuestion = {
   callId: string
   tool: PendingTool
   prompt: string
-  options?: { key: string; text: string }[]
+  options?: { key: string; text: string }[] | null
   allowFreeText: boolean
-  confidenceScale?: number
-  problem?: { mode: ProblemMode; statement: string; rungs?: string[] }
+  multiSelect: boolean
+  confidenceScale?: number | null
+  /** The answer value that means "I don't know" (options only). */
+  idkKey?: string | null
+  problem?: {
+    mode: ProblemMode
+    statement: string
+    rungs?: string[] | null
+  } | null
 }
 
 export type PlanNodeStatus = "current" | "visited" | "upcoming"
+
+export type JobStatus = "running" | "done" | "failed"
+
+/** A job as embedded in `ClassroomView`. */
+export type ClassroomJob = {
+  id: string
+  kind: string
+  status: JobStatus
+  title: string
+  artifactId?: string | null
+}
+
+/** A job in the workspace list (`GET …/jobs`). */
+export type JobItem = ClassroomJob & {
+  chatId: string
+  createdAt: number
+  error?: string | null
+}
+
+export type TurnErrorInfo = {
+  code: string
+  message: string
+  retryable: boolean
+  retryAfterMs?: number | null
+  /** The server stopped mid-turn; offer Resume. */
+  interrupted: boolean
+}
+
+export type ProblemResult = {
+  callId: string
+  outcome: string
+  verdict: string
+  rung?: string | null
+  missClass?: string | null
+  retest: boolean
+}
 
 export type ClassroomView = {
   id: string
@@ -214,30 +267,63 @@ export type ClassroomView = {
   phase: ChatPhase
   viewVersion: number
   messages: ClassroomMessage[]
-  pending: PendingQuestion | null
-  plan: {
-    nodes: { id: string; title: string; status: PlanNodeStatus }[]
+  pending?: PendingQuestion | null
+  plan?: {
+    nodes: {
+      id: string
+      title: string
+      summary: string
+      status: PlanNodeStatus
+    }[]
     edges: { from: string; to: string }[]
-    currentId: string | null
+    currentId?: string | null
   } | null
   probeProgress: { asked: number; max: number }
-  verdicts: { callId: string; correct: boolean; explanation?: string }[]
-  jobs: Job[]
+  verdicts: { callId: string; correct: boolean; explanation?: string | null }[]
+  problemResult?: ProblemResult | null
+  jobs: ClassroomJob[]
   turn: {
     state: "idle" | "running" | "queued" | "error"
-    turnId?: string
-    startedAt?: number
+    turnId?: string | null
+    startedAt?: number | null
+    /** The request that started the turn; post it again to retry after an error. */
+    clientId?: string | null
+    /** While `queued` on a rate limit: when the next attempt starts (epoch ms). */
+    retryAt?: number | null
+    error?: TurnErrorInfo | null
   }
+}
+
+/** The learner's answer to the pending question. */
+export type AnswerInput = {
+  /** Picked option keys (or the question's `idkKey`); several only when `multiSelect`. */
+  choice?: string[]
+  text?: string
+  readingNotes?: string
+  confidence?: number
+  /** Problems only: ask for the next hint rung. */
+  hint?: boolean
 }
 
 export type TurnBody =
   | { type: "user"; text: string; clientId: string }
-  | { type: "answer"; callId: string; answer: string; clientId: string }
+  | { type: "answer"; callId: string; answer: AnswerInput; clientId: string }
   | { type: "steer"; text: string; clientId: string }
+  | { type: "resume"; clientId: string }
+
+export type PdfUpload = {
+  jobId: string
+  artifactId: string
+  chatId: string
+  bytes: number
+}
+
+export type TurnAcceptance =
+  "started" | "duplicate" | "steerQueued" | "recorded"
 
 export type CreateChatBody = {
   kind: ChatKind
-  topic: string
+  topic?: string
   seedNodeIds?: string[]
 }
 
@@ -519,8 +605,15 @@ export interface PendingPaths {
     Method<"post", SendOp<{ chatId: string }, { nodeIds: string[] }, WsP>>
   >
   "/workspaces/{ws}/chats": Path<
-    Method<"get", GetOp<ChatSummary[], WsP>> &
-      Method<"post", SendOp<{ chatId: string }, CreateChatBody, WsP>>
+    Method<"get", GetOp<ChatPage, WsP>> &
+      Method<
+        "post",
+        {
+          parameters: Params<WsP, never>
+          requestBody: Json<CreateChatBody>
+          responses: Accepted<{ chatId: string; turnId: string }>
+        }
+      >
   >
   "/workspaces/{ws}/chats/{id}": Path<
     Method<"get", GetOp<ClassroomView, WsId>> &
@@ -533,19 +626,29 @@ export interface PendingPaths {
       {
         parameters: Params<WsId, never>
         requestBody: Json<TurnBody>
-        responses: Accepted<{ turnId: string }>
+        responses: Accepted<{ turnId: string; status: TurnAcceptance }>
       }
     >
   >
   "/workspaces/{ws}/chats/{id}/cancel": Path<
-    Method<"post", BodylessOp<Record<string, never>, WsId>>
+    Method<
+      "post",
+      BodylessOp<{ cancelled: boolean; turnId?: string | null }, WsId>
+    >
   >
   "/workspaces/{ws}/sources/pdf": Path<
-    Method<"post", MultipartOp<Job, WsP, { chat?: string }>>
+    Method<
+      "post",
+      {
+        parameters: Params<WsP, { chat: string }>
+        requestBody: { content: { "multipart/form-data": { file: string } } }
+        responses: Accepted<PdfUpload>
+      }
+    >
   >
-  "/workspaces/{ws}/jobs": Path<Method<"get", GetOp<Job[], WsP>>>
+  "/workspaces/{ws}/jobs": Path<Method<"get", GetOp<{ items: JobItem[] }, WsP>>>
   "/workspaces/{ws}/jobs/{id}/abort": Path<
-    Method<"post", BodylessOp<Job, WsId>>
+    Method<"post", BodylessOp<JobItem, WsId>>
   >
   "/workspaces/{ws}/review/queue": Path<
     Method<"get", GetOp<ReviewQueue, WsP, { limit?: number }>>
