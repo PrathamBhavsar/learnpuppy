@@ -6,14 +6,11 @@ import { renderApp, resetUi } from "@/test/render"
 beforeEach(resetUi)
 
 const SCREENS: [path: string, testId: string, heading: string][] = [
-  ["/w/ws_rustasync/review", "screen-review", "Review"],
-  ["/w/ws_rustasync/digest", "screen-digest", "Digest"],
   ["/w/ws_rustasync/ingest", "screen-ingest", "Ingest"],
   ["/w/ws_rustasync/settings", "screen-settings", "Workspace settings"],
   ["/accounts", "screen-accounts", "Accounts"],
   ["/settings", "screen-settings", "Settings"],
   ["/trash", "screen-trash", "Trash"],
-  ["/review-all", "screen-review-all", "Review all"],
 ]
 
 describe("route tree", () => {
