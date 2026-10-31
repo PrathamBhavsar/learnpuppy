@@ -83,15 +83,15 @@ export function AppShell() {
           className="lp-pane min-h-0 flex-1 outline-none"
         >
           <div key={ws ?? ""} className="lp-ws-enter h-full">
-          <motion.div
-            key={section}
-            variants={fadeRise}
-            initial="hidden"
-            animate="visible"
-            className="h-full"
-          >
-            <Outlet />
-          </motion.div>
+            <motion.div
+              key={section}
+              variants={fadeRise}
+              initial="hidden"
+              animate="visible"
+              className="h-full"
+            >
+              <Outlet />
+            </motion.div>
           </div>
         </main>
       </div>
