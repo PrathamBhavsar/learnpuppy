@@ -8,7 +8,9 @@
     "src/api/pending-types.ts",
     "src/hooks/use-streaming-turn.ts",
     "playwright.serve.config.ts",
-    "e2e/serve/*.spec.ts"
+    "playwright.perf.config.ts",
+    "e2e/serve/*.spec.ts",
+    "e2e/perf/*.spec.ts"
   ],
   "project": [
     "src/**/*.{ts,tsx}",
