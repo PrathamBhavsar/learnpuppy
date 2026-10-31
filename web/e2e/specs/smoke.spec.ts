@@ -30,7 +30,7 @@ for (const theme of ["dark", "light"] as const) {
       )
       const errors = await collectErrors(page)
       await page.goto(`${SHELL}?dir=${dir}`)
-      await expect(page.getByTestId("empty-state")).toBeVisible()
+      await expect(page.getByTestId("graph-stage")).toBeVisible()
       expect(await seriousViolations(page)).toEqual([])
 
       await page.goto(`/gallery?dir=${dir}`)
