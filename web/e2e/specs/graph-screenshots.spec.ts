@@ -1,9 +1,18 @@
 import { type Page, expect, test } from "@playwright/test"
 
-import { type LpWindow, clearNodes, openGraph, selection, settle } from "../graph-helpers"
+import {
+  type LpWindow,
+  clearNodes,
+  openGraph,
+  selection,
+  settle,
+} from "../graph-helpers"
 
 // Regenerate the committed reference shots: LP_SHOTS=1 bunx playwright test graph-screenshots
-test.skip(!process.env.LP_SHOTS, "set LP_SHOTS=1 to regenerate docs-screenshots/graph-*.png")
+test.skip(
+  !process.env.LP_SHOTS,
+  "set LP_SHOTS=1 to regenerate docs-screenshots/graph-*.png"
+)
 
 const OUT = "docs-screenshots"
 type Theme = "dark" | "light"
@@ -23,7 +32,8 @@ async function prepare(page: Page, theme: Theme, dir: Dir) {
   await expect(page.locator("html")).toHaveAttribute("dir", dir)
 }
 
-const shot = (page: Page, name: string) => page.screenshot({ path: `${OUT}/graph-${name}.png` })
+const shot = (page: Page, name: string) =>
+  page.screenshot({ path: `${OUT}/graph-${name}.png` })
 
 for (const theme of ["dark", "light"] as const) {
   for (const dir of ["ltr", "rtl"] as const) {
@@ -68,10 +78,14 @@ test("multi-select with the selection bar", async ({ page }) => {
   await page.keyboard.down("Shift")
   await page.mouse.move(x0, y0)
   await page.mouse.down()
-  await page.mouse.move(x0 + box.width * 0.22, y0 + box.height * 0.3, { steps: 8 })
+  await page.mouse.move(x0 + box.width * 0.22, y0 + box.height * 0.3, {
+    steps: 8,
+  })
   await page.mouse.up()
   await page.keyboard.up("Shift")
-  await expect.poll(async () => (await selection(page)).length).toBeGreaterThan(1)
+  await expect
+    .poll(async () => (await selection(page)).length)
+    .toBeGreaterThan(1)
   await page.waitForTimeout(600)
   await shot(page, "multiselect-dark-ltr")
 })
@@ -100,7 +114,11 @@ test("chain table", async ({ page }) => {
 test("5k nodes", async ({ page }) => {
   await prepare(page, "dark", "ltr")
   await page.evaluate(() => (window as LpWindow).__lp?.graph?.loadFixture(5000))
-  await expect.poll(() => page.evaluate(() => (window as LpWindow).__lp?.graph?.nodeCount())).toBe(5000)
+  await expect
+    .poll(() =>
+      page.evaluate(() => (window as LpWindow).__lp?.graph?.nodeCount())
+    )
+    .toBe(5000)
   await page.waitForTimeout(2200)
   await shot(page, "5k-dark-ltr")
 })

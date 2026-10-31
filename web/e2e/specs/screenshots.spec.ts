@@ -82,7 +82,7 @@ for (const shot of SHOTS) {
     await expect(
       shot.path === "/gallery"
         ? page.getByTestId("gallery-palette")
-        : page.getByTestId("empty-state")
+        : page.getByTestId("graph-counts")
     ).toBeVisible()
     await page.waitForTimeout(400)
     await page.screenshot({ path: `${OUT}/${shot.name}.png` })

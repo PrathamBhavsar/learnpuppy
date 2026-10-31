@@ -3,7 +3,7 @@ export INSTA_WORKSPACE_ROOT := $(CURDIR)
 export PATH := /opt/homebrew/bin:/opt/homebrew/opt/rustup/bin:$(HOME)/.cargo/bin:$(PATH)
 CARGO ?= /opt/homebrew/opt/rustup/bin/cargo
 
-.PHONY: fmt clippy test okf deny api-gen api-check gate ci
+.PHONY: fmt clippy test okf deny api-gen api-check gate ci disk-guard e2e perf
 
 OPENAPI := web/openapi/openapi.json
 
@@ -35,3 +35,24 @@ api-check: api-gen
 gate: fmt clippy test okf api-check
 
 ci: gate deny
+
+LP_WEB_PORT ?= 5173
+export LP_WEB_PORT
+
+disk-guard:
+	@scripts/disk-guard.sh
+
+# Full Playwright: mock-mode suites (journeys, visual, a11y, offline) + real-server suites (auth, learn, offline).
+# Touching assets.rs forces rust-embed to pick up the freshly built web/dist.
+e2e: disk-guard
+	cd web && bun install --frozen-lockfile && bun run build
+	touch crates/lp-server/src/assets.rs
+	$(CARGO) build -p lp-server
+	cd web && bunx playwright test
+	cd web && LP_BIN=$(CURDIR)/target/debug/learnpuppy bunx playwright test -c playwright.serve.config.ts
+
+# Budgets from docs/web/07: bundle size, graph 5k/10k frame times, LCP, long tasks, heap growth.
+perf: disk-guard
+	cd web && bun install --frozen-lockfile && bun run build && bun run bundle-size
+	cd web && bunx playwright test graph.spec -g "performance budgets"
+	cd web && bunx playwright test -c playwright.perf.config.ts
