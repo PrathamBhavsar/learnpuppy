@@ -36,6 +36,15 @@ pub struct CardReport {
 
 /// One engine call per `prompt`; every valid, not-yet-stored draft becomes a card.
 /// Existing cards are never rewritten, so their FSRS state survives re-generation.
+/// A uniformly random answer slot 0..4 from the std per-instance random hasher key, which is
+/// unrelated to any card id.
+fn answer_slot() -> usize {
+    use std::hash::{BuildHasher, Hasher};
+    let mut h = std::collections::hash_map::RandomState::new().build_hasher();
+    h.write_u8(0);
+    (h.finish() >> 32) as usize % 4
+}
+
 async fn make_cards<E: LlmEngine>(
     engine: &E,
     store: &dyn TrackerStore,
@@ -69,8 +78,9 @@ async fn make_cards<E: LlmEngine>(
         if !known.insert(id.clone()) {
             continue;
         }
-        // Spread the answer over A-D deterministically instead of always putting it first.
-        let correct = usize::from(id.as_bytes()[id.len() - 1]) % 4;
+        // Spread the answer uniformly over A-D. The slot must not be derivable from the id (it is
+        // public before the card is answered), so it comes from a per-process random key.
+        let correct = answer_slot();
         let mut wrong = draft.wrong.into_iter();
         let options = std::array::from_fn(|i| {
             if i == correct {
@@ -192,4 +202,18 @@ pub fn ingest_book(
         chunks.push(chunk);
     }
     Ok(chunks)
+}
+
+#[cfg(test)]
+mod slot_tests {
+    #[test]
+    fn answer_slot_is_in_range_and_varies() {
+        let mut seen = [false; 4];
+        for _ in 0..400 {
+            let s = super::answer_slot();
+            assert!(s < 4);
+            seen[s] = true;
+        }
+        assert!(seen.iter().all(|b| *b), "all four slots should occur");
+    }
 }

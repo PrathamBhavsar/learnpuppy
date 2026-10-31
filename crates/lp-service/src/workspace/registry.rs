@@ -372,10 +372,16 @@ impl WorkspaceRegistry {
                 return Ok(s.clone());
             }
         }
+        // Serialise with delete/purge and require the workspace to still exist: `Stores::open`
+        // creates its directories, so a stale caller (e.g. a `list` that scanned before a delete)
+        // would otherwise resurrect a workspace that was just moved to the trash.
+        let _ops = self.ops.lock();
+        let dir = self.dir(id)?;
+        WorkspaceMeta::load(&dir)?;
         let open = self.open.lock().get(id).cloned();
         let s = match open {
             Some(h) => compute_stats(h.stores())?,
-            None => compute_stats(&Stores::open(&self.dir(id)?)?)?,
+            None => compute_stats(&Stores::open(&dir)?)?,
         };
         self.stats
             .lock()
