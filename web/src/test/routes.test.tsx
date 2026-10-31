@@ -6,7 +6,6 @@ import { renderApp, resetUi } from "@/test/render"
 beforeEach(resetUi)
 
 const SCREENS: [path: string, testId: string, heading: string][] = [
-  ["/w/ws_rustasync/graph", "screen-graph", "Graph"],
   ["/w/ws_rustasync/review", "screen-review", "Review"],
   ["/w/ws_rustasync/digest", "screen-digest", "Digest"],
   ["/w/ws_rustasync/ingest", "screen-ingest", "Ingest"],

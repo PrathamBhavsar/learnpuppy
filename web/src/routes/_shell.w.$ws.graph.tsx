@@ -1,25 +1,28 @@
 import { createFileRoute } from "@tanstack/react-router"
-import { NetworkIcon } from "lucide-react"
+import { lazy, Suspense } from "react"
 
-import { PlaceholderScreen } from "@/features/screens/PlaceholderScreen"
-import { useWorkspaceName } from "@/hooks/use-workspace"
+import { SkeletonRows } from "@/components/app/skeleton-block"
+import { validateGraphSearch } from "@/features/graph/use-graph-url"
+
+// The canvas, d3 modules and chain table are a heavy chunk; keep them out of the shell bundle.
+const GraphScreen = lazy(() => import("@/features/graph/GraphScreen"))
 
 function Screen() {
   const { ws } = Route.useParams()
   return (
-    <PlaceholderScreen
-      testId="screen-graph"
-      title="Graph"
-      description="Propositions and the chains between them."
-      icon={NetworkIcon}
-      emptyTitle="No propositions yet"
-      emptyDescription="The graph fills as you learn in chats and ingest sessions."
-      actionLabel="Start learning"
-      workspace={useWorkspaceName(ws)}
-    />
+    <Suspense
+      fallback={
+        <div className="p-6" aria-busy>
+          <SkeletonRows rows={6} className="max-w-3xl" />
+        </div>
+      }
+    >
+      <GraphScreen ws={ws} />
+    </Suspense>
   )
 }
 
 export const Route = createFileRoute("/_shell/w/$ws/graph")({
+  validateSearch: validateGraphSearch,
   component: Screen,
 })
