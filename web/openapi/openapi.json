@@ -212,6 +212,46 @@
         }
       }
     },
+    "/downloads/{token}": {
+      "get": {
+        "tags": [
+          "workspaces"
+        ],
+        "operationId": "download",
+        "parameters": [
+          {
+            "name": "token",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "One-shot streamed workspace zip",
+            "content": {
+              "application/zip": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/events": {
       "get": {
         "tags": [
@@ -617,6 +657,57 @@
           },
           "422": {
             "description": "Invalid field",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/workspaces/import": {
+      "post": {
+        "tags": [
+          "workspaces"
+        ],
+        "operationId": "import",
+        "requestBody": {
+          "description": "A single `file` zip field, maximum 2 GiB; streamed to disk",
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/ImportArchive"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportedWorkspace"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "",
             "content": {
               "application/json": {
                 "schema": {
@@ -1593,6 +1684,46 @@
         }
       }
     },
+    "/workspaces/{ws}/export": {
+      "post": {
+        "tags": [
+          "workspaces"
+        ],
+        "operationId": "export",
+        "parameters": [
+          {
+            "name": "ws",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExportStarted"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/workspaces/{ws}/graph": {
       "get": {
         "tags": [
@@ -1697,6 +1828,126 @@
         }
       }
     },
+    "/workspaces/{ws}/graph/delete-preview": {
+      "post": {
+        "tags": [
+          "graph"
+        ],
+        "operationId": "preview",
+        "parameters": [
+          {
+            "name": "ws",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NodeSelection"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeletePreview"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/workspaces/{ws}/graph/nodes": {
+      "delete": {
+        "tags": [
+          "graph"
+        ],
+        "operationId": "remove",
+        "parameters": [
+          {
+            "name": "ws",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DeleteNodes"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GraphMutation"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/workspaces/{ws}/graph/nodes/{id}": {
       "get": {
         "tags": [
@@ -1736,6 +1987,106 @@
             }
           },
           "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/workspaces/{ws}/graph/practice": {
+      "post": {
+        "tags": [
+          "graph"
+        ],
+        "operationId": "practice",
+        "parameters": [
+          {
+            "name": "ws",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NodeSelection"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PracticeChat"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "501": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/workspaces/{ws}/graph/relayout": {
+      "post": {
+        "tags": [
+          "graph"
+        ],
+        "operationId": "relayout",
+        "parameters": [
+          {
+            "name": "ws",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GraphMutation"
+                }
+              }
+            }
+          },
+          "409": {
             "description": "",
             "content": {
               "application/json": {
@@ -1806,6 +2157,235 @@
           },
           "422": {
             "description": "Empty query",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/workspaces/{ws}/ingest/run": {
+      "post": {
+        "tags": [
+          "ingest"
+        ],
+        "operationId": "run",
+        "parameters": [
+          {
+            "name": "ws",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StartIngest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IngestStarted"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/workspaces/{ws}/ingest/runs": {
+      "get": {
+        "tags": [
+          "ingest"
+        ],
+        "operationId": "runs",
+        "parameters": [
+          {
+            "name": "ws",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IngestHistory"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/workspaces/{ws}/ingest/runs/{id}/cancel": {
+      "post": {
+        "tags": [
+          "ingest"
+        ],
+        "operationId": "cancel",
+        "parameters": [
+          {
+            "name": "ws",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/workspaces/{ws}/ingest/sources": {
+      "get": {
+        "tags": [
+          "ingest"
+        ],
+        "operationId": "sources",
+        "parameters": [
+          {
+            "name": "ws",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IngestSources"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "ingest"
+        ],
+        "operationId": "save_sources",
+        "parameters": [
+          {
+            "name": "ws",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SourcesDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IngestSources"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "",
             "content": {
               "application/json": {
                 "schema": {
@@ -2965,6 +3545,31 @@
           }
         }
       },
+      "Candidate": {
+        "type": "object",
+        "required": [
+          "path",
+          "sessions",
+          "lastSeen",
+          "source"
+        ],
+        "properties": {
+          "lastSeen": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "path": {
+            "type": "string"
+          },
+          "sessions": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "source": {
+            "type": "string"
+          }
+        }
+      },
       "CardBriefDto": {
         "type": "object",
         "description": "A card as lists show it: scheduling, never the answer.",
@@ -3810,6 +4415,52 @@
           }
         }
       },
+      "DeleteNodes": {
+        "type": "object",
+        "required": [
+          "nodeIds",
+          "previewToken"
+        ],
+        "properties": {
+          "nodeIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "previewToken": {
+            "type": "string"
+          }
+        }
+      },
+      "DeletePreview": {
+        "type": "object",
+        "required": [
+          "deleted",
+          "orphanedChains",
+          "blastRadius",
+          "previewToken"
+        ],
+        "properties": {
+          "blastRadius": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "deleted": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "orphanedChains": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "previewToken": {
+            "type": "string"
+          }
+        }
+      },
       "DeleteWorkspace": {
         "type": "object",
         "required": [
@@ -4011,6 +4662,17 @@
           }
         }
       },
+      "ExportStarted": {
+        "type": "object",
+        "required": [
+          "jobId"
+        ],
+        "properties": {
+          "jobId": {
+            "type": "string"
+          }
+        }
+      },
       "FieldError": {
         "type": "object",
         "description": "One invalid input field; `path` is dotted (`profiles.teacher.model`, `items[2].id`).",
@@ -4155,7 +4817,7 @@
               "null"
             ],
             "format": "int64",
-            "description": "The graph version the positions were computed for (equals `version` when present).",
+            "description": "Cached layout revision; advances when graph mutations or explicit relayout replace positions.",
             "minimum": 0
           },
           "nodes": {
@@ -4185,6 +4847,25 @@
             "type": "integer",
             "format": "int64",
             "description": "Content hash; changes whenever a node or chain does. Same as `graph.changed.version`.",
+            "minimum": 0
+          }
+        }
+      },
+      "GraphMutation": {
+        "type": "object",
+        "required": [
+          "version",
+          "layoutVersion"
+        ],
+        "properties": {
+          "layoutVersion": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "version": {
+            "type": "integer",
+            "format": "int64",
             "minimum": 0
           }
         }
@@ -4294,6 +4975,30 @@
           }
         }
       },
+      "ImportArchive": {
+        "type": "object",
+        "description": "Multipart upload contract; the handler streams this file to disk.",
+        "required": [
+          "file"
+        ],
+        "properties": {
+          "file": {
+            "type": "string",
+            "format": "binary"
+          }
+        }
+      },
+      "ImportedWorkspace": {
+        "type": "object",
+        "required": [
+          "workspaceId"
+        ],
+        "properties": {
+          "workspaceId": {
+            "type": "string"
+          }
+        }
+      },
       "IngestDoneData": {
         "type": "object",
         "required": [
@@ -4306,6 +5011,20 @@
           },
           "runId": {
             "type": "string"
+          }
+        }
+      },
+      "IngestHistory": {
+        "type": "object",
+        "required": [
+          "items"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/IngestRun"
+            }
           }
         }
       },
@@ -4371,6 +5090,79 @@
             "type": "integer",
             "format": "int64",
             "minimum": 0
+          }
+        }
+      },
+      "IngestRun": {
+        "type": "object",
+        "required": [
+          "id",
+          "startedAt",
+          "report"
+        ],
+        "properties": {
+          "finishedAt": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "id": {
+            "type": "string"
+          },
+          "report": {
+            "$ref": "#/components/schemas/IngestReport"
+          },
+          "startedAt": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
+      "IngestSources": {
+        "type": "object",
+        "required": [
+          "sources",
+          "enabled",
+          "candidates",
+          "warnings"
+        ],
+        "properties": {
+          "candidates": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Candidate"
+            }
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "runningId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "sources": {
+            "$ref": "#/components/schemas/SourcesDto"
+          },
+          "warnings": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OverlapWarning"
+            }
+          }
+        }
+      },
+      "IngestStarted": {
+        "type": "object",
+        "required": [
+          "runId"
+        ],
+        "properties": {
+          "runId": {
+            "type": "string"
           }
         }
       },
@@ -4686,6 +5478,20 @@
         ],
         "description": "One node with everything the drawer shows."
       },
+      "NodeSelection": {
+        "type": "object",
+        "required": [
+          "nodeIds"
+        ],
+        "properties": {
+          "nodeIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
       "OptionDto": {
         "type": "object",
         "required": [
@@ -4698,6 +5504,25 @@
             "description": "What to send back as the answer."
           },
           "text": {
+            "type": "string"
+          }
+        }
+      },
+      "OverlapWarning": {
+        "type": "object",
+        "required": [
+          "workspaceId",
+          "path",
+          "otherPath"
+        ],
+        "properties": {
+          "otherPath": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "workspaceId": {
             "type": "string"
           }
         }
@@ -4964,6 +5789,17 @@
           "visited",
           "upcoming"
         ]
+      },
+      "PracticeChat": {
+        "type": "object",
+        "required": [
+          "chatId"
+        ],
+        "properties": {
+          "chatId": {
+            "type": "string"
+          }
+        }
       },
       "PreviewDto": {
         "type": "object",
@@ -5825,6 +6661,19 @@
           },
           "sinceDays": {
             "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          }
+        }
+      },
+      "StartIngest": {
+        "type": "object",
+        "properties": {
+          "sinceDays": {
+            "type": [
+              "integer",
+              "null"
+            ],
             "format": "int32",
             "minimum": 0
           }

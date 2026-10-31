@@ -143,6 +143,10 @@ pub struct Core {
     pub registry: Arc<WorkspaceRegistry>,
     pub clock: Clock,
     pub graphs: SnapshotCache,
+    pub graph_mutations: Arc<lp_service::graph_mut::GraphMutations>,
+    pub ingest_runs: Arc<lp_service::ingest_svc::IngestRuns>,
+    pub export_jobs: Arc<lp_service::export_jobs::ExportJobs>,
+    pub practice_seeder: Arc<dyn lp_service::graph_mut::PracticeSeeder>,
     pub replies: Replies,
     pub hub: Arc<EventHub>,
     /// Home for CLI account discovery (`~/.claude`, `~/.codex`, …).
@@ -211,6 +215,10 @@ impl Core {
             registry: Arc::new(registry),
             clock: Clock::default(),
             graphs: SnapshotCache::default(),
+            graph_mutations: Arc::default(),
+            ingest_runs: Arc::default(),
+            export_jobs: Arc::default(),
+            practice_seeder: Arc::new(lp_service::graph_mut::UnavailablePracticeSeeder),
             replies: Replies::new(2048),
             hub,
             home,
@@ -238,7 +246,20 @@ impl Core {
         }
         let (core, handle) = (self.clone(), handle.clone());
         std::mem::drop(tokio::task::spawn_blocking(move || {
+            let graph_lock = core.graph_mutations.workspace_lock(handle.root());
+            let _lock = graph_lock.lock();
             let dir = handle.root().join("graph");
+            // A mutation may have completed while this layout was queued.
+            if graph::snapshot(&*handle.stores().graph)
+                .is_ok_and(|s| graph::version(&s) != loaded.version)
+            {
+                core.layouts.lock().remove(handle.id());
+                return;
+            }
+            if graph::read_positions(&dir, loaded.version).is_some() {
+                core.layouts.lock().remove(handle.id());
+                return;
+            }
             let positions = graph::compute_positions(&loaded);
             match graph::write_positions(&dir, &positions) {
                 Ok(()) => handle.emit(
