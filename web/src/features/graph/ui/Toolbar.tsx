@@ -12,6 +12,7 @@ import {
 import { useEffect, useRef, useState } from "react"
 
 import type { NodeSource } from "@/api/pending-types"
+import { InfoTip, ScreenGuide } from "@/components/app/info/info"
 import { Button } from "@/components/ui/button"
 import {
   DropdownMenu,
@@ -48,6 +49,7 @@ import { cn } from "@/lib/utils"
 import type { LabelMode } from "@/stores/graphView"
 
 import { copy } from "../copy"
+import { graphGuide, graphInfo } from "../info"
 import { SOURCES } from "../model/scene"
 
 import { SOURCE_BG } from "./source-style"
@@ -159,6 +161,9 @@ function SearchBox(
           </InputGroupButton>
         </InputGroupAddon>
       ) : null}
+      <InputGroupAddon align="inline-end">
+        <InfoTip info={graphInfo.search} />
+      </InputGroupAddon>
     </InputGroup>
   )
 }
@@ -200,6 +205,7 @@ function Filters(props: ToolbarProps) {
           </ToggleGroupItem>
         ))}
       </ToggleGroup>
+      <InfoTip info={graphInfo.sources} />
       <Select
         value={cluster ?? ALL}
         onValueChange={(v) => onCluster(v === ALL ? null : v)}
@@ -221,6 +227,7 @@ function Filters(props: ToolbarProps) {
           ))}
         </SelectContent>
       </Select>
+      <InfoTip info={graphInfo.cluster} />
       <Popover>
         <PopoverTrigger asChild>
           <Button
@@ -250,6 +257,7 @@ function Filters(props: ToolbarProps) {
           <p className="text-[11px] text-muted-foreground tabular-nums">{`${minDegree} – ${maxDegree}`}</p>
         </PopoverContent>
       </Popover>
+      <InfoTip info={graphInfo.minDegree} />
     </>
   )
 }
@@ -339,6 +347,7 @@ function ViewToggles(props: ToolbarProps) {
         <Table2Icon data-icon="inline-start" />
         Table
       </Toggle>
+      <InfoTip info={graphInfo.view} />
     </>
   )
 }
@@ -375,6 +384,13 @@ export function Toolbar(props: ToolbarProps) {
           className="pointer-events-auto border border-border bg-background px-2 py-1 text-[11px] text-muted-foreground tabular-nums"
         >
           {props.counts}
+        </span>
+        <span className="pointer-events-auto">
+          <ScreenGuide
+            title={graphGuide.title}
+            summary={graphGuide.summary}
+            parts={graphGuide.parts}
+          />
         </span>
         <ViewToggles {...props} />
       </div>

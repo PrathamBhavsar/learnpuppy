@@ -1,10 +1,12 @@
 import { ChevronDownIcon } from "lucide-react"
 import { useState } from "react"
 
+import { InfoTip } from "@/components/app/info/info"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 
 import { copy } from "../copy"
+import { graphInfo } from "../info"
 import { SOURCES } from "../model/scene"
 
 import { SOURCE_BG } from "./source-style"
@@ -29,22 +31,25 @@ export function Legend() {
       data-testid="graph-legend"
       className="pointer-events-auto w-[168px] border border-border bg-background/90 text-[11px] backdrop-blur-sm"
     >
-      <Button
-        variant="ghost"
-        size="xs"
-        aria-expanded={open}
-        onClick={() => setOpen((v) => !v)}
-        className="w-full justify-between rounded-none px-2 text-[11px] text-muted-foreground"
-        data-testid="graph-legend-toggle"
-      >
-        {copy.legend.title}
-        <ChevronDownIcon
-          className={cn(
-            "transition-transform duration-[var(--dur-fast)]",
-            open ? "" : "-rotate-90 rtl:rotate-90"
-          )}
-        />
-      </Button>
+      <div className="flex items-center pe-2">
+        <Button
+          variant="ghost"
+          size="xs"
+          aria-expanded={open}
+          onClick={() => setOpen((v) => !v)}
+          className="flex-1 justify-between rounded-none px-2 text-[11px] text-muted-foreground"
+          data-testid="graph-legend-toggle"
+        >
+          {copy.legend.title}
+          <ChevronDownIcon
+            className={cn(
+              "transition-transform duration-[var(--dur-fast)]",
+              open ? "" : "-rotate-90 rtl:rotate-90"
+            )}
+          />
+        </Button>
+        <InfoTip info={graphInfo.legend} />
+      </div>
       {open ? (
         <div className="flex flex-col gap-2 px-2 pt-0.5 pb-2">
           <ul className="flex flex-col gap-1" aria-label={copy.legend.sources}>
