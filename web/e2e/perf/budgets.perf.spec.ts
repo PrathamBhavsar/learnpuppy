@@ -91,3 +91,42 @@ test("memory: heap growth < 30 MB across 200 route switches and 20 SSE reconnect
   console.log(`heap ${before.toFixed(1)} MB -> ${after.toFixed(1)} MB`)
   expect(after - before).toBeLessThan(30)
 })
+
+// docs/web/10 H: 30-minute soak. Opt-in: `LP_SOAK_MIN=30 bunx playwright test -c playwright.perf.config.ts -g soak`.
+const SOAK_MIN = Number(process.env["LP_SOAK_MIN"] ?? 0)
+test("soak: heap stays flat under continuous navigation and SSE drops", async ({
+  page,
+}) => {
+  test.skip(!SOAK_MIN, "set LP_SOAK_MIN to run")
+  test.setTimeout((SOAK_MIN + 5) * 60_000)
+  const cdp = await page.context().newCDPSession(page)
+  await page.goto(`/w/${WS}/review`)
+  await expect(page.getByTestId("workspace-chip")).toBeVisible()
+  const stop = Date.now() + SOAK_MIN * 60_000
+  const samples: number[] = []
+  let nextSample = Date.now() + 60_000
+  let i = 0
+  while (Date.now() < stop) {
+    await page.keyboard.press("g")
+    await page.keyboard.press(["l", "r", "d"][i++ % 3] ?? "r")
+    if (i % 10 === 0) {
+      await page.evaluate(() => (window as MockWindow).__lpMock?.dropSse())
+      await page.waitForTimeout(50)
+      await page.evaluate(() => (window as MockWindow).__lpMock?.restoreSse())
+    }
+    await page.waitForTimeout(100)
+    if (Date.now() >= nextSample) {
+      samples.push(await heapMb(cdp))
+      console.log(
+        `soak ${samples.length} min: ${samples.at(-1)?.toFixed(1)} MB`
+      )
+      nextSample += 60_000
+    }
+  }
+  const warm = samples[Math.min(4, samples.length - 1)] ?? 0
+  const end = samples.at(-1) ?? 0
+  console.log(
+    `soak ${i} navigations, heap ${warm.toFixed(1)} -> ${end.toFixed(1)} MB`
+  )
+  expect(end - warm).toBeLessThan(30)
+})

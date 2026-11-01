@@ -2,7 +2,7 @@
 
 Release = every box ticked, with evidence (test name or screenshot path) filled by A70. State honestly which checks ran against the real engine vs `FauxEngine`.
 
-> **Engine caveat (2026-11-01):** every check below ran against `FauxEngine` or MSW mocks. None has run against the real `claude`/`codex`/`agy` CLIs yet; see the real-engine section at the end once that run is recorded.
+> **Engine caveat (2026-11-01):** every check below ran against `FauxEngine` or MSW mocks, except the capped real-engine run at the end of this file.
 
 ## A. Boot & safety
 - [x] `learnpuppy serve` prints URL, opens browser, SPA loads with no console errors/warnings.
@@ -126,3 +126,10 @@ Mark each: `[ ] implemented  [ ] reduced-motion variant  [ ] perf checked`.
 - Reduced-motion variant: CSS (`@media` + `data-reduce-motion`) and `MotionConfig` verified by `src/lib/reduced-motion.test.ts`; the Playwright `document.getAnimations()` check is still open.
 - Perf checked: not run (needs `make e2e` trace spec) — leave `[ ] perf checked` unticked.
 
+
+## Real-engine run (2026-11-01, capped)
+Isolated `LEARNPUPPY_HOME`, `serve --engine real`, one workspace, one teach chat, 2 turns, over HTTP (no browser).
+- Result: Probe turn 1 reached `idle` with a pending `probe` question after 6 s; the answer was accepted (202) and turn 2 reached a new pending `probe` after 8 s. No errors.
+- Bug found only by this run and fixed: the driver's `env_clear` allow-list omitted `USER`/`LOGNAME`, so every non-default Claude profile failed with `Not logged in` (exit 1, empty stderr) even though the pool listed it `ready`. Added both to `ENV_ALLOW`.
+- Known gap: `/accounts` shows `tokensIn: 0, tokensOut: 0` after real calls (`requests` does increment), so usage accounting is not parsed from the real CLIs.
+- Not exercised on the real engine: Plan/Teach phases, workbench jobs, PDF, the browser UI, `codex`/`agy` roles (a direct `codex exec` ping with the prober settings worked).

@@ -23,8 +23,11 @@ const STDERR_CAP: usize = 64 * 1024;
 const CALL_OPEN: &str = "<tool_call>";
 const CALL_CLOSE: &str = "</tool_call>";
 /// Env that real setups need (proxies, TLS roots, locale, temp dir); everything else is stripped.
-const ENV_ALLOW: [&str; 9] = [
+const ENV_ALLOW: [&str; 11] = [
     "HOME",
+    // The Claude CLI looks up per-profile Keychain credentials by user name.
+    "USER",
+    "LOGNAME",
     "PATH",
     "HTTPS_PROXY",
     "HTTP_PROXY",
