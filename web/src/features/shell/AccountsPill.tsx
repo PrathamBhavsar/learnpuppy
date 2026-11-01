@@ -2,6 +2,8 @@ import { Link } from "@tanstack/react-router"
 import { useEffect, useState } from "react"
 
 import { useAccounts } from "@/api/queries/accounts"
+import { aiState } from "@/lib/accounts-model"
+import { formatLocalTime } from "@/lib/ai-time"
 import { Button } from "@/components/ui/button"
 import { SHELL_INFO } from "@/components/app/info/shell-content"
 import { Skeleton } from "@/components/ui/skeleton"
@@ -32,7 +34,9 @@ function useNow(active: boolean): number {
 export function AccountsPill() {
   const { data, isPending } = useAccounts()
   const cooling =
-    data?.some((a) => a.status === "cooldown" && a.cooldownUntil) ?? false
+    data?.some(
+      (a) => a.status === "cooldown" && (a.resetsAt ?? a.cooldownUntil)
+    ) ?? false
   const now = useNow(cooling)
 
   if (isPending || !data)
@@ -44,15 +48,33 @@ export function AccountsPill() {
       />
     )
 
-  const total = data.length
-  const ready = data.filter((a) => a.status === "ready").length
-  const state = ready === 0 ? "none" : ready < total ? "partial" : "all"
+  const ai = aiState(data)
+  const { total, ready } = ai
+  // `offline` / `none` (nothing connected) / `limited` (every AI at its limit) beat the ready count.
+  const state =
+    ai.kind === "ok"
+      ? "all"
+      : ai.kind === "partial"
+        ? "partial"
+        : ai.kind === "limited"
+          ? "limited"
+          : ai.kind
   const next = data
-    .filter((a) => a.status === "cooldown" && a.cooldownUntil)
-    .map((a) => a.cooldownUntil as number)
+    .filter((a) => a.status === "cooldown" && (a.resetsAt ?? a.cooldownUntil))
+    .map((a) => (a.resetsAt ?? a.cooldownUntil) as number)
     .sort((a, b) => a - b)[0]
   const countdown =
     next !== undefined && next > now ? formatCountdown(next - now) : null
+  const label =
+    ai.kind === "offline"
+      ? "Offline"
+      : ai.kind === "none"
+        ? "Connect an AI"
+        : ai.kind === "limited"
+          ? ai.nextResetAt
+            ? `All limited · back ${formatLocalTime(ai.nextResetAt, now)}`
+            : "All limited"
+          : `${ready}/${total} ready`
 
   return (
     <Tooltip>
@@ -72,16 +94,16 @@ export function AccountsPill() {
             <span
               aria-hidden
               className={
-                state === "none"
+                state === "none" || state === "limited"
                   ? "size-1.5 bg-destructive"
-                  : state === "partial"
+                  : state === "partial" || state === "offline"
                     ? "size-1.5 bg-warning"
                     : "size-1.5 bg-success"
               }
             />
             <span className="sr-only">Accounts </span>
-            {ready}/{total} ready
-            {countdown ? (
+            {label}
+            {countdown && ai.kind !== "limited" ? (
               <span
                 className="text-muted-foreground"
                 data-testid="accounts-countdown"

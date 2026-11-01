@@ -39,6 +39,8 @@ pub enum AccountStatus {
 #[derive(Debug, Clone, PartialEq)]
 pub struct ModelStatusRow {
     pub id: String,
+    /// The user switched this model off; it is never picked (`status` reads `NoModel`).
+    pub disabled: bool,
     pub free: bool,
     pub credit_multiplier: Option<f64>,
     pub status: AccountStatus,
@@ -62,6 +64,8 @@ pub struct ModelState {
     pub until: Option<Instant>,
     pub resets_at_ms: Option<u64>,
     pub unavailable: bool,
+    /// Switched off by the user.
+    pub disabled: bool,
 }
 
 /// An account and, for multi-model CLIs, the model to run on it.
@@ -155,7 +159,7 @@ impl AccountState {
     }
 
     fn model_usable(m: &ModelState) -> bool {
-        m.until.is_none() && !m.unavailable
+        m.until.is_none() && !m.unavailable && !m.disabled
     }
 
     /// Next model to run: the preferred one when usable, else free ones first, then cheapest.
@@ -204,6 +208,7 @@ impl ModelState {
             until: None,
             resets_at_ms: None,
             unavailable: false,
+            disabled: false,
         }
     }
 }
@@ -500,9 +505,10 @@ impl AccountPool {
                     .iter()
                     .map(|m| ModelStatusRow {
                         id: m.info.id.clone(),
+                        disabled: m.disabled,
                         free: m.info.free,
                         credit_multiplier: m.info.credit_multiplier,
-                        status: if m.unavailable {
+                        status: if m.unavailable || m.disabled {
                             AccountStatus::NoModel
                         } else if let Some(u) = m.until.filter(|u| *u > now) {
                             AccountStatus::CoolingDown {
@@ -602,6 +608,20 @@ impl AccountPool {
                 (*p, best)
             })
             .collect()
+    }
+
+    /// Switch one model of `id` off (or back on). False when the account or model is unknown.
+    pub fn set_model_disabled(&self, id: &AccountId, model: &str, disabled: bool) -> bool {
+        let mut accounts = self.accounts.lock();
+        let Some(m) = accounts
+            .iter_mut()
+            .find(|a| a.id == *id)
+            .and_then(|a| a.models.iter_mut().find(|m| m.info.id == model))
+        else {
+            return false;
+        };
+        m.disabled = disabled;
+        true
     }
 
     /// Replace an account's model list (e.g. after the TTL cache refreshed), keeping failure state.
@@ -1158,5 +1178,40 @@ mod tests {
             panic!()
         };
         assert_eq!(pool.statuses(t0, 1_800_000_000_000)[0].resets_at, Some(r));
+    }
+
+    #[test]
+    fn a_disabled_model_is_never_picked_and_reads_no_model() {
+        let acct = DiscoveredAccount {
+            id: AccountId("opencode:opencode".into()),
+            provider: ProviderKind::OpencodeCli,
+            email: None,
+            account_uuid: None,
+            config_dir: None,
+            rate_limit_tier: None,
+            auth_expired: false,
+            models: ["opencode/a-free", "opencode/b-free"]
+                .map(|id| ModelInfo {
+                    id: id.into(),
+                    free: true,
+                    credit_multiplier: None,
+                })
+                .to_vec(),
+        };
+        let pool = AccountPool::new(vec![acct], Strategy::Priority);
+        let id = AccountId("opencode:opencode".into());
+        let chain = [ProviderKind::OpencodeCli];
+        assert!(pool.set_model_disabled(&id, "opencode/a-free", true));
+        assert!(!pool.set_model_disabled(&id, "nope", true));
+        let pick = pool.acquire_model(&chain, Some("opencode/a-free"), Instant::now());
+        assert_eq!(pick.unwrap().model.as_deref(), Some("opencode/b-free"));
+        let rows = pool.statuses(Instant::now(), NOW_MS);
+        assert!(rows[0].models[0].disabled);
+        assert_eq!(rows[0].models[0].status, AccountStatus::NoModel);
+        assert_eq!(rows[0].status, AccountStatus::Ready);
+        pool.set_model_disabled(&id, "opencode/b-free", true);
+        assert!(pool.acquire_model(&chain, None, Instant::now()).is_none());
+        pool.set_model_disabled(&id, "opencode/a-free", false);
+        assert!(pool.acquire_model(&chain, None, Instant::now()).is_some());
     }
 }

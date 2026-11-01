@@ -398,8 +398,9 @@ pub enum TurnState {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct TurnErrorDto {
-    /// `engine_unavailable`, `rate_limited`, `internal`, `storage_full`, or `interrupted` when a
-    /// server restart cut the turn off.
+    /// AI failures: `OFFLINE`, `NOT_CONNECTED`, `NO_MODEL`, `RATE_LIMITED`, `TIMED_OUT`,
+    /// `NO_RESPONSE`, `UNKNOWN`. Others: `engine_unavailable`, `rate_limited`, `internal`,
+    /// `storage_full`, or `interrupted` when a server restart cut the turn off.
     pub code: String,
     pub message: String,
     pub retryable: bool,
@@ -407,6 +408,20 @@ pub struct TurnErrorDto {
     pub retry_after_ms: Option<u64>,
     /// The server stopped mid-turn; offer Resume.
     pub interrupted: bool,
+    /// `RATE_LIMITED`: epoch ms when the soonest limit lifts.
+    #[serde(default)]
+    pub resets_at: Option<i64>,
+    /// The provider the failure is about (`claude`, `codex`, `agy`, `kiro`, `opencode`).
+    #[serde(default)]
+    pub provider: Option<String>,
+    #[serde(default)]
+    pub model: Option<String>,
+    /// What to do next: a command to run (`kiro-cli login`) or a screen (`Settings`).
+    #[serde(default)]
+    pub action: Option<String>,
+    /// `OFFLINE`: seconds until the automatic retry.
+    #[serde(default)]
+    pub retry_in_secs: Option<u64>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
@@ -450,6 +465,15 @@ impl From<&chat::TurnStatus> for TurnDto {
                 retryable: e.retryable,
                 retry_after_ms: e.retry_after_ms,
                 interrupted: e.interrupted,
+                resets_at: e
+                    .ai
+                    .as_ref()
+                    .and_then(|a| a.resets_at)
+                    .and_then(|r| i64::try_from(r).ok()),
+                provider: e.ai.as_ref().and_then(|a| a.provider.clone()),
+                model: e.ai.as_ref().and_then(|a| a.model.clone()),
+                action: e.ai.as_ref().and_then(|a| a.action.clone()),
+                retry_in_secs: e.ai.as_ref().and_then(|a| a.retry_in_secs),
             }),
         }
     }

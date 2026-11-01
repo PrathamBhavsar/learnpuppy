@@ -54,8 +54,15 @@ impl From<WorkspaceSummary> for WorkspaceSummaryDto {
 pub enum AccountStatus {
     Ready,
     Cooldown,
+    /// Signed out; the user runs the connect command (`howToConnect`).
     AuthExpired,
     Disabled,
+    /// No network. Not the account's fault.
+    Offline,
+    /// Logged in but no model can run.
+    NoModel,
+    /// The CLI is not installed.
+    Missing,
 }
 
 /// An account without credentials: provider, identity, health.
@@ -73,12 +80,33 @@ pub struct AccountSummaryDto {
 }
 
 impl AccountSummaryDto {
+    /// The wire status of a plain `Status` (cooldown deadline anchored at `now_ms`).
+    pub fn status_of(s: &Status, now_ms: i64) -> (AccountStatus, Option<i64>) {
+        match s {
+            Status::Ready => (AccountStatus::Ready, None),
+            Status::AuthExpired => (AccountStatus::AuthExpired, None),
+            Status::Disabled => (AccountStatus::Disabled, None),
+            Status::Offline => (AccountStatus::Offline, None),
+            Status::NoModel => (AccountStatus::NoModel, None),
+            Status::Missing => (AccountStatus::Missing, None),
+            Status::Cooldown { secs_left, .. } => (
+                AccountStatus::Cooldown,
+                Some(now_ms.saturating_add(
+                    i64::try_from(secs_left.saturating_mul(1000)).unwrap_or(i64::MAX),
+                )),
+            ),
+        }
+    }
+
     /// `now_ms` anchors the cooldown's remaining seconds to a wall-clock deadline.
     pub fn from_account(a: Account, now_ms: i64) -> Self {
         let (status, cooldown_until, cooldown_reason) = match a.status {
             Status::Ready => (AccountStatus::Ready, None, None),
             Status::AuthExpired => (AccountStatus::AuthExpired, None, None),
             Status::Disabled => (AccountStatus::Disabled, None, None),
+            Status::Offline => (AccountStatus::Offline, None, None),
+            Status::NoModel => (AccountStatus::NoModel, None, None),
+            Status::Missing => (AccountStatus::Missing, None, None),
             Status::Cooldown { secs_left, reason } => (
                 AccountStatus::Cooldown,
                 Some(now_ms.saturating_add(
@@ -182,6 +210,8 @@ mod tests {
             requests: 3,
             tokens_in: 0,
             tokens_out: 0,
+            resets_at: None,
+            models: Vec::new(),
         };
         let acct = AccountSummaryDto::from_account(cooldown, 1_000);
         assert_eq!(acct.status, AccountStatus::Cooldown);

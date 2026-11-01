@@ -3,19 +3,28 @@ import { CheckIcon, CopyIcon } from "lucide-react"
 import { useEffect, useRef, useState } from "react"
 
 import type { AccountDetail } from "@/api/pending-types"
-import { useSetAccountDisabled } from "@/api/queries/accounts"
+import {
+  useRescanAccounts,
+  useSetAccountDisabled,
+  useSetModelDisabled,
+} from "@/api/queries/accounts"
+import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
 import { CountUp } from "@/components/app/count-up"
 import { Switch } from "@/components/ui/switch"
 import { toastError } from "@/lib/toast"
 import { cn } from "@/lib/utils"
 
+import { ConnectDialog } from "./ConnectDialog"
 import { CooldownRing } from "./CooldownRing"
+import { ResetsLine } from "./ResetsLine"
 import {
   STATUS_LABEL,
+  connectCommand,
   formatTokens,
   providerTitle,
   reauthCommand,
-} from "./model"
+} from "@/lib/accounts-model"
 
 import { ACCOUNTS_INFO } from "./help"
 
@@ -26,12 +35,18 @@ const DOT: Record<AccountDetail["status"], string> = {
   cooldown: "bg-warning",
   auth_expired: "bg-destructive",
   disabled: "bg-muted-foreground",
+  offline: "bg-warning",
+  no_model: "bg-warning",
+  missing: "bg-muted-foreground",
 }
 
 type AccountCardProps = { account: AccountDetail; now: number }
 
 export function AccountCard({ account, now }: AccountCardProps) {
   const setDisabled = useSetAccountDisabled()
+  const setModel = useSetModelDisabled()
+  const rescan = useRescanAccounts()
+  const [connecting, setConnecting] = useState(false)
   const [copied, setCopied] = useState(false)
   const [pulse, setPulse] = useState(false)
   const previous = useRef(account.status)
@@ -75,7 +90,9 @@ export function AccountCard({ account, now }: AccountCardProps) {
             className="truncate text-[13px] font-medium"
             data-testid={`account-email-${id}`}
           >
-            {account.email ?? `${providerTitle(account.provider)} account`}
+            {account.loggedInAs ??
+              account.email ??
+              `${providerTitle(account.provider)} account`}
           </span>
           <div className="flex items-center gap-2 text-[12px] text-muted-foreground">
             {account.tier ? (
@@ -135,6 +152,92 @@ export function AccountCard({ account, now }: AccountCardProps) {
         </label>
       </div>
 
+      {account.status === "cooldown" ? (
+        <p
+          className="text-[12px] text-muted-foreground"
+          data-testid={`account-resets-${id}`}
+        >
+          <ResetsLine at={account.resetsAt ?? account.cooldownUntil} now={now} />
+        </p>
+      ) : null}
+      {account.status === "offline" ? (
+        <p className="text-[12px] text-muted-foreground">
+          No network right now. This is not a problem with the account; it
+          resumes by itself when you are back online.
+        </p>
+      ) : null}
+      {account.status === "no_model" ? (
+        <p className="text-[12px] text-muted-foreground">
+          This login has no model that can run. Pick another in Role slots or
+          rescan.
+        </p>
+      ) : null}
+      {account.status === "missing" ? (
+        <p className="text-[12px] text-muted-foreground">
+          The {providerTitle(account.provider)} command is not installed on this
+          computer.
+        </p>
+      ) : null}
+
+      {account.models.length > 0 ? (
+        <ul
+          role="list"
+          aria-label={`${providerTitle(account.provider)} models`}
+          data-testid={`account-models-${id}`}
+          className="flex flex-col divide-y border text-[12px]"
+        >
+          {account.models.map((m) => (
+            <li
+              key={m.id}
+              data-testid={`model-${id}-${m.id}`}
+              data-status={m.status}
+              className="flex items-center gap-2 px-2 py-1.5"
+            >
+              <span className="min-w-0 flex-1 truncate font-mono" title={m.id}>
+                {m.id}
+              </span>
+              {m.free ? (
+                <Badge variant="secondary" data-testid={`model-free-${m.id}`}>
+                  Free
+                </Badge>
+              ) : null}
+              {m.creditMultiplier != null ? (
+                <span
+                  className="tabular-nums text-muted-foreground"
+                  title="Credits per unit of work, relative to auto"
+                  data-testid={`model-credit-${m.id}`}
+                >
+                  ×{m.creditMultiplier}
+                </span>
+              ) : null}
+              {m.status === "cooldown" && m.resetsAt ? (
+                <span className="text-muted-foreground tabular-nums">
+                  <ResetsLine at={m.resetsAt} now={now} prefix="" />
+                </span>
+              ) : m.disabled ? (
+                <span className="text-muted-foreground">Off</span>
+              ) : null}
+              <Switch
+                size="sm"
+                checked={!m.disabled}
+                disabled={setModel.isPending}
+                data-testid={`model-toggle-${id}-${m.id}`}
+                aria-label={`${m.disabled ? "Enable" : "Disable"} ${m.id}`}
+                onCheckedChange={(on) =>
+                  setModel.mutate(
+                    { id, model: m.id, disabled: !on },
+                    {
+                      onError: (error) =>
+                        toastError(error, "Could not update the model"),
+                    }
+                  )
+                }
+              />
+            </li>
+          ))}
+        </ul>
+      ) : null}
+
       <dl className="grid grid-cols-3 gap-2 text-[12px]">
         <div className="flex flex-col">
           <dt className="flex items-center gap-1 text-muted-foreground">
@@ -189,6 +292,29 @@ export function AccountCard({ account, now }: AccountCardProps) {
           </button>
         </div>
       ) : null}
+
+      {account.status === "auth_expired" || account.status === "missing" ? (
+        <Button
+          variant="outline"
+          size="sm"
+          className="self-start"
+          data-testid={`account-howto-${id}`}
+          onClick={() => setConnecting(true)}
+        >
+          How to connect
+        </Button>
+      ) : null}
+      <ConnectDialog
+        provider={connecting ? account.provider : null}
+        command={connectCommand(account)}
+        onOpenChange={setConnecting}
+        onRescan={() => {
+          setConnecting(false)
+          rescan.mutate(undefined, {
+            onError: (error) => toastError(error, "Rescan failed"),
+          })
+        }}
+      />
     </li>
   )
 }

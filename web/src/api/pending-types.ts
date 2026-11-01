@@ -154,12 +154,22 @@ export type JobItem = ClassroomJob & {
 }
 
 export type TurnErrorInfo = {
+  /** AI failures: OFFLINE, NOT_CONNECTED, NO_MODEL, RATE_LIMITED, TIMED_OUT, NO_RESPONSE, UNKNOWN. */
   code: string
   message: string
   retryable: boolean
   retryAfterMs?: number | null
   /** The server stopped mid-turn; offer Resume. */
   interrupted: boolean
+  /** RATE_LIMITED: epoch ms the soonest limit lifts. */
+  resetsAt?: number | null
+  /** The provider the failure is about. */
+  provider?: string | null
+  model?: string | null
+  /** A command to run (`kiro-cli login`) or a screen (`Settings`). */
+  action?: string | null
+  /** OFFLINE: seconds until the automatic retry. */
+  retryInSecs?: number | null
 }
 
 export type ProblemResult = {
@@ -452,6 +462,13 @@ export interface PendingPaths {
       SendOp<AccountDetail, { disabled: boolean }, { id: string }>
     >
   >
+  "/accounts/{id}/models": Path<
+    Method<
+      "patch",
+      SendOp<AccountDetail, { model: string; disabled: boolean }, { id: string }>
+    >
+  >
+  "/settings/free-defaults": Path<Method<"post", BodylessOp<SettingsDoc>>>
   "/settings": Path<
     Method<"get", GetOp<SettingsDoc>> &
       Method<"put", SendOp<SettingsDoc, SettingsDoc>>

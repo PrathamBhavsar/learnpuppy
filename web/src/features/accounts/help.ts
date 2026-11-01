@@ -6,7 +6,7 @@ export const ACCOUNTS_INFO = {
     title: "Accounts",
     short: "The AI logins LearnPuppy found on this computer.",
     body: [
-      "LearnPuppy has no AI of its own. It looks for the Claude, Codex and Antigravity command-line tools you are already signed in to and borrows them. Each login is one card, grouped by provider.",
+      "LearnPuppy has no AI of its own. It looks for the Claude, Codex, Antigravity, Kiro and OpenCode command-line tools you are already signed in to and borrows them. Kiro and OpenCode have free options. Each login is one card, grouped by provider.",
       "Every login has its own usage allowance. Several logins let the app keep working when one runs out.",
     ],
   },
@@ -52,6 +52,13 @@ export const ACCOUNTS_INFO = {
       "If you keep a second Claude login in its own folder (the one you would set as CLAUDE_CONFIG_DIR), enter that folder here. It then counts as a separate allowance.",
     ],
   },
+  freeModels: {
+    title: "Use free models",
+    short: "Put every role on a free model in one click.",
+    body: [
+      "Sets each role to a free OpenCode model or a Kiro model, and lets a role move to the next free model when one is limited. It never picks a paid model. Your learning style and other settings stay as they are.",
+    ],
+  },
   roleSlots: {
     title: "Role slots",
     short: "Which AI, model and effort each job in the app uses.",
@@ -70,5 +77,6 @@ export const ACCOUNTS_GUIDE_PARTS: InfoContent[] = [
   ACCOUNTS_INFO.usage,
   ACCOUNTS_INFO.rescan,
   ACCOUNTS_INFO.addProfile,
+  ACCOUNTS_INFO.freeModels,
   ACCOUNTS_INFO.roleSlots,
 ]

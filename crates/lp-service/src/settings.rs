@@ -19,7 +19,7 @@ pub const PROFILE_ROLES: [&str; 9] = [
     "demo",
     "pdf",
 ];
-pub const PROVIDERS: [&str; 3] = ["codex", "agy", "claude"];
+pub const PROVIDERS: [&str; 5] = ["codex", "agy", "claude", "kiro", "opencode"];
 pub const EFFORTS: [&str; 6] = ["low", "medium", "high", "xhigh", "max", "ultra"];
 
 /// Model slots, in the order the accounts screen lists them.
@@ -92,6 +92,12 @@ impl LearningStyle {
 /// Model ids per provider, for the catalog: the starter table, every saved profile, plus the
 /// Claude aliases the CLI accepts. Sorted, no duplicates.
 pub fn catalog_models(provider: &str, saved: &Settings) -> Vec<String> {
+    catalog_models_with(provider, saved, &[])
+}
+
+/// [`catalog_models`] plus the model ids the CLI itself listed (`discovered`): kiro and opencode
+/// have no fixed table, so their choices come from discovery and the free preset.
+pub fn catalog_models_with(provider: &str, saved: &Settings, discovered: &[String]) -> Vec<String> {
     let mut out: Vec<String> = DEFAULT_PROFILES
         .iter()
         .filter(|(_, p, _, _)| *p == provider)
@@ -112,6 +118,7 @@ pub fn catalog_models(provider: &str, saved: &Settings) -> Vec<String> {
             .map(str::to_owned),
         );
     }
+    out.extend(discovered.iter().cloned());
     out.extend(
         saved
             .profiles
@@ -123,6 +130,10 @@ pub fn catalog_models(provider: &str, saved: &Settings) -> Vec<String> {
     out.dedup();
     out
 }
+
+/// Free models the preset can always use, discovered or not.
+pub const FREE_OPENCODE_FALLBACK: &str = "opencode/big-pickle";
+pub const FREE_KIRO_MODELS: [&str; 2] = ["qwen3-coder-next", "auto"];
 
 /// The coordinator's starter table: role, provider, model, effort.
 const DEFAULT_PROFILES: [(&str, &str, &str, Option<&str>); 9] = [
@@ -207,6 +218,8 @@ pub struct Settings {
     pub concurrency_cap: u8,
     /// Accounts the user excluded from the pool; re-applied at start.
     pub disabled_accounts: Vec<String>,
+    /// Models the user switched off, as `<account id>|<model id>`; re-applied at start.
+    pub disabled_models: Vec<String>,
 }
 
 impl Settings {
@@ -253,6 +266,32 @@ impl Settings {
             self.profiles.insert(role.into(), p);
         }
         self.learning_style = LearningStyle::Visual;
+    }
+
+    /// The "Use free models" preset: every role runs on a free opencode model or a kiro model
+    /// (`qwen3-coder-next`, `auto`), with fallback on so a limited model hands over to the next free
+    /// one. Never writes a paid slug. `opencode_free` are the free models discovery found (the
+    /// built-in `opencode/big-pickle` is always available). The learning style is left alone.
+    pub fn apply_free_defaults(&mut self, opencode_free: &[String]) {
+        let mut free: Vec<(&str, String)> = vec![("opencode", FREE_OPENCODE_FALLBACK.to_owned())];
+        for m in opencode_free {
+            if !free.iter().any(|(_, x)| x == m) {
+                free.push(("opencode", m.clone()));
+            }
+        }
+        free.push(("kiro", FREE_KIRO_MODELS[0].to_owned()));
+        for (i, role) in PROFILE_ROLES.iter().enumerate() {
+            let (provider, model) = &free[i % free.len()];
+            self.profiles.insert(
+                (*role).into(),
+                Profile {
+                    provider: (*provider).into(),
+                    model: model.clone(),
+                    effort: None,
+                    fallback: true,
+                },
+            );
+        }
     }
 
     /// The replication device id, minting and saving one the first time.
@@ -333,6 +372,47 @@ mod tests {
         let d = tempfile::tempdir().unwrap();
         s.save(d.path()).unwrap();
         assert_eq!(Settings::load(d.path()).unwrap(), s);
+    }
+
+    #[test]
+    fn free_preset_maps_every_role_to_a_free_model_with_fallback() {
+        let mut s = Settings::default();
+        s.apply_defaults();
+        let found = ["opencode/a-free".to_owned(), "opencode/b-free".to_owned()];
+        s.apply_free_defaults(&found);
+        assert_eq!(s.profiles.len(), PROFILE_ROLES.len());
+        for (role, p) in &s.profiles {
+            assert!(p.fallback, "{role}");
+            assert!(matches!(p.provider.as_str(), "opencode" | "kiro"), "{role}");
+            let free = p.model == FREE_OPENCODE_FALLBACK
+                || p.model.ends_with("-free")
+                || FREE_KIRO_MODELS.contains(&p.model.as_str());
+            assert!(free, "{role} got paid slug {}", p.model);
+            Profile::new(&p.provider, &p.model, p.effort.as_deref()).unwrap();
+        }
+        assert_eq!(s.profiles["prober"].model, FREE_OPENCODE_FALLBACK);
+        // Applying again is stable; the learning style the old defaults set stays.
+        let again = s.clone();
+        s.apply_free_defaults(&found);
+        assert_eq!(s, again);
+        assert_eq!(s.learning_style, LearningStyle::Visual);
+        // Without discovery it still works on the built-in free models.
+        let mut bare = Settings::default();
+        bare.apply_free_defaults(&[]);
+        assert!(bare
+            .profiles
+            .values()
+            .all(|p| p.provider == "opencode" || p.provider == "kiro"));
+    }
+
+    #[test]
+    fn kiro_and_opencode_profiles_validate_and_catalog_uses_discovered_models() {
+        assert!(Profile::new("kiro", "qwen3-coder-next", None).is_ok());
+        assert!(Profile::new("opencode", "opencode/big-pickle", None).is_ok());
+        let s = Settings::default();
+        let found = ["opencode/x-free".to_owned()];
+        assert_eq!(catalog_models_with("opencode", &s, &found), found);
+        assert!(catalog_models("opencode", &s).is_empty());
     }
 
     #[test]

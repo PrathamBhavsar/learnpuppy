@@ -2,25 +2,53 @@ import type { AccountDetail, AccountStatus } from "@/api/pending-types"
 
 export const STATUS_LABEL: Record<AccountStatus, string> = {
   ready: "Ready",
-  cooldown: "Cooling down",
-  auth_expired: "Login expired",
+  cooldown: "Limited",
+  auth_expired: "Sign-in needed",
   disabled: "Disabled",
+  offline: "Offline",
+  no_model: "No model",
+  missing: "Not installed",
 }
 
-const PROVIDER_ORDER = ["claude", "codex", "agy"] as const
+const PROVIDER_ORDER = [
+  "claude",
+  "codex",
+  "agy",
+  "kiro",
+  "opencode",
+] as const
 
 const PROVIDER_TITLE: Record<string, string> = {
   claude: "Claude",
   codex: "Codex",
   agy: "Antigravity",
+  kiro: "Kiro",
+  opencode: "OpenCode",
 }
 
-/** Shown when the server sent no `reauthHint` for an expired login. */
-const FALLBACK_HINT: Record<string, string> = {
+/** Providers with a free way to start (shown first in the "Connect an AI" empty state). */
+export const FREE_PROVIDERS = ["kiro", "opencode"] as const
+
+/** The command to run yourself to connect each provider. The app never runs it. */
+export const CONNECT_COMMAND: Record<string, string> = {
   claude: "claude login",
   codex: "codex login",
   agy: "agy auth login",
+  kiro: "kiro-cli login",
+  opencode: "opencode auth login",
 }
+
+/** One line on what each provider is, for the "not connected" cards. */
+export const PROVIDER_BLURB: Record<string, string> = {
+  claude: "Anthropic's Claude, through your Claude subscription.",
+  codex: "OpenAI's Codex, through your ChatGPT plan.",
+  agy: "Google's Antigravity.",
+  kiro: "Kiro has a free tier with several models.",
+  opencode: "OpenCode has free models (such as big-pickle) and needs no payment.",
+}
+
+/** Shown when the server sent no `reauthHint` for an expired login. */
+const FALLBACK_HINT = CONNECT_COMMAND
 
 export function providerTitle(provider: string): string {
   return PROVIDER_TITLE[provider] ?? provider
@@ -79,4 +107,52 @@ export function cooldownFraction(remainingMs: number, totalMs: number): number {
 
 export function readyCount(accounts: readonly AccountDetail[]): number {
   return accounts.filter((a) => a.status === "ready").length
+}
+
+/** Providers with no account at all, in display order. */
+export function missingProviders(accounts: readonly AccountDetail[]): string[] {
+  return PROVIDER_ORDER.filter((p) => !accounts.some((a) => a.provider === p))
+}
+
+/** The command that connects `account` (the server's own `howToConnect`, else the known one). */
+export function connectCommand(account: AccountDetail): string | null {
+  return (
+    account.howToConnect ||
+    reauthCommand(account) ||
+    CONNECT_COMMAND[account.provider] ||
+    null
+  )
+}
+
+export type AiState =
+  | { kind: "ok"; ready: number; total: number }
+  | { kind: "partial"; ready: number; total: number }
+  | { kind: "offline"; ready: number; total: number }
+  /** Nothing is connected or usable (no account, or all signed out / uninstalled). */
+  | { kind: "none"; ready: number; total: number }
+  /** Everything usable is at its limit; `nextResetAt` is when the first comes back. */
+  | { kind: "limited"; ready: number; total: number; nextResetAt: number | null }
+
+/** The worst state across accounts: offline, then none connected, then all limited. */
+export function aiState(accounts: readonly AccountDetail[]): AiState {
+  const total = accounts.length
+  const ready = readyCount(accounts)
+  if (accounts.some((a) => a.status === "offline"))
+    return { kind: "offline", ready, total }
+  const live = accounts.filter(
+    (a) => a.status === "ready" || a.status === "cooldown"
+  )
+  if (live.length === 0) return { kind: "none", ready, total }
+  if (ready === 0) {
+    const times = live
+      .map((a) => a.resetsAt ?? a.cooldownUntil)
+      .filter((t): t is number => typeof t === "number")
+    return {
+      kind: "limited",
+      ready,
+      total,
+      nextResetAt: times.length ? Math.min(...times) : null,
+    }
+  }
+  return { kind: ready < total ? "partial" : "ok", ready, total }
 }

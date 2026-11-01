@@ -46,3 +46,16 @@ export function usePingProfile() {
       unwrap(await pendingApi.POST("/settings/test", { body })),
   })
 }
+
+/** "Use free models": every role on a free opencode or kiro model, with fallback across them. */
+export function useApplyFreeDefaults() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async () =>
+      unwrap(await pendingApi.POST("/settings/free-defaults")),
+    onSuccess: (doc) => {
+      qc.setQueryData(keys.settings(), doc)
+      void qc.invalidateQueries({ queryKey: keys.settingsCatalog() })
+    },
+  })
+}

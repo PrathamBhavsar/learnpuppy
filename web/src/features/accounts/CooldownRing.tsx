@@ -1,6 +1,6 @@
 import { useState } from "react"
 
-import { cooldownFraction, formatCountdown } from "./model"
+import { cooldownFraction, formatCountdown } from "@/lib/accounts-model"
 
 const RADIUS = 14
 const CIRCUMFERENCE = 2 * Math.PI * RADIUS

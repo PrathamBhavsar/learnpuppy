@@ -72,6 +72,8 @@ use crate::error::{ErrorBody, ErrorCode, ErrorEnvelope, FieldError};
         crate::routes::accounts::rescan,
         crate::routes::accounts::add_claude,
         crate::routes::accounts::patch_account,
+        crate::routes::accounts::patch_account_model,
+        crate::routes::accounts::apply_free_defaults,
         crate::routes::accounts::get_settings,
         crate::routes::accounts::put_settings,
         crate::routes::accounts::catalog,
