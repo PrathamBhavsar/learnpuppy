@@ -18,12 +18,14 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
+import { InfoTip } from "@/components/app/info/info"
 import { Label } from "@/components/ui/label"
 import { Spinner } from "@/components/ui/spinner"
 import { Switch } from "@/components/ui/switch"
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
 import { cn } from "@/lib/utils"
 
+import { ingestInfo } from "./info"
 import {
   SOURCE_LABEL,
   normalizePath,
@@ -84,9 +86,10 @@ export function SourcesEditor({
         <div className="flex flex-col gap-1">
           <h2
             id="sources-heading"
-            className="font-heading text-[16px] font-medium"
+            className="flex items-center gap-1.5 font-heading text-[16px] font-medium"
           >
             Sources
+            <InfoTip info={ingestInfo.tools} />
           </h2>
           <p className="text-[13px] text-muted-foreground">
             Which tools to read, and which project folders belong to this
@@ -118,6 +121,7 @@ export function SourcesEditor({
             )}
             Save sources
           </Button>
+          <InfoTip info={ingestInfo.save} />
         </div>
       </div>
 
@@ -141,8 +145,11 @@ export function SourcesEditor({
       </fieldset>
 
       <div className="flex flex-wrap items-center gap-3">
-        <span id="since-label" className="text-[13px] text-muted-foreground">
-          Look back
+        <span className="flex items-center gap-1.5">
+          <span id="since-label" className="text-[13px] text-muted-foreground">
+            Look back
+          </span>
+          <InfoTip info={ingestInfo.since} />
         </span>
         <ToggleGroup
           type="single"
@@ -170,16 +177,22 @@ export function SourcesEditor({
 
       <div className="flex flex-col gap-2">
         <div className="flex items-center justify-between gap-2">
-          <Label htmlFor="manual-path">Project folders</Label>
-          <Button
-            variant="outline"
-            size="sm"
-            data-testid="detect-projects"
-            onClick={() => setDetecting(true)}
-          >
-            <FolderSearchIcon data-icon="inline-start" />
-            Detect projects
-          </Button>
+          <span className="flex items-center gap-1.5">
+            <Label htmlFor="manual-path">Project folders</Label>
+            <InfoTip info={ingestInfo.folders} />
+          </span>
+          <span className="flex items-center gap-1.5">
+            <Button
+              variant="outline"
+              size="sm"
+              data-testid="detect-projects"
+              onClick={() => setDetecting(true)}
+            >
+              <FolderSearchIcon data-icon="inline-start" />
+              Detect projects
+            </Button>
+            <InfoTip info={ingestInfo.detect} />
+          </span>
         </div>
 
         {server.overlaps.length > 0 ? (

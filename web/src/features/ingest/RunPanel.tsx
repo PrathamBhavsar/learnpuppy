@@ -2,11 +2,13 @@ import { CheckIcon, PlayIcon, SquareIcon } from "lucide-react"
 
 import type { IngestRun } from "@/api/pending-types"
 import { CountUp } from "@/components/app/count-up"
+import { InfoTip } from "@/components/app/info/info"
 import { Button } from "@/components/ui/button"
 import { Progress } from "@/components/ui/progress"
 import { Spinner } from "@/components/ui/spinner"
 import { useLive } from "@/stores/live"
 
+import { ingestInfo } from "./info"
 import { formatDuration, percent, phaseLabel } from "./model"
 
 import "./ingest.css"
@@ -44,8 +46,12 @@ export function RunPanel({
       data-state={running ? "running" : "idle"}
       className="flex flex-col gap-4 border p-4"
     >
-      <h2 id="run-heading" className="font-heading text-[16px] font-medium">
+      <h2
+        id="run-heading"
+        className="flex items-center gap-1.5 font-heading text-[16px] font-medium"
+      >
         Run
+        <InfoTip info={ingestInfo.run} />
       </h2>
 
       {running ? (
@@ -58,6 +64,7 @@ export function RunPanel({
             >
               {progress ? phaseLabel(progress.phase) : "Starting"}
             </span>
+            <InfoTip info={ingestInfo.progress} />
             <span
               className="text-muted-foreground tabular-nums"
               data-testid="run-counts"
@@ -150,6 +157,7 @@ function LastRun({ run }: { run: IngestRun }) {
         <span className="font-medium">
           {failed === 0 ? "Last run finished" : "Last run finished with errors"}
         </span>
+        <InfoTip info={ingestInfo.lastRun} />
         <span className="text-muted-foreground tabular-nums">
           · {formatDuration(duration)}
         </span>

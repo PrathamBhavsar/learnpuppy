@@ -12,12 +12,14 @@ import {
 } from "@/api/queries/ingest"
 import { EmptyState } from "@/components/app/empty-state"
 import { ErrorState } from "@/components/app/error-state"
+import { ScreenGuide } from "@/components/app/info/info"
 import { PageHeader } from "@/components/app/page-header"
 import { SkeletonBlock } from "@/components/app/skeleton-block"
 import { usePageTitle } from "@/hooks/use-page-title"
 import { useWorkspaceName } from "@/hooks/use-workspace"
 import { toastError, toastSuccess } from "@/lib/toast"
 
+import { ingestGuide } from "./info"
 import { RunHistory } from "./RunHistory"
 import { RunPanel } from "./RunPanel"
 import { SourcesEditor } from "./SourcesEditor"
@@ -118,6 +120,7 @@ export function IngestScreen({ ws }: { ws: string }) {
       <PageHeader
         title="Ingest"
         description="Read agent sessions and commits for this workspace and turn them into decisions and review cards."
+        actions={<ScreenGuide {...ingestGuide} />}
       />
 
       {loading ? (
