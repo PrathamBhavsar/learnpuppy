@@ -22,6 +22,7 @@ Dropped for good: the Ratatui TUI (`lp-tui`), the Dioxus desktop app (`lp-app`),
 | 08 | [08-task-dag.md](08-task-dag.md) | Waves, tasks, owned files, done-when, order |
 | 09 | [09-grill-and-risks.md](09-grill-and-risks.md) | 34 issues found by attacking this plan, and the fix for each |
 | 10 | [10-acceptance.md](10-acceptance.md) | The "clean UI, every feature working" checklist = definition of done |
+| 11 | [11-help-and-tour.md](11-help-and-tour.md) | In-app help for first-time learners: `InfoTip`, `ScreenGuide`, the first-run tour, how to extend them |
 
 ## Five-line summary
 1. `crates/lp-service` (new, no HTTP) = app logic lifted from `lp-tui`/`lp-app`; `crates/lp-server` (new) = axum + SSE + OpenAPI + embedded SPA.

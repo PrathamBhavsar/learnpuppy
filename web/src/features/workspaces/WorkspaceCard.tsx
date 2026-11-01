@@ -1,3 +1,4 @@
+import { InfoTip } from "@/components/app/info/info"
 import { Link } from "@tanstack/react-router"
 import {
   ArchiveIcon,
@@ -29,6 +30,8 @@ import { cn } from "@/lib/utils"
 
 import { openProps, relativeTime } from "./model"
 import { WorkspaceMark } from "./WorkspaceAvatar"
+
+import { HOME_INFO } from "./help"
 
 export type CardActions = {
   onEdit: (workspace: WorkspaceListItem) => void
@@ -185,6 +188,11 @@ export function WorkspaceCard({
           <Stat value={stats.nodes} label="nodes" />
           <Stat value={stats.chains} label="chains" />
           <Stat value={stats.chats} label="chats" />
+          <InfoTip
+            info={HOME_INFO.numbers}
+            className="pointer-events-auto relative z-10"
+            testId={`info-numbers-${id}`}
+          />
         </div>
       )}
       <div className="mt-auto flex items-center justify-between gap-2 pt-1 text-[11px] text-muted-foreground">
@@ -290,6 +298,7 @@ export function WorkspaceCard({
             >
               <FolderSearchIcon /> Reveal path
             </Button>
+            <InfoTip info={HOME_INFO.repair} testId={`info-repair-${id}`} />
           </div>
         ) : null}
       </div>

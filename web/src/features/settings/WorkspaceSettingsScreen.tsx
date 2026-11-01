@@ -1,3 +1,4 @@
+import { ScreenGuide } from "@/components/app/info/info"
 import { Link } from "@tanstack/react-router"
 import { ArchiveIcon, Trash2Icon } from "lucide-react"
 import { useState } from "react"
@@ -39,6 +40,7 @@ import {
 } from "@/lib/workspace-visual"
 import { cn } from "@/lib/utils"
 
+import { WS_SETTINGS_GUIDE_PARTS, WS_SETTINGS_INFO } from "./help"
 import { Section } from "./Section"
 import { SettingRow } from "./SettingRow"
 
@@ -374,6 +376,13 @@ export function WorkspaceSettingsScreen({ ws }: { ws: string }) {
       <PageHeader
         title="Workspace settings"
         description="Name, sources and model overrides for this workspace."
+        actions={
+          <ScreenGuide
+            title="Workspace settings"
+            summary="Settings for this one workspace only."
+            parts={WS_SETTINGS_GUIDE_PARTS}
+          />
+        }
       />
       {workspace.isPending ? (
         <div data-testid="settings-loading" className="flex flex-col gap-4">
@@ -391,13 +400,13 @@ export function WorkspaceSettingsScreen({ ws }: { ws: string }) {
         />
       ) : (
         <>
-          <Section id="general" title="General">
+          <Section id="general" title="General" info={WS_SETTINGS_INFO.general}>
             <GeneralForm
               key={`${detail.name}|${detail.description}|${detail.icon}|${detail.hue}`}
               detail={detail}
             />
           </Section>
-          <Section id="sources" title="Sources">
+          <Section id="sources" title="Sources" info={WS_SETTINGS_INFO.sources}>
             <SettingRow
               label={`${detail.sources.allow.length} ${detail.sources.allow.length === 1 ? "folder" : "folders"}`}
               description={
@@ -420,11 +429,17 @@ export function WorkspaceSettingsScreen({ ws }: { ws: string }) {
           <Section
             id="overrides"
             title="Model overrides"
+            info={WS_SETTINGS_INFO.overrides}
             description="Override a role for this workspace only. Roles left off inherit the global setting from Accounts."
           >
             <OverridesSection detail={detail} />
           </Section>
-          <Section id="danger" title="Archive and delete" tone="danger">
+          <Section
+            id="danger"
+            title="Archive and delete"
+            tone="danger"
+            info={WS_SETTINGS_INFO.danger}
+          >
             <div className="flex flex-col divide-y">
               <ArchiveRow detail={detail} />
               <DeleteRow detail={detail} />

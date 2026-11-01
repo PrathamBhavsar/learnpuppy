@@ -1,4 +1,4 @@
-import { InfoIcon, LifeBuoyIcon } from "lucide-react"
+import { CircleHelpIcon, InfoIcon } from "lucide-react"
 import { type MouseEvent, type ReactNode, useState } from "react"
 
 import { Button } from "@/components/ui/button"
@@ -105,27 +105,37 @@ export function ScreenGuide({
   summary,
   parts,
   trigger,
+  open: controlledOpen,
+  onOpenChange,
 }: {
   title: string
   summary: string
   parts: InfoContent[]
   trigger?: ReactNode
+  /** Controlled mode (opened from a menu): no header button is rendered. */
+  open?: boolean
+  onOpenChange?: (open: boolean) => void
 }) {
-  const [open, setOpen] = useState(false)
+  const [innerOpen, setInnerOpen] = useState(false)
+  const controlled = controlledOpen !== undefined
+  const open = controlled ? controlledOpen : innerOpen
+  const setOpen = controlled ? (onOpenChange ?? (() => {})) : setInnerOpen
   return (
     <>
-      {trigger ?? (
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={() => setOpen(true)}
-          data-testid="screen-guide-open"
-          aria-label={`About ${title}`}
-        >
-          <LifeBuoyIcon data-icon="inline-start" />
-          About this screen
-        </Button>
-      )}
+      {controlled
+        ? null
+        : (trigger ?? (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setOpen(true)}
+              data-testid="screen-guide-open"
+              aria-label={`About this screen: ${title}`}
+            >
+              <CircleHelpIcon data-icon="inline-start" />
+              About this screen
+            </Button>
+          ))}
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent
           data-testid="screen-guide"

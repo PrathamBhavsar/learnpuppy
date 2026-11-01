@@ -14,6 +14,13 @@ import {
   BreadcrumbSeparator,
 } from "@/components/ui/breadcrumb"
 import { Button } from "@/components/ui/button"
+import { HelpMenu } from "@/components/app/help-menu"
+import { SHELL_INFO } from "@/components/app/info/shell-content"
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip"
 import { usePalette } from "@/stores/palette"
 
 import type { WorkspaceListItem } from "@/api/pending-types"
@@ -92,20 +99,29 @@ export function Topbar({
       className="flex h-12 shrink-0 items-center gap-2 border-b bg-background px-4"
     >
       <Breadcrumbs workspace={workspace} />
-      <Button
-        variant="outline"
-        onClick={() => setPaletteOpen(true)}
-        data-testid="search-trigger"
-        className="w-56 justify-start gap-2 text-muted-foreground"
-      >
-        <SearchIcon aria-hidden data-icon="inline-start" />
-        <span className="flex-1 text-start">Search…</span>
-        <Kbd combo="mod+k" />
-      </Button>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button
+            variant="outline"
+            onClick={() => setPaletteOpen(true)}
+            data-testid="search-trigger"
+            data-tour="search"
+            className="w-56 justify-start gap-2 text-muted-foreground"
+          >
+            <SearchIcon aria-hidden data-icon="inline-start" />
+            <span className="flex-1 text-start">Search…</span>
+            <Kbd combo="mod+k" />
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent>{SHELL_INFO.search.short}</TooltipContent>
+      </Tooltip>
       <WorkspaceJobs workspaceId={workspace?.id ?? null} />
       <AccountsPill />
-      <DirectionToggle />
-      <ThemeToggle />
+      <div className="flex items-center gap-2" data-tour="appearance">
+        <DirectionToggle />
+        <ThemeToggle />
+      </div>
+      <HelpMenu />
     </header>
   )
 }

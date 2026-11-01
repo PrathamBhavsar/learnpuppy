@@ -7,6 +7,8 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover"
+import { InfoTip } from "@/components/app/info/info"
+import { SHELL_INFO } from "@/components/app/info/shell-content"
 import { Skeleton } from "@/components/ui/skeleton"
 
 export type JobRow = {
@@ -55,7 +57,10 @@ export function JobsPopover({
         className="w-72 gap-2"
         data-testid="jobs-popover"
       >
-        <p className="text-[12px] font-medium">Running jobs</p>
+        <p className="flex items-center gap-1.5 text-[12px] font-medium">
+          Running jobs
+          <InfoTip info={SHELL_INFO.jobs} />
+        </p>
         {loading ? (
           <div className="flex flex-col gap-2" data-testid="jobs-loading">
             <Skeleton className="h-8 w-full" />

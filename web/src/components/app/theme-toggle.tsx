@@ -8,6 +8,12 @@ import {
   DropdownMenuRadioItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
+import { SHELL_INFO } from "@/components/app/info/shell-content"
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip"
 import { useTheme } from "@/hooks/use-theme"
 import { THEMES, type Theme, isTheme } from "@/lib/theme"
 
@@ -23,18 +29,23 @@ export function ThemeToggle() {
   const { theme, setTheme } = useTheme()
   return (
     <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <Button
-          variant="ghost"
-          size="icon"
-          data-testid="theme-toggle"
-          aria-label={`Theme: ${LABELS[theme]}`}
-          className="relative"
-        >
-          <SunIcon className="scale-100 rotate-0 transition-[transform,opacity] duration-[var(--dur-base)] dark:scale-0 dark:-rotate-90" />
-          <MoonIcon className="absolute scale-0 rotate-90 transition-[transform,opacity] duration-[var(--dur-base)] dark:scale-100 dark:rotate-0" />
-        </Button>
-      </DropdownMenuTrigger>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <DropdownMenuTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon"
+              data-testid="theme-toggle"
+              aria-label={`Theme: ${LABELS[theme]}`}
+              className="relative"
+            >
+              <SunIcon className="scale-100 rotate-0 transition-[transform,opacity] duration-[var(--dur-base)] dark:scale-0 dark:-rotate-90" />
+              <MoonIcon className="absolute scale-0 rotate-90 transition-[transform,opacity] duration-[var(--dur-base)] dark:scale-100 dark:rotate-0" />
+            </Button>
+          </DropdownMenuTrigger>
+        </TooltipTrigger>
+        <TooltipContent>{SHELL_INFO.theme.short}</TooltipContent>
+      </Tooltip>
       <DropdownMenuContent align="end">
         <DropdownMenuRadioGroup
           value={theme}

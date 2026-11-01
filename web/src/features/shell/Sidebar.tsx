@@ -165,6 +165,7 @@ export function Sidebar({
                 to={`/w/$ws/${key}`}
                 params={{ ws: workspaceId }}
                 data-testid={`nav-${key}`}
+                data-tour={`nav-${key}`}
                 aria-label={collapsed ? label : undefined}
                 aria-current={sectionActive(key) ? "page" : undefined}
                 className={className}
@@ -207,6 +208,7 @@ export function Sidebar({
               <Link
                 to={to}
                 data-testid={testId}
+                data-tour={testId}
                 aria-label={collapsed ? label : undefined}
                 aria-current={pathname.startsWith(to) ? "page" : undefined}
                 className={className}

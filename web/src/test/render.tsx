@@ -1,3 +1,5 @@
+import { TOUR_KEY, useTour } from "@/components/app/tour/tour-store"
+import { storage } from "@/lib/storage"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import {
   RouterProvider,
@@ -13,6 +15,7 @@ import { usePalette } from "@/stores/palette"
 import { useUi } from "@/stores/ui"
 
 export function resetUi() {
+  useTour.setState({ phase: "idle" })
   usePalette.setState({ open: false })
   useUi.setState({
     theme: "system",
@@ -25,7 +28,13 @@ export function resetUi() {
   })
 }
 
+/** Most tests are not about the welcome tour: mark it done unless a test clears the key itself. */
+function markTourDone() {
+  if (storage.get(TOUR_KEY) === null) storage.set(TOUR_KEY, "done")
+}
+
 export function renderWithProviders(ui: ReactElement, options?: RenderOptions) {
+  markTourDone()
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   })
@@ -38,7 +47,8 @@ export function renderWithProviders(ui: ReactElement, options?: RenderOptions) {
 }
 
 /** Render the real route tree at `path` inside an in-memory history. */
-export function renderApp(path: string) {
+export function renderApp(path: string, options: { tour?: boolean } = {}) {
+  if (!options.tour) markTourDone()
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   })

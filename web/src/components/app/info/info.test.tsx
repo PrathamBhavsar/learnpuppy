@@ -18,6 +18,7 @@ describe("InfoTip", () => {
     const parent = vi.fn()
     render(
       <TooltipProvider>
+        {/* eslint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-static-element-interactions -- the parent click is what the test asserts is not triggered */}
         <div onClick={parent}>
           <InfoTip info={info} />
         </div>
