@@ -120,7 +120,6 @@ export function ScreenGuide({
           size="sm"
           onClick={() => setOpen(true)}
           data-testid="screen-guide-open"
-          aria-label={`About ${title}`}
         >
           <LifeBuoyIcon data-icon="inline-start" />
           About this screen
