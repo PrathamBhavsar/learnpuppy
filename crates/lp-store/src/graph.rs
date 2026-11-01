@@ -22,17 +22,45 @@ impl FsGraphStore {
         let dir = dir.into();
         create_dir(&dir)?;
         let db = db::open(&dir.join("graph.db"), MIGRATIONS)?;
-        db.execute("DELETE FROM propositions_fts", []).map_err(be)?;
         let store = Self {
             dir,
             db: Mutex::new(db),
         };
-        for node in GraphSnapshot::from_ledgers(&store.nodes()?, &[])
-            .nodes
-            .values()
-        {
-            store.index(node)?;
-        }
+        // One transaction: a concurrent opener of the same graph.db must never observe the
+        // emptied index between the DELETE and the re-index.
+        store
+            .db
+            .lock()
+            .map_err(be)?
+            .execute_batch("BEGIN IMMEDIATE")
+            .map_err(be)?;
+        let rebuilt = (|| -> StoreResult<()> {
+            store
+                .db
+                .lock()
+                .map_err(be)?
+                .execute("DELETE FROM propositions_fts", [])
+                .map_err(be)?;
+            for node in GraphSnapshot::from_ledgers(&store.nodes()?, &[])
+                .nodes
+                .values()
+            {
+                store.index(node)?;
+            }
+            Ok(())
+        })();
+        let end = if rebuilt.is_ok() {
+            "COMMIT"
+        } else {
+            "ROLLBACK"
+        };
+        store
+            .db
+            .lock()
+            .map_err(be)?
+            .execute_batch(end)
+            .map_err(be)?;
+        rebuilt?;
         Ok(store)
     }
 

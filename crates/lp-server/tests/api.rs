@@ -535,10 +535,18 @@ async fn node_detail_search_and_chain_table() {
     );
 
     let name = g["nodes"][3]["name"].as_str().unwrap();
-    let word = name.split_whitespace().next().unwrap().to_lowercase();
+    let word = name
+        .split(|c: char| !c.is_alphanumeric())
+        .find(|w| w.len() >= 3)
+        .expect("node name has an alphanumeric word")
+        .to_lowercase();
     let s = a.get(&ws(&format!("/graph/search?q={word}&limit=5"))).await;
     assert_eq!(s.status, StatusCode::OK, "{}", s.text);
-    assert!(!s.json()["items"].as_array().unwrap().is_empty());
+    assert!(
+        !s.json()["items"].as_array().unwrap().is_empty(),
+        "word={word:?} name={name:?} resp={}",
+        s.text
+    );
     assert!(s.json()["items"].as_array().unwrap().len() <= 5);
     let empty = a.get(&ws("/graph/search?q=%20")).await;
     assert_eq!(
