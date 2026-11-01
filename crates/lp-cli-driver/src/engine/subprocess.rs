@@ -532,18 +532,16 @@ fn agy_text(v: &Value) -> Result<Option<String>, DriverError> {
 }
 
 /// `(input, output)` tokens from a CLI's final stats line: claude `{"type":"result","usage":{..}}` (cache
-/// reads and writes count as input) or codex `{"type":"turn.completed","usage":{..}}`; agy reports none.
+/// reads and writes count as input) codex `{"type":"turn.completed","usage":{..}}` or agy's final `result` event.
 fn usage_of(kind: CliKind, line: &str) -> Option<(u64, u64)> {
     let v: Value = serde_json::from_str(line).ok()?;
-    let want = match kind {
-        CliKind::Claude => "result",
-        CliKind::Codex => "turn.completed",
-        CliKind::Agy => return None,
+    let u = match kind {
+        CliKind::Claude if v.get("type")?.as_str()? == "result" => v.get("usage")?,
+        CliKind::Codex if v.get("type")?.as_str()? == "turn.completed" => v.get("usage")?,
+        // agy: `{"event":"result","result":{..,"usage":{..}}}`
+        CliKind::Agy if v.get("event")?.as_str()? == "result" => v.get("result")?.get("usage")?,
+        _ => return None,
     };
-    if v.get("type")?.as_str()? != want {
-        return None;
-    }
-    let u = v.get("usage")?;
     let n = |k: &str| u.get(k).and_then(Value::as_u64).unwrap_or(0);
     let input = n("input_tokens") + n("cache_creation_input_tokens") + n("cache_read_input_tokens");
     Some((input, n("output_tokens")))
@@ -884,6 +882,8 @@ echo '{"type":"result","result":"hi there"}'"#;
         assert_eq!(usage_of(CliKind::Codex, codex), Some((24573, 5)));
         assert_eq!(usage_of(CliKind::Claude, codex), None);
         assert_eq!(usage_of(CliKind::Agy, claude), None);
+        let agy = r#"{"event":"result","result":{"status":"SUCCESS","usage":{"input_tokens":40,"output_tokens":3}}}"#;
+        assert_eq!(usage_of(CliKind::Agy, agy), Some((40, 3)));
         assert_eq!(usage_of(CliKind::Claude, "not json"), None);
     }
 
