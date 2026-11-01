@@ -13,12 +13,14 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
+import { InfoTip } from "@/components/app/info/info"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Spinner } from "@/components/ui/spinner"
 import { toastError, toastSuccess } from "@/lib/toast"
 
 import { copy } from "../copy"
+import { graphInfo } from "../info"
 
 const LIST_LIMIT = 8
 
@@ -105,6 +107,7 @@ export function DeleteDialog({
           </AlertDialogTitle>
           <AlertDialogDescription>
             {copy.del.description}
+            <InfoTip info={graphInfo.delete} className="ms-1 align-middle" />
           </AlertDialogDescription>
         </AlertDialogHeader>
 

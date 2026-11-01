@@ -2,11 +2,13 @@ import { SendIcon } from "lucide-react"
 import { useState } from "react"
 
 import type { AnswerInput, PendingQuestion } from "@/api/pending-types"
+import { InfoTip } from "@/components/app/info/info"
 import { Button } from "@/components/ui/button"
 import { Spinner } from "@/components/ui/spinner"
 import { Textarea } from "@/components/ui/textarea"
 import { useHotkey, useHotkeys } from "@/hooks/use-hotkey"
 
+import { classroomInfo } from "../info"
 import { ConfidenceSlider } from "./ConfidenceSlider"
 import { OptionList } from "./OptionList"
 
@@ -95,18 +97,21 @@ export function ChoiceQuestion({
         label={pending.multiSelect ? "Choose all that apply" : "Choose one"}
       />
       {idk ? (
-        <Button
-          type="button"
-          variant="ghost"
-          size="sm"
-          className="self-start text-muted-foreground"
-          disabled={busy}
-          aria-pressed={picked.includes(idk)}
-          onClick={() => setPicked([idk])}
-          data-testid={`${pending.tool}-idk`}
-        >
-          I don&apos;t know
-        </Button>
+        <div className="flex items-center gap-1.5 self-start">
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="text-muted-foreground"
+            disabled={busy}
+            aria-pressed={picked.includes(idk)}
+            onClick={() => setPicked([idk])}
+            data-testid={`${pending.tool}-idk`}
+          >
+            I don&apos;t know
+          </Button>
+          <InfoTip info={classroomInfo.idk} testId="info-idk" />
+        </div>
       ) : null}
       {pending.allowFreeText ? (
         <Textarea

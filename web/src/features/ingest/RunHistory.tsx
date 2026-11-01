@@ -2,6 +2,7 @@ import { ChevronRightIcon, TriangleAlertIcon } from "lucide-react"
 import { useState } from "react"
 
 import type { IngestRun } from "@/api/pending-types"
+import { InfoTip } from "@/components/app/info/info"
 import { Badge } from "@/components/ui/badge"
 import {
   Collapsible,
@@ -11,6 +12,7 @@ import {
 import { useGoto } from "@/hooks/use-goto"
 import { cn } from "@/lib/utils"
 
+import { ingestInfo } from "./info"
 import { actionFor, digestPath, formatDuration, isRunning } from "./model"
 
 type RunHistoryProps = { ws: string; runs: IngestRun[] }
@@ -22,8 +24,12 @@ export function RunHistory({ ws, runs }: RunHistoryProps) {
       data-testid="ingest-history"
       className="flex flex-col gap-3"
     >
-      <h2 id="history-heading" className="font-heading text-[16px] font-medium">
+      <h2
+        id="history-heading"
+        className="flex items-center gap-1.5 font-heading text-[16px] font-medium"
+      >
         History
+        <InfoTip info={ingestInfo.history} />
       </h2>
       {runs.length === 0 ? (
         <p

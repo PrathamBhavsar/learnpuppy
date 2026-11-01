@@ -13,6 +13,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
+import { InfoTip } from "@/components/app/info/info"
 import { useDirection } from "@/components/ui/direction"
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
@@ -20,6 +21,7 @@ import { useReducedMotion } from "@/hooks/use-reduced-motion"
 import { cn } from "@/lib/utils"
 
 import { REVIEW_COPY } from "./copy"
+import { reviewInfo } from "./info"
 import { ReviewCardView } from "./review-card"
 import { type Session, gradedCount } from "./use-session"
 
@@ -112,6 +114,7 @@ export function ReviewSession({
             >
               {REVIEW_COPY.questionOf(number, state.totalCards)}
             </span>
+            <InfoTip info={reviewInfo.progress} />
             <div
               role="progressbar"
               aria-label="Cards reviewed"

@@ -16,6 +16,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
+import { InfoTip } from "@/components/app/info/info"
 import { Switch } from "@/components/ui/switch"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
@@ -24,6 +25,7 @@ import { cn } from "@/lib/utils"
 import { CardDetailDrawer } from "./card-detail-drawer"
 import { useCards, type BrowserCard } from "./api"
 import { REVIEW_COPY } from "./copy"
+import { reviewInfo } from "./info"
 import { formatRelativeDue, useNow } from "./time"
 import { useUrlSearch } from "./use-url-search"
 
@@ -131,6 +133,7 @@ export function CardsBrowser({ ws, filter, onFilter }: Props) {
           <Label htmlFor="review-cards-due" className="text-[13px]">
             {REVIEW_COPY.dueOnly}
           </Label>
+          <InfoTip info={reviewInfo.dueOnly} />
         </div>
       </div>
 
@@ -186,7 +189,10 @@ export function CardsBrowser({ ws, filter, onFilter }: Props) {
             )}
           >
             <span role="columnheader">{REVIEW_COPY.front}</span>
-            <span role="columnheader">{REVIEW_COPY.state}</span>
+            <span role="columnheader" className="flex items-center gap-1">
+              {REVIEW_COPY.state}
+              <InfoTip info={reviewInfo.cardState} />
+            </span>
             <span role="columnheader" className="text-end">
               {REVIEW_COPY.reps}
             </span>

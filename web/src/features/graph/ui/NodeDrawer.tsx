@@ -14,6 +14,7 @@ import { useGraphNode } from "@/api/queries/graph"
 import { toApiError } from "@/api/errors"
 import { MasteryRing } from "@/components/app/mastery-ring"
 import { SkeletonBlock } from "@/components/app/skeleton-block"
+import { InfoTip } from "@/components/app/info/info"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { useReducedMotion } from "@/hooks/use-reduced-motion"
@@ -21,6 +22,7 @@ import { dur, ease } from "@/lib/motion"
 import { cn } from "@/lib/utils"
 
 import { copy, dateFormat } from "../copy"
+import { graphInfo } from "../info"
 import { NODE_KINDS, SOURCES, type Scene } from "../model/scene"
 
 import { SOURCE_BG } from "./source-style"
@@ -58,8 +60,9 @@ function ChainList({
 }) {
   return (
     <section aria-label={title} className="flex flex-col gap-1.5">
-      <h3 className="text-[11px] font-medium tracking-wide text-muted-foreground uppercase">
+      <h3 className="flex items-center gap-1 text-[11px] font-medium tracking-wide text-muted-foreground uppercase">
         {title}
+        <InfoTip info={graphInfo.chains} testId={`info-chains-${side}`} />
       </h3>
       {chains.length === 0 ? (
         <p className="text-[12px] text-muted-foreground">
@@ -151,10 +154,10 @@ export function NodeDrawer({
           <span aria-hidden className={cn("size-2", SOURCE_BG[source])} />
           {copy.legend.sourceNames[source]}
         </Badge>
+        <InfoTip info={graphInfo.drawer} className="ms-auto" />
         <Button
           variant="ghost"
           size="icon-sm"
-          className="ms-auto"
           aria-label={copy.drawer.close}
           data-testid="graph-drawer-close"
           onClick={onClose}
@@ -217,8 +220,9 @@ export function NodeDrawer({
               aria-label={copy.drawer.provenance}
               className="flex flex-col gap-1.5"
             >
-              <h3 className="text-[11px] font-medium tracking-wide text-muted-foreground uppercase">
+              <h3 className="flex items-center gap-1 text-[11px] font-medium tracking-wide text-muted-foreground uppercase">
                 {copy.drawer.provenance}
+                <InfoTip info={graphInfo.provenance} />
               </h3>
               {provenance ? (
                 <blockquote
@@ -269,8 +273,9 @@ export function NodeDrawer({
               aria-label={copy.drawer.cards}
               className="flex flex-col gap-1.5"
             >
-              <h3 className="text-[11px] font-medium tracking-wide text-muted-foreground uppercase">
+              <h3 className="flex items-center gap-1 text-[11px] font-medium tracking-wide text-muted-foreground uppercase">
                 {copy.drawer.cards}
+                <InfoTip info={graphInfo.cards} />
               </h3>
               {cards.length === 0 ? (
                 <p className="text-[12px] text-muted-foreground">

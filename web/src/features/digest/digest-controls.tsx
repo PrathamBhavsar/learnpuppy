@@ -1,12 +1,14 @@
 import { SearchIcon } from "lucide-react"
 
 import type { NodeSource } from "@/api/pending-types"
+import { InfoTip } from "@/components/app/info/info"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
 import { cn } from "@/lib/utils"
 
 import { DIGEST_COPY } from "./copy"
+import { digestInfo } from "./info"
 import { RANGE_PRESETS, type RangePreset, isRangePreset } from "./range"
 import { SOURCE_LABELS, SourceIcon } from "./source-icon"
 
@@ -69,6 +71,7 @@ export function DigestControls({
             </ToggleGroupItem>
           ))}
         </ToggleGroup>
+        <InfoTip info={digestInfo.range} />
         {range === "custom" ? (
           <div
             className="flex items-center gap-2"
@@ -126,6 +129,7 @@ export function DigestControls({
             className="ps-8"
           />
         </div>
+        <InfoTip info={digestInfo.search} />
       </div>
       <div
         role="group"
@@ -154,6 +158,8 @@ export function DigestControls({
             </button>
           )
         })}
+        <InfoTip info={digestInfo.sources} />
+        <InfoTip info={digestInfo.sessions} />
       </div>
     </div>
   )

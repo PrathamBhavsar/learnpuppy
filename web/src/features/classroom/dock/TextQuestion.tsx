@@ -2,9 +2,12 @@ import { SendIcon } from "lucide-react"
 import { useState } from "react"
 
 import type { AnswerInput, PendingQuestion } from "@/api/pending-types"
+import { InfoTip } from "@/components/app/info/info"
 import { Button } from "@/components/ui/button"
 import { Spinner } from "@/components/ui/spinner"
 import { Textarea } from "@/components/ui/textarea"
+
+import { classroomInfo } from "../info"
 
 type TextQuestionProps = {
   pending: PendingQuestion
@@ -68,15 +71,18 @@ export function TextQuestion({ pending, busy, onSubmit }: TextQuestionProps) {
         </p>
         <div className="flex shrink-0 items-center gap-2">
           {pending.tool === "recall" ? (
-            <Button
-              type="button"
-              variant="ghost"
-              disabled={busy}
-              onClick={() => onSubmit({ text: "I don't know" })}
-              data-testid="recall-idk"
-            >
-              I don&apos;t know
-            </Button>
+            <>
+              <InfoTip info={classroomInfo.idk} testId="info-idk" />
+              <Button
+                type="button"
+                variant="ghost"
+                disabled={busy}
+                onClick={() => onSubmit({ text: "I don't know" })}
+                data-testid="recall-idk"
+              >
+                I don&apos;t know
+              </Button>
+            </>
           ) : null}
           <Button
             onClick={submit}

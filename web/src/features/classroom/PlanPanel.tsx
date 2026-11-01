@@ -3,9 +3,11 @@ import { Suspense, lazy } from "react"
 
 import type { ClassroomJob, ClassroomView } from "@/api/pending-types"
 import { SkeletonBlock } from "@/components/app/skeleton-block"
+import { InfoTip } from "@/components/app/info/info"
 import { Badge } from "@/components/ui/badge"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 
+import { classroomInfo } from "./info"
 import { JobsPanel } from "./JobsPanel"
 import { PhaseStepper } from "./PhaseStepper"
 
@@ -30,19 +32,26 @@ export function PlanPanel({ ws, view, onOpenArtifact }: PlanPanelProps) {
         />
       </div>
       <Tabs defaultValue="plan" className="min-h-0 flex-1 gap-0">
-        <TabsList className="m-2 self-start">
-          <TabsTrigger value="plan" data-testid="tab-plan">
-            Plan
-          </TabsTrigger>
-          <TabsTrigger value="jobs" data-testid="tab-jobs">
-            Jobs
-            {view.jobs.length > 0 ? (
-              <Badge variant="secondary" className="ms-1 h-4 px-1 tabular-nums">
-                {running > 0 ? running : view.jobs.length}
-              </Badge>
-            ) : null}
-          </TabsTrigger>
-        </TabsList>
+        <div className="m-2 flex items-center gap-1 self-start">
+          <TabsList>
+            <TabsTrigger value="plan" data-testid="tab-plan">
+              Plan
+            </TabsTrigger>
+            <TabsTrigger value="jobs" data-testid="tab-jobs">
+              Jobs
+              {view.jobs.length > 0 ? (
+                <Badge
+                  variant="secondary"
+                  className="ms-1 h-4 px-1 tabular-nums"
+                >
+                  {running > 0 ? running : view.jobs.length}
+                </Badge>
+              ) : null}
+            </TabsTrigger>
+          </TabsList>
+          <InfoTip info={classroomInfo.plan} />
+          <InfoTip info={classroomInfo.jobs} />
+        </div>
         <TabsContent value="plan" className="min-h-0 flex-1">
           {view.plan && view.plan.nodes.length > 0 ? (
             <Suspense fallback={<SkeletonBlock className="m-3 h-48" />}>

@@ -2,11 +2,13 @@ import { LightbulbIcon, SendIcon } from "lucide-react"
 import { useState } from "react"
 
 import type { AnswerInput, PendingQuestion } from "@/api/pending-types"
+import { InfoTip } from "@/components/app/info/info"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Spinner } from "@/components/ui/spinner"
 import { Textarea } from "@/components/ui/textarea"
 
+import { classroomInfo } from "../info"
 import { LazyMarkdown } from "../markdown/LazyMarkdown"
 
 type ProblemQuestionProps = {
@@ -72,19 +74,22 @@ export function ProblemQuestion({
         className="max-h-64 min-h-28 font-mono"
       />
       <div className="flex items-center justify-between gap-2">
-        <Button
-          type="button"
-          variant="outline"
-          disabled={busy || (rungs.length > 0 && hints >= rungs.length)}
-          onClick={() => {
-            setHints((n) => n + 1)
-            onSubmit({ hint: true, text: text.trim() || undefined })
-          }}
-          data-testid="problem-hint"
-        >
-          <LightbulbIcon data-icon="inline-start" />
-          Give me a hint
-        </Button>
+        <div className="flex items-center gap-1.5">
+          <Button
+            type="button"
+            variant="outline"
+            disabled={busy || (rungs.length > 0 && hints >= rungs.length)}
+            onClick={() => {
+              setHints((n) => n + 1)
+              onSubmit({ hint: true, text: text.trim() || undefined })
+            }}
+            data-testid="problem-hint"
+          >
+            <LightbulbIcon data-icon="inline-start" />
+            Give me a hint
+          </Button>
+          <InfoTip info={classroomInfo.hints} />
+        </div>
         <Button
           onClick={() => canSubmit && onSubmit({ text: text.trim() })}
           disabled={!canSubmit}
