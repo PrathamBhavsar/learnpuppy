@@ -20,6 +20,7 @@ import { Spinner } from "@/components/ui/spinner"
 import { toastError, toastSuccess } from "@/lib/toast"
 
 import { copy } from "../copy"
+import { graphInfo } from "../info"
 
 const LIST_LIMIT = 8
 
@@ -106,6 +107,7 @@ export function DeleteDialog({
           </AlertDialogTitle>
           <AlertDialogDescription>
             {copy.del.description}
+            <InfoTip info={graphInfo.delete} className="ms-1 align-middle" />
           </AlertDialogDescription>
         </AlertDialogHeader>
 

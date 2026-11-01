@@ -18,6 +18,7 @@ describe("InfoTip", () => {
     const parent = vi.fn()
     render(
       <TooltipProvider>
+        {/* eslint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-static-element-interactions -- probes click bubbling */}
         <div onClick={parent}>
           <InfoTip info={info} />
         </div>
