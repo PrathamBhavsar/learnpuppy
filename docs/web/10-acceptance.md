@@ -100,8 +100,8 @@ Release = every box ticked, with evidence (test name or screenshot path) filled 
 - [x] All 45 animations in 05 implemented (checklist table below); reduced-motion variant verified in vitest (`reduced-motion.test.ts`), Playwright `getAnimations()` check pending.
 - [ ] axe: zero serious/critical on all screens/states; keyboard-only walkthrough passes; focus visible everywhere.
   - Evidence: axe specs: shell/gallery, graph+drawer, classroom, ingest/accounts/settings; `keyboard.spec.ts` walkthrough. Review, digest and workspaces screens have no axe spec yet.
-- [ ] Perf budgets in 07 pass; 30-min soak has no leak.
-  - Evidence: `perf/budgets.perf.spec.ts`: LCP 428 ms, no long task > 100 ms, heap growth 34.8→37.7 MB over a SHORT loop (spec budget 30 MB); the 30-min soak has not run.
+- [x] Perf budgets in 07 pass; 30-min soak has no leak.
+  - Evidence: `perf/budgets.perf.spec.ts`: LCP 428 ms, no long task > 100 ms, graph frame times in budget. Soak (`LP_SOAK_MIN=30`, 2026-11-01, mock build): 12,411 navigations + SSE drops, heap 37.3 MB (min 5) -> 42.9 MB (min 30), budget < 30 MB growth. Slight upward drift of ~0.2 MB/min is worth re-checking if it grows; real-server soak not run.
 - [x] Visual baselines committed for light/dark × LTR/RTL; 3 consecutive green `make e2e` runs.
   - Evidence: `visual.spec.ts` + `graph-screenshots.spec.ts` baselines; 2026-11-01 three consecutive `make e2e` runs, each 90 mock + 16 serve passed, 0 flaky. Fixes that got there: `post_turn` returns `stale_question` (not `turn_in_progress`) for an answer posted mid-turn; Playwright `retries: 1` for cold vite chunk-fetch failures.
 - [x] `make gate` and `make e2e` green; `openapi.json` drift-free; `cargo deny` green.
