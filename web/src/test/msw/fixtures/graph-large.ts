@@ -1,19 +1,15 @@
 import type {
-  ChainKind,
   GraphChain,
   GraphCluster,
   GraphNode,
   NodeDetail,
-  NodeKind,
   NodeSource,
 } from "@/api/pending-types"
 
-import type { GraphFixture } from "./graph"
+import { type GraphFixture, wireChain, wireDetail, wireNode } from "./graph"
 import { DAY, mulberry32, pick } from "./rng"
 
 const SOURCES: NodeSource[] = ["claude", "codex", "agy", "git", "chat"]
-const KINDS: NodeKind[] = ["claim", "concept", "procedure", "decision"]
-const CHAIN_KINDS: ChainKind[] = ["supports", "implies", "contrasts", "part_of"]
 const SUBJECTS = [
   "scheduler",
   "waker",
@@ -95,19 +91,21 @@ export function buildLargeGraph(
       Math.round(Math.sin(angle) * ring + gaussian() * spread),
     ]
     owner[i] = c
-    nodes[i] = {
+    const text = `The ${pick(rand, SUBJECTS)} ${pick(rand, VERBS)} the ${pick(rand, SUBJECTS)} (${i + 1})`
+    rand() // keeps the seeded sequence stable now that nodes carry no claim/concept kind
+    const sessionId = pick(rand, sessions)
+    nodes[i] = wireNode(
       id,
-      text: `The ${pick(rand, SUBJECTS)} ${pick(rand, VERBS)} the ${pick(rand, SUBJECTS)} (${i + 1})`,
-      kind: pick(rand, KINDS),
-      sessionId: pick(rand, sessions),
-      provenance: pick(rand, SOURCES),
-      createdAt: now - Math.floor(rand() * 60 * DAY),
-      degree: 0,
-    }
+      text,
+      pick(rand, SOURCES),
+      sessionId,
+      now - Math.floor(rand() * 60 * DAY)
+    )
     clusters[c]?.nodeIds.push(id)
   }
 
   const chains: GraphChain[] = []
+  const byIdAll = new Map(nodes.map((n) => [n.id, n]))
   const seen = new Set<number>()
   const members = clusters.map((c) =>
     c.nodeIds.map((id) => Number(id.slice(prefix.length)) - 1)
@@ -117,12 +115,15 @@ export function buildLargeGraph(
     const key = a < b ? a * count + b : b * count + a
     if (seen.has(key)) return
     seen.add(key)
-    chains.push({
-      id: `ch_${wsId.slice(3)}_${String(chains.length + 1).padStart(5, "0")}`,
-      from: (nodes[a] as GraphNode).id,
-      to: (nodes[b] as GraphNode).id,
-      kind: pick(rand, CHAIN_KINDS),
-    })
+    rand() // keeps the seeded sequence stable now that chains carry no varied kind
+    chains.push(
+      wireChain(
+        byIdAll,
+        `ch_${wsId.slice(3)}_${String(chains.length + 1).padStart(5, "0")}`,
+        (nodes[a] as GraphNode).id,
+        (nodes[b] as GraphNode).id
+      )
+    )
     ;(nodes[a] as GraphNode).degree += 1
     ;(nodes[b] as GraphNode).degree += 1
   }
@@ -154,21 +155,16 @@ export function buildLargeGraph(
     const touching = incident.get(id) ?? []
     const incoming = touching.filter((c) => c.to === id)
     const outgoing = touching.filter((c) => c.from === id)
-    return {
-      ...node,
-      provenanceDetail: {
-        chatId: node.provenance === "chat" ? "c_teach_quiz" : null,
-        messageIndex: node.provenance === "chat" ? 4 : null,
-        snippet: `…noting that ${node.text.charAt(0).toLowerCase()}${node.text.slice(1)} in the trace…`,
-      },
+    return wireDetail(
+      node,
       incoming,
       outgoing,
-      related: touching.slice(0, 6).map((c) => {
-        const other = byId.get(c.from === id ? c.to : c.from) as GraphNode
-        return { id: other.id, text: other.text, kind: other.kind }
-      }),
-      cards: [],
-    }
+      touching
+        .slice(0, 6)
+        .map((c) => byId.get(c.from === id ? c.to : c.from) as GraphNode),
+      [],
+      `…noting that ${node.text.charAt(0).toLowerCase()}${node.text.slice(1)} in the trace…`
+    )
   })
 
   return {
@@ -179,6 +175,7 @@ export function buildLargeGraph(
       clusters,
       positions,
       layoutVersion: 1,
+      layoutPending: false,
     },
     details,
   }

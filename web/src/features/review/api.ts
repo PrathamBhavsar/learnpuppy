@@ -1,22 +1,17 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 
-import type { Client } from "openapi-fetch"
-import { pendingApi, newClientId, unwrap } from "@/api/client"
+import { api, newClientId, unwrap } from "@/api/client"
 import { keys } from "@/api/keys"
-import type {
-  AnswerResult as LegacyAnswer,
-  CardListItem as LegacyCard,
-  IntervalPreview,
-  Rating,
-} from "@/api/pending-types"
-import type { components, paths } from "./schema"
-
-// Reuse F10's transport/middleware with B20 types until the shared schema is regenerated.
-const reviewApi = pendingApi as unknown as Client<paths>
-const api = reviewApi
+import type { IntervalPreview, Rating } from "@/api/pending-types"
+import type { components } from "@/api/schema"
 
 type Dto = components["schemas"]
-export type AnswerResult = LegacyAnswer & { previewItems?: Dto["PreviewDto"][] }
+/** The answer as the session reads it: the wire `AnswerDto` with the preview also folded into days. */
+export type AnswerResult = Omit<Dto["AnswerDto"], "rating" | "preview"> & {
+  rating: Rating
+  preview: IntervalPreview
+  previewItems: Dto["PreviewDto"][]
+}
 export type BrowserCard = Pick<
   Dto["CardBriefDto"],
   "id" | "front" | "due" | "state" | "reps" | "lapses"
@@ -56,9 +51,7 @@ export function useReviewStats(ws: string) {
   })
 }
 
-// F10 mock responses predate B20's generated DTOs. Keep that translation at the boundary.
-function normalizeAnswer(data: Dto["AnswerDto"] | LegacyAnswer): AnswerResult {
-  if (!Array.isArray(data.preview)) return data as LegacyAnswer
+function normalizeAnswer(data: Dto["AnswerDto"]): AnswerResult {
   const names = ["again", "hard", "good", "easy"] as const
   const preview: IntervalPreview = { again: 0, hard: 0, good: 0, easy: 0 }
   for (const item of data.preview) {
@@ -83,13 +76,12 @@ export function useCards(
       const cards: BrowserCard[] = []
       let cursor: string | undefined
       do {
-        const page: Dto["CardPageDto"] | LegacyCard[] = unwrap(
+        const page = unwrap(
           await api.GET("/workspaces/{ws}/review/cards", {
             params: { path: { ws }, query: { ...filter, limit: 200, cursor } },
             signal,
           })
         )
-        if (Array.isArray(page)) return page
         cards.push(...page.items)
         const next = page.nextCursor ?? undefined
         if (next && next === cursor)

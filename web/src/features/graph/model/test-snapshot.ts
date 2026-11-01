@@ -1,5 +1,5 @@
 // Tiny snapshot builder for unit tests: nodes by id with positions, chains by [from, to].
-import type { ChainKind, NodeKind, NodeSource } from "@/api/pending-types"
+import type { ChainKind, NodeSource } from "@/api/pending-types"
 
 import { type Scene, type SnapshotInput, buildScene } from "./scene"
 
@@ -8,7 +8,6 @@ export type TestNode = {
   x?: number
   y?: number
   source?: NodeSource
-  kind?: NodeKind
   cluster?: string
   text?: string
 }
@@ -33,12 +32,14 @@ export function snapshotOf(
   return {
     version: opts.version ?? 1,
     layoutVersion: opts.layoutVersion ?? 1,
+    layoutPending: false,
     nodes: nodes.map((n) => ({
       id: n.id,
+      name: n.id,
       text: n.text ?? `text ${n.id}`,
-      kind: n.kind ?? "claim",
+      kind: n.source ?? "claude",
       sessionId: "s1",
-      provenance: n.source ?? "claude",
+      provenance: [],
       createdAt: 0,
       degree: 0,
     })),
@@ -46,7 +47,9 @@ export function snapshotOf(
       id: `c${i + 1}`,
       from,
       to,
-      kind: kind ?? "supports",
+      kind: kind ?? "implication",
+      premises: [from],
+      conclusion: to,
     })),
     clusters: clusterIds.map((c) => ({
       id: c.id,

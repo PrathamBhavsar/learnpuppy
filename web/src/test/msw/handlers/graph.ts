@@ -1,10 +1,13 @@
 import { HttpResponse, http } from "msw"
 
-import type { ChainTableRow, DeletePreview } from "@/api/pending-types"
+import type { DeletePreview } from "@/api/pending-types"
+import type { components } from "@/api/schema"
 
 import { bus } from "../../mock/bus"
 import { nextId, state } from "../db"
 import { apiError, latency, notFound } from "../respond"
+
+type Dto = components["schemas"]
 
 const API = "*/api/v1/workspaces/:ws/graph"
 
@@ -29,24 +32,29 @@ export const graphHandlers = [
     const graph = graphOf(params["ws"])
     if (!graph) return notFound("Graph")
     const q = (new URL(request.url).searchParams.get("q") ?? "").toLowerCase()
-    const hits = graph.snapshot.nodes
+    const items = graph.snapshot.nodes
       .filter((n) => q && n.text.toLowerCase().includes(q))
       .slice(0, 50)
-      .map((n) => ({ id: n.id, text: n.text, kind: n.kind, score: 1 }))
-    return HttpResponse.json(hits)
+      .map((n) => ({ id: n.id, name: n.name, text: n.text, kind: n.kind }))
+    const body: Dto["GraphSearchDto"] = { items }
+    return HttpResponse.json(body)
   }),
 
   http.post(`${API}/relayout`, ({ params }) => {
     const graph = graphOf(params["ws"])
     if (!graph) return notFound("Graph")
-    graph.snapshot.layoutVersion += 1
+    graph.snapshot.layoutVersion = (graph.snapshot.layoutVersion ?? 0) + 1
     graph.snapshot.version += 1
     bus.emit(
       "graph.changed",
       { version: graph.snapshot.version },
       String(params["ws"])
     )
-    return HttpResponse.json({ layoutVersion: graph.snapshot.layoutVersion })
+    const body: Dto["GraphMutation"] = {
+      version: graph.snapshot.version,
+      layoutVersion: graph.snapshot.layoutVersion,
+    }
+    return HttpResponse.json(body)
   }),
 
   http.post(`${API}/delete-preview`, async ({ params, request }) => {
@@ -61,11 +69,11 @@ export const graphHandlers = [
     const preview: DeletePreview = {
       deleted: ids.size,
       orphanedChains: orphaned.length,
-      blastRadius: orphaned.slice(0, 8).map((c) => ({
-        id: c.id,
-        text: `${c.kind}: ${c.from} → ${c.to}`,
-        reason: "Chain loses an endpoint",
-      })),
+      blastRadius: orphaned
+        .slice(0, 8)
+        .map(
+          (c) => `${c.text ?? `${c.from} → ${c.to}`}: chain loses an endpoint`
+        ),
       previewToken: `prev_${[...ids].sort().join("_")}`,
     }
     return HttpResponse.json(preview)
@@ -94,7 +102,11 @@ export const graphHandlers = [
       cluster.nodeIds = cluster.nodeIds.filter((id) => !ids.has(id))
     graph.snapshot.version += 1
     bus.emit("graph.changed", { version: graph.snapshot.version }, wsId)
-    return HttpResponse.json({ deleted: ids.size })
+    const body: Dto["GraphMutation"] = {
+      version: graph.snapshot.version,
+      layoutVersion: graph.snapshot.layoutVersion ?? 0,
+    }
+    return HttpResponse.json(body)
   }),
 
   http.get(`${API}/chains`, async ({ params, request }) => {
@@ -105,22 +117,36 @@ export const graphHandlers = [
       .split(",")
       .filter(Boolean)
     const picked = new Set(selection)
-    const rows: ChainTableRow[] = graph.snapshot.chains
-      .filter(
-        (c) => picked.size === 0 || picked.has(c.from) || picked.has(c.to)
-      )
-      .map((c) => {
-        const from = graph.snapshot.nodes.find((n) => n.id === c.from)
-        return {
-          groupId: from?.sessionId ?? "unknown",
-          groupLabel: from?.sessionId ?? "Unknown session",
-          chainId: c.id,
-          from: c.from,
-          to: c.to,
-          kind: c.kind,
-        }
+    const nodeById = new Map(graph.snapshot.nodes.map((n) => [n.id, n]))
+    const groups = new Map<string, Dto["ChainGroupDto"]>()
+    let total = 0
+    for (const chain of graph.snapshot.chains) {
+      if (picked.size && !picked.has(chain.from) && !picked.has(chain.to))
+        continue
+      const conclusion = nodeById.get(chain.conclusion)
+      const sessionId = conclusion?.sessionId ?? "unknown"
+      let group = groups.get(sessionId)
+      if (!group) {
+        group = { sessionId, label: sessionId, chains: [] }
+        groups.set(sessionId, group)
+      }
+      group.chains.push({
+        chain,
+        nodes: [...chain.premises, chain.conclusion].flatMap((id) => {
+          const n = nodeById.get(id)
+          return n
+            ? [{ id: n.id, name: n.name, text: n.text, kind: n.kind }]
+            : []
+        }),
       })
-    return HttpResponse.json(rows)
+      total += 1
+    }
+    const body: Dto["ChainTableDto"] = {
+      selection,
+      groups: [...groups.values()],
+      total,
+    }
+    return HttpResponse.json(body)
   }),
 
   http.post(`${API}/practice`, async ({ params, request }) => {
@@ -154,6 +180,7 @@ export const graphHandlers = [
     })
     state.db.chats.set(wsId, chats)
     bus.emit("chat.created", { chatId }, wsId)
-    return HttpResponse.json({ chatId })
+    const body: Dto["PracticeChat"] = { chatId }
+    return HttpResponse.json(body, { status: 201 })
   }),
 ]

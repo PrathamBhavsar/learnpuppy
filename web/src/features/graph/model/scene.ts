@@ -23,12 +23,7 @@ export const NODE_KINDS: readonly NodeKind[] = [
   "procedure",
   "decision",
 ]
-const CHAIN_KINDS: readonly ChainKind[] = [
-  "supports",
-  "implies",
-  "contrasts",
-  "part_of",
-]
+const CHAIN_KINDS: readonly ChainKind[] = ["implication", "conjunction"]
 /** `--cluster-1..8` repeat for graphs with more clusters than hues. */
 const CLUSTER_HUES = 8
 
@@ -116,7 +111,7 @@ const byDegreeThenId =
  */
 /** The snapshot as the API client types it (tuples arrive as `number[]`). */
 export type SnapshotInput = Omit<GraphSnapshot, "positions"> & {
-  positions: Record<string, readonly number[]> | null
+  positions?: Record<string, readonly number[]> | null
 }
 
 export function buildScene(snapshot: SnapshotInput): Scene {
@@ -137,10 +132,11 @@ export function buildScene(snapshot: SnapshotInput): Scene {
   nodes.forEach((node, i) => {
     ids[i] = node.id
     texts[i] = node.text
-    sessionIds[i] = node.sessionId
+    sessionIds[i] = node.sessionId ?? ""
     index.set(node.id, i)
-    source[i] = Math.max(0, SOURCES.indexOf(node.provenance))
-    kind[i] = Math.max(0, NODE_KINDS.indexOf(node.kind))
+    // The wire `kind` is the node's source; it carries no claim/concept distinction, so every node is a claim.
+    source[i] = Math.max(0, SOURCES.indexOf(node.kind as NodeSource))
+    kind[i] = 0
     createdAt[i] = node.createdAt
     const pos = positions?.[node.id]
     if (pos && pos.length >= 2) {
@@ -270,7 +266,7 @@ export function buildScene(snapshot: SnapshotInput): Scene {
 
   return {
     version: snapshot.version,
-    layoutVersion: snapshot.layoutVersion,
+    layoutVersion: snapshot.layoutVersion ?? 0,
     count,
     ids,
     texts,

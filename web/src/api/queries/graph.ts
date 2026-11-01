@@ -7,6 +7,7 @@ import {
 
 import { pendingApi, unwrap } from "../client"
 import { keys } from "../keys"
+import type { ChainTableRow } from "../pending-types"
 
 export function useGraph(ws: string) {
   return useQuery({
@@ -50,15 +51,15 @@ export function useGraphSearch(ws: string, q: string) {
           params: { path: { ws }, query: { q: term } },
           signal,
         })
-      ),
+      ).items,
   })
 }
 
 export function useChainTable(ws: string, selection: readonly string[]) {
   return useQuery({
     queryKey: keys.ws(ws).graphChains(selection),
-    queryFn: async ({ signal }) =>
-      unwrap(
+    queryFn: async ({ signal }): Promise<ChainTableRow[]> => {
+      const table = unwrap(
         await pendingApi.GET("/workspaces/{ws}/graph/chains", {
           params: {
             path: { ws },
@@ -66,7 +67,18 @@ export function useChainTable(ws: string, selection: readonly string[]) {
           },
           signal,
         })
-      ),
+      )
+      return table.groups.flatMap((group) =>
+        group.chains.map(({ chain }) => ({
+          groupId: group.sessionId,
+          groupLabel: group.label,
+          chainId: chain.id,
+          from: chain.from,
+          to: chain.to,
+          kind: chain.kind,
+        }))
+      )
+    },
   })
 }
 

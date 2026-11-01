@@ -1,13 +1,12 @@
 import type {
-  ChainKind,
   GraphChain,
   GraphCluster,
   GraphNode,
   GraphSnapshot,
   NodeDetail,
-  NodeKind,
   NodeSource,
 } from "@/api/pending-types"
+import type { components } from "@/api/schema"
 
 import { DAY, mulberry32, pick } from "./rng"
 
@@ -96,8 +95,86 @@ const TOPICS: Topic[] = [
 ]
 
 const SOURCES: NodeSource[] = ["claude", "codex", "agy", "git", "chat"]
-const KINDS: NodeKind[] = ["claim", "concept", "procedure", "decision"]
-const CHAIN_KINDS: ChainKind[] = ["supports", "implies", "contrasts", "part_of"]
+
+/** Short node name as the server derives it: the first words of the proposition. */
+function nodeName(text: string): string {
+  const words = text.split(/\s+/)
+  const head = words.slice(0, 6).join(" ")
+  return words.length > 6 ? `${head}…` : head
+}
+
+/** A wire chain: `premises` imply `conclusion`; `kind` is `implication` for one premise. */
+export function wireChain(
+  nodes: Map<string, GraphNode>,
+  id: string,
+  from: string,
+  to: string
+): GraphChain {
+  const a = nodes.get(from)?.name ?? from
+  const b = nodes.get(to)?.name ?? to
+  return {
+    id,
+    from,
+    to,
+    kind: "implication",
+    premises: [from],
+    conclusion: to,
+    text: `${a} ⟹ ${b}`,
+  }
+}
+
+/** A wire node. `kind` is where it came from; chat-born nodes carry a provenance pointer. */
+export function wireNode(
+  id: string,
+  text: string,
+  source: NodeSource,
+  sessionId: string,
+  createdAt: number
+): GraphNode {
+  return {
+    id,
+    name: nodeName(text),
+    text,
+    kind: source,
+    sessionId,
+    provenance:
+      source === "chat" ? [{ chatId: "c_teach_quiz", messageId: "m_4" }] : [],
+    createdAt,
+    degree: 0,
+  }
+}
+
+/** The drawer payload for one node. */
+export function wireDetail(
+  node: GraphNode,
+  incoming: GraphChain[],
+  outgoing: GraphChain[],
+  related: GraphNode[],
+  cards: components["schemas"]["CardBriefDto"][],
+  snippet: string
+): NodeDetail {
+  return {
+    ...node,
+    aliases: [],
+    mastery: cards.length ? 0.6 : null,
+    provenanceDetail: node.provenance.map((p) => ({
+      chatId: p.chatId,
+      chatTitle: "Teaching: async basics",
+      messageId: p.messageId,
+      messageIndex: 4,
+      snippet,
+    })),
+    incoming,
+    outgoing,
+    related: related.map((r) => ({
+      id: r.id,
+      name: r.name,
+      text: r.text,
+      kind: r.kind,
+    })),
+    cards,
+  }
+}
 
 export type GraphFixture = {
   snapshot: GraphSnapshot
@@ -135,30 +212,36 @@ export function buildGraph(
       Math.round(cx + (rand() - 0.5) * 520),
       Math.round(cy + (rand() - 0.5) * 520),
     ]
-    nodes.push({
-      id,
-      text: variant === 0 ? (base as string) : `${base} (case ${variant + 1})`,
-      kind: pick(rand, KINDS),
-      sessionId: pick(rand, sessions),
-      provenance: pick(rand, SOURCES),
-      createdAt: now - Math.floor(rand() * 40 * DAY),
-      degree: 0,
-    })
+    rand() // keeps the seeded sequence stable now that nodes carry no claim/concept kind
+    const sessionId = pick(rand, sessions)
+    nodes.push(
+      wireNode(
+        id,
+        variant === 0 ? (base as string) : `${base} (case ${variant + 1})`,
+        pick(rand, SOURCES),
+        sessionId,
+        now - Math.floor(rand() * 40 * DAY)
+      )
+    )
     clusters[topicIndex]?.nodeIds.push(id)
   }
 
   const chains: GraphChain[] = []
+  const nodeById = new Map(nodes.map((n) => [n.id, n]))
   const seen = new Set<string>()
   const add = (from: string, to: string) => {
     const key = `${from}>${to}`
     if (from === to || seen.has(key) || seen.has(`${to}>${from}`)) return
     seen.add(key)
-    chains.push({
-      id: `ch_${wsId.slice(3)}_${String(chains.length + 1).padStart(3, "0")}`,
-      from,
-      to,
-      kind: pick(rand, CHAIN_KINDS),
-    })
+    rand() // keeps the seeded sequence stable now that chains carry no varied kind
+    chains.push(
+      wireChain(
+        nodeById,
+        `ch_${wsId.slice(3)}_${String(chains.length + 1).padStart(3, "0")}`,
+        from,
+        to
+      )
+    )
   }
   for (const cluster of clusters) {
     cluster.nodeIds.forEach((id, i) => {
@@ -189,30 +272,30 @@ export function buildGraph(
       ...incoming.map((c) => c.from),
       ...outgoing.map((c) => c.to),
     ]
-    details.set(node.id, {
-      ...node,
-      provenanceDetail: {
-        chatId: node.provenance === "chat" ? "c_teach_quiz" : null,
-        messageIndex: node.provenance === "chat" ? 4 : null,
-        snippet: `…so ${node.text.charAt(0).toLowerCase()}${node.text.slice(1)}, which is why the executor treats it that way…`,
-      },
-      incoming,
-      outgoing,
-      related: relatedIds.slice(0, 6).map((rid) => {
-        const r = byId.get(rid) as GraphNode
-        return { id: r.id, text: r.text, kind: r.kind }
-      }),
-      cards:
+    details.set(
+      node.id,
+      wireDetail(
+        node,
+        incoming,
+        outgoing,
+        relatedIds.slice(0, 6).map((rid) => byId.get(rid) as GraphNode),
         node.degree > 3
           ? [
               {
                 id: `card_${node.id}`,
                 front: node.text,
                 state: "review" as const,
+                due: now + DAY,
+                reps: 3,
+                lapses: 0,
+                isDue: false,
+                mastery: 0.6,
               },
             ]
           : [],
-    })
+        `…so ${node.text.charAt(0).toLowerCase()}${node.text.slice(1)}, which is why the executor treats it that way…`
+      )
+    )
   }
 
   return {
@@ -223,6 +306,7 @@ export function buildGraph(
       clusters,
       positions,
       layoutVersion: 1,
+      layoutPending: false,
     },
     details,
   }

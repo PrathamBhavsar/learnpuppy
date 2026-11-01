@@ -6,7 +6,6 @@ import type {
   DigestDay,
   IngestRun,
   IngestSourcesWire,
-  ReviewStats,
   SettingsDoc,
 } from "@/api/pending-types"
 
@@ -121,6 +120,6 @@ export function listItem(
   }
 }
 
-export function reviewStats(ws: string): ReviewStats {
+export function reviewStats(ws: string): ReturnType<typeof statsFor> {
   return statsFor(state.db.cards.get(ws) ?? [], state.db.now)
 }

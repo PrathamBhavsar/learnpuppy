@@ -53,59 +53,20 @@ export type ProfilePingResult = Schemas["ProfilePingResult"]
 
 // ───────────────────────────── Graph ─────────────────────────────
 
+/** Presentation-only node shapes; the wire carries no such kind, so every node renders as a claim. */
 export type NodeKind = "claim" | "concept" | "procedure" | "decision"
 export type NodeSource = "claude" | "codex" | "agy" | "git" | "chat"
-export type ChainKind = "supports" | "implies" | "contrasts" | "part_of"
+/** `implication` (one premise) or `conjunction` (several). */
+export type ChainKind = string
 
-export type GraphNode = {
-  id: string
-  text: string
-  kind: NodeKind
-  sessionId: string
-  provenance: NodeSource
-  createdAt: number
-  degree: number
-}
+export type GraphNode = Schemas["GraphNodeDto"]
+export type GraphChain = Schemas["GraphChainDto"]
+export type GraphCluster = Schemas["ClusterDto"]
+export type GraphSnapshot = Schemas["GraphDto"]
+export type NodeDetail = Schemas["NodeDetailDto"]
+export type DeletePreview = Schemas["DeletePreview"]
 
-export type GraphChain = {
-  id: string
-  from: string
-  to: string
-  kind: ChainKind
-  text?: string
-}
-
-export type GraphCluster = { id: string; label: string; nodeIds: string[] }
-
-export type GraphSnapshot = {
-  version: number
-  nodes: GraphNode[]
-  chains: GraphChain[]
-  clusters: GraphCluster[]
-  positions: Record<string, [number, number]> | null
-  layoutVersion: number
-  layoutPending?: boolean
-}
-
-export type NodeDetail = GraphNode & {
-  provenanceDetail: {
-    chatId: string | null
-    messageIndex: number | null
-    snippet: string
-  }
-  incoming: GraphChain[]
-  outgoing: GraphChain[]
-  related: { id: string; text: string; kind: NodeKind }[]
-  cards: { id: string; front: string; state: CardState }[]
-}
-
-export type DeletePreview = {
-  deleted: number
-  orphanedChains: number
-  blastRadius: { id: string; text: string; reason: string }[]
-  previewToken: string
-}
-
+/** One chain flattened for the table: its group (birth session of the conclusion) plus the edge. */
 export type ChainTableRow = {
   groupId: string
   groupLabel: string
@@ -151,12 +112,13 @@ export type ClassroomMessage = {
   calls: { id: string; name: string }[]
   /** For an answer: the question call it answers. */
   answersCallId?: string | null
-  createdAt: number | null
+  createdAt?: number | null
 }
 
 export type PendingQuestion = {
   callId: string
-  tool: PendingTool
+  /** A `PendingTool`; the wire types it as a plain string. */
+  tool: string
   prompt: string
   options?: { key: string; text: string }[] | null
   allowFreeText: boolean
@@ -165,7 +127,7 @@ export type PendingQuestion = {
   /** The answer value that means "I don't know" (options only). */
   idkKey?: string | null
   problem?: {
-    mode: ProblemMode
+    mode: string
     statement: string
     rungs?: string[] | null
   } | null
@@ -384,12 +346,7 @@ export type DecisionDetail = DigestDecision & {
 
 // ───────────────────────────── Ingest ─────────────────────────────
 
-export type IngestCandidate = {
-  path: string
-  sessions: number
-  lastSeen: number
-  source: NodeSource
-}
+export type IngestCandidate = Schemas["Candidate"]
 
 export type IngestRun = {
   id: string
@@ -398,24 +355,10 @@ export type IngestRun = {
   report: IngestReport
 }
 
-export type IngestSourcesBody = {
-  claude: boolean
-  codex: boolean
-  agy: boolean
-  git: boolean
-  /** Project directories whose sessions belong to this workspace; empty disables ingest. */
-  allow: string[]
-  sinceDays: number
-}
+export type IngestSourcesBody = Schemas["SourcesDto"]
 
 /** `IngestSources` on the wire. */
-export type IngestSourcesWire = {
-  sources: IngestSourcesBody
-  enabled: boolean
-  runningId?: string | null
-  candidates: IngestCandidate[]
-  warnings: { path: string; otherPath: string; workspaceId: string }[]
-}
+export type IngestSourcesWire = Schemas["IngestSources"]
 
 /**
  * What the screens read: the wire `IngestSources` flattened (`sources.*` next to `candidates`) with the

@@ -45,8 +45,8 @@ export function useIntervalPreview(ws: string, cardId: string | undefined) {
     enabled: Boolean(cardId),
     queryFn: async ({ signal }) =>
       unwrap(
-        await pendingApi.GET("/workspaces/{ws}/review/preview/{id}", {
-          params: { path: { ws, id: cardId ?? "" } },
+        await pendingApi.GET("/workspaces/{ws}/review/preview/{card}", {
+          params: { path: { ws, card: cardId ?? "" } },
           signal,
         })
       ),
@@ -81,8 +81,8 @@ export function useCardDetail(ws: string, cardId: string | undefined) {
     enabled: Boolean(cardId),
     queryFn: async ({ signal }) =>
       unwrap(
-        await pendingApi.GET("/workspaces/{ws}/review/cards/{id}", {
-          params: { path: { ws, id: cardId ?? "" } },
+        await pendingApi.GET("/workspaces/{ws}/review/cards/{card}", {
+          params: { path: { ws, card: cardId ?? "" } },
           signal,
         })
       ),
@@ -97,8 +97,8 @@ export function useAnswerCard(ws: string) {
       ...body
     }: Omit<AnswerBody, "clientId"> & { cardId: string; clientId?: string }) =>
       unwrap(
-        await pendingApi.POST("/workspaces/{ws}/review/{id}/answer", {
-          params: { path: { ws, id: cardId } },
+        await pendingApi.POST("/workspaces/{ws}/review/{card}/answer", {
+          params: { path: { ws, card: cardId } },
           body: { ...body, clientId: body.clientId ?? newClientId() },
         })
       ),
@@ -117,8 +117,8 @@ export function useGradeCard(ws: string) {
   return useMutation({
     mutationFn: async ({ cardId, rating, clientId }: GradeVars) =>
       unwrap(
-        await pendingApi.POST("/workspaces/{ws}/review/{id}/grade", {
-          params: { path: { ws, id: cardId } },
+        await pendingApi.POST("/workspaces/{ws}/review/{card}/grade", {
+          params: { path: { ws, card: cardId } },
           body: { rating, clientId: clientId ?? newClientId() },
         })
       ),
