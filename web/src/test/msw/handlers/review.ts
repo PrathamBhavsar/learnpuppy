@@ -1,54 +1,23 @@
 import { HttpResponse, http } from "msw"
 
-import type {
-  AnswerBody,
-  AnswerResult,
-  GradeBody,
-  IntervalPreview,
-  Rating,
-} from "@/api/pending-types"
+import type { components } from "@/api/schema"
 
 import { bus } from "../../mock/bus"
 import { reviewStats, state } from "../db"
+import {
+  cardBrief,
+  cardPage,
+  previewList,
+  queueCard,
+} from "../fixtures/review-contract"
 import { DAY } from "../fixtures/rng"
 import { apiError, latency, notFound, once } from "../respond"
+
+type Dto = components["schemas"]
 
 const API = "*/api/v1/workspaces/:ws/review"
 
 const cardsOf = (ws: unknown) => state.db.cards.get(String(ws))
-
-function previewFor(card: { state: string }): IntervalPreview {
-  const fresh = card.state === "new" || card.state === "learning"
-  return fresh
-    ? { again: 0.0007, hard: 0.007, good: 1, easy: 4 }
-    : { again: 0.007, hard: 3, good: 8, easy: 19 }
-}
-
-const INTERVAL_KEY: Record<Rating, keyof IntervalPreview> = {
-  1: "again",
-  2: "hard",
-  3: "good",
-  4: "easy",
-}
-
-const HIDDEN = ["correctKey", "explanation"] as const
-const HIDDEN_FULL = [
-  ...HIDDEN,
-  "stability",
-  "difficulty",
-  "reps",
-  "lapses",
-] as const
-
-/** Drops server-only fields (the answer, FSRS internals) from a stored card before it is served. */
-function strip<T extends object, K extends keyof T>(
-  value: T,
-  keys: readonly K[]
-): Omit<T, K> {
-  const copy = { ...value }
-  for (const key of keys) delete copy[key]
-  return copy
-}
 
 export const reviewHandlers = [
   http.get(`${API}/queue`, async ({ params, request }) => {
@@ -59,10 +28,13 @@ export const reviewHandlers = [
     const due = cards
       .filter((c) => c.due <= state.db.now)
       .sort((a, b) => a.due - b.due)
-      .slice(0, limit)
-      // The answer is withheld until /answer.
-      .map((card) => strip(card, HIDDEN_FULL))
-    return HttpResponse.json({ items: due, nextCursor: null })
+    // The answer is withheld until /answer.
+    const body: Dto["QueueDto"] = {
+      items: due.slice(0, limit).map(queueCard),
+      dueNow: due.length,
+      now: state.db.now,
+    }
+    return HttpResponse.json(body)
   }),
 
   http.get(`${API}/stats`, async ({ params }) => {
@@ -72,9 +44,13 @@ export const reviewHandlers = [
       : notFound("Workspace")
   }),
 
-  http.get(`${API}/preview/:id`, ({ params }) => {
-    const card = cardsOf(params["ws"])?.find((c) => c.id === params["id"])
-    return card ? HttpResponse.json(previewFor(card)) : notFound("Card")
+  http.get(`${API}/preview/:card`, ({ params }) => {
+    const card = cardsOf(params["ws"])?.find((c) => c.id === params["card"])
+    if (!card) return notFound("Card")
+    const body: Dto["PreviewListDto"] = {
+      items: previewList(card, state.db.now),
+    }
+    return HttpResponse.json(body)
   }),
 
   http.get(`${API}/cards`, async ({ params, request }) => {
@@ -84,87 +60,102 @@ export const reviewHandlers = [
     const url = new URL(request.url)
     const stateFilter = url.searchParams.get("state")
     const q = (url.searchParams.get("q") ?? "").toLowerCase()
-    return HttpResponse.json(
-      cards
-        .filter(
-          (c) =>
-            (!stateFilter || c.state === stateFilter) &&
-            (!q || c.front.toLowerCase().includes(q))
-        )
-        .map((card) => strip(card, HIDDEN))
+    const limit = Number(url.searchParams.get("limit") ?? 50)
+    const offset = Number(url.searchParams.get("cursor") ?? 0)
+    const matching = cards.filter(
+      (c) =>
+        (!stateFilter || c.state === stateFilter) &&
+        (!q || c.front.toLowerCase().includes(q))
     )
+    const end = offset + limit
+    const page = cardPage(
+      matching.slice(offset, end),
+      end < matching.length ? String(end) : null,
+      state.db.now
+    )
+    return HttpResponse.json({ ...page, total: matching.length })
   }),
 
-  http.get(`${API}/cards/:id`, async ({ params }) => {
+  http.get(`${API}/cards/:card`, async ({ params }) => {
     await latency()
-    const card = cardsOf(params["ws"])?.find((c) => c.id === params["id"])
+    const card = cardsOf(params["ws"])?.find((c) => c.id === params["card"])
     if (!card) return notFound("Card")
     const history = Array.from({ length: Math.min(card.reps, 6) }, (_, i) => ({
       ts: state.db.now - (card.reps - i) * DAY,
       rating: ((i + card.lapses) % 4) + 1,
       deviceId: "dev_mock",
     }))
-    return HttpResponse.json({
-      ...card,
+    const body: Dto["CardDetailDto"] = {
+      ...cardBrief(card, state.db.now),
+      options: card.options,
+      correctKey: card.correctKey,
       rationale: card.explanation,
+      stability: card.stability,
+      difficulty: card.difficulty,
       history,
-    })
+      preview: previewList(card, state.db.now),
+    }
+    return HttpResponse.json(body)
   }),
 
-  http.post(`${API}/:id/answer`, async ({ params, request }) => {
+  http.post(`${API}/:card/answer`, async ({ params, request }) => {
     await latency()
-    const card = cardsOf(params["ws"])?.find((c) => c.id === params["id"])
+    const card = cardsOf(params["ws"])?.find((c) => c.id === params["card"])
     if (!card) return notFound("Card")
-    const body = (await request.json()) as AnswerBody
-    if (!card.options?.some((o) => o.key === body.choiceKey))
+    const body = (await request.json()) as Dto["AnswerRequest"]
+    if (!card.options.some((o) => o.key === body.choiceKey))
       return apiError("validation", "Unknown choice", {
         details: {
           fields: [{ path: "choiceKey", message: "Pick one of the options" }],
         },
       })
-    const result = once<AnswerResult>(body.clientId, () => {
+    const result = once<Dto["AnswerDto"]>(body.clientId, () => {
       const correct = body.choiceKey === card.correctKey
-      const preview = previewFor(card)
-      const rating: Rating = correct ? 3 : 1
+      const preview = previewList(card, state.db.now)
+      const rating = correct ? 3 : 1
+      const chosen = preview[rating - 1]!
       return {
         correct,
         correctKey: card.correctKey,
         explanation: card.explanation,
         rating,
-        next: {
-          due: state.db.now + preview[INTERVAL_KEY[rating]] * DAY,
-          intervalDays: preview[INTERVAL_KEY[rating]],
-        },
+        next: { due: chosen.due, intervalDays: chosen.intervalMs / DAY },
         preview,
       }
     })
     return HttpResponse.json(result)
   }),
 
-  http.post(`${API}/:id/grade`, async ({ params, request }) => {
+  http.post(`${API}/:card/grade`, async ({ params, request }) => {
     await latency()
     const wsId = String(params["ws"])
-    const card = cardsOf(wsId)?.find((c) => c.id === params["id"])
+    const card = cardsOf(wsId)?.find((c) => c.id === params["card"])
     if (!card) return notFound("Card")
-    const body = (await request.json()) as GradeBody
+    const body = (await request.json()) as Dto["GradeRequest"]
     if (![1, 2, 3, 4].includes(body.rating))
       return apiError("validation", "Rating must be 1 to 4", {
         details: {
           fields: [{ path: "rating", message: "Use 1 (again) to 4 (easy)" }],
         },
       })
-    const graded = once(body.clientId, () => {
-      const days = previewFor(card)[INTERVAL_KEY[body.rating]]
-      card.due = state.db.now + days * DAY
+    const graded = once<Dto["GradeDto"]>(body.clientId, () => {
+      const chosen = previewList(card, state.db.now)[body.rating - 1]!
+      card.due = chosen.due
       card.state = "review"
       card.reps += 1
-      return card
+      return {
+        card: cardBrief(card, state.db.now),
+        preview: previewList(card, state.db.now),
+      }
     })
     bus.emit("review.changed", {}, wsId)
-    return HttpResponse.json(strip(graded, HIDDEN_FULL))
+    return HttpResponse.json(graded)
   }),
 
-  http.post(`${API}/sync`, ({ params }) =>
-    cardsOf(params["ws"]) ? HttpResponse.json({}) : notFound("Workspace")
-  ),
+  http.post(`${API}/sync`, ({ params }) => {
+    const body: Dto["SyncDto"] = { cards: 0, reviews: 0 }
+    return cardsOf(params["ws"])
+      ? HttpResponse.json(body)
+      : notFound("Workspace")
+  }),
 ]

@@ -38,7 +38,7 @@ export function GraphContextMenu({
   onOpenChat,
 }: Props) {
   const detail = useGraphNode(ws, nodeId)
-  const chatId = detail.data?.provenanceDetail.chatId ?? null
+  const chatId = detail.data?.provenanceDetail[0]?.chatId ?? null
   return (
     <ContextMenuContent data-testid="graph-context-menu" className="w-52">
       <ContextMenuItem onSelect={onPractice} data-testid="graph-menu-practice">

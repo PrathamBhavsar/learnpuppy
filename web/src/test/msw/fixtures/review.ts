@@ -1,8 +1,23 @@
-import type { CardListItem, CardState, ReviewStats } from "@/api/pending-types"
+import type { components } from "@/api/schema"
 
 import { DAY, HOUR, mulberry32 } from "./rng"
 
-export type CardFixture = CardListItem & {
+type Schemas = components["schemas"]
+type CardState = Schemas["CardState"]
+
+/** A stored card: the wire `CardDetailDto` fields in one flat record; handlers slice what each endpoint serves. */
+export type CardFixture = {
+  id: string
+  front: string
+  options: Schemas["ChoiceDto"][]
+  kind: string
+  sourceDecisionId: string
+  due: number
+  state: CardState
+  stability: number
+  difficulty: number
+  reps: number
+  lapses: number
   correctKey: string
   explanation: string
 }
@@ -115,7 +130,7 @@ export function cardFixtures(
   const rand = mulberry32(seed)
   return Array.from({ length: 30 }, (_, i) => {
     const q = QUESTIONS[i % QUESTIONS.length]!
-    const keys = ["A", "B", "C", "D"]
+    const keys = ["a", "b", "c", "d"]
     const state = STATES[i % STATES.length]!
     const isDue = i < due
     return {
@@ -136,7 +151,10 @@ export function cardFixtures(
   })
 }
 
-export function statsFor(cards: CardFixture[], now: number): ReviewStats {
+export function statsFor(
+  cards: CardFixture[],
+  now: number
+): Schemas["StatsDto"] {
   const dueNow = cards.filter((c) => c.due <= now).length
   const forecast = Array.from(
     { length: 14 },
@@ -152,5 +170,7 @@ export function statsFor(cards: CardFixture[], now: number): ReviewStats {
     reviewedToday: 4,
     retention30d: 0.87,
     forecast,
+    forecastStart: now,
+    now,
   }
 }

@@ -5,7 +5,6 @@ import type {
   DigestDay,
   IngestRun,
   IngestSourcesWire,
-  ReviewStats,
   SettingsDoc,
   TrashItem,
   WorkspaceDetail,
@@ -124,6 +123,6 @@ export function listItem(ws: WorkspaceDetail): WorkspaceListItem {
   }
 }
 
-export function reviewStats(ws: string): ReviewStats {
+export function reviewStats(ws: string): ReturnType<typeof statsFor> {
   return statsFor(state.db.cards.get(ws) ?? [], state.db.now)
 }

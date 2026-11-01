@@ -15,14 +15,13 @@ describe("buildScene", () => {
         y: 100,
         cluster: "k2",
         source: "git",
-        kind: "decision",
       },
       { id: "d", x: -50, y: 80 },
     ],
     [
       ["a", "b"],
       ["a", "c"],
-      ["c", "d", "implies"],
+      ["c", "d", "conjunction"],
       ["a", "missing"],
       ["b", "b"],
     ]
@@ -33,7 +32,8 @@ describe("buildScene", () => {
     expect(scene.index.get("c")).toBe(2)
     expect(scene.ids).toEqual(["a", "b", "c", "d"])
     expect(SOURCES[scene.source[0] as number]).toBe("codex")
-    expect(scene.kind[2]).toBe(3)
+    // The wire carries no claim/concept kind, so every node draws as a claim.
+    expect(scene.kind[2]).toBe(0)
   })
 
   it("drops chains with a missing endpoint or a self loop", () => {

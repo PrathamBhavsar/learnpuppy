@@ -117,6 +117,8 @@ export const copy = {
     delete: "Delete…",
     loadFailed: "Could not load details",
     chainKinds: {
+      implication: "implies",
+      conjunction: "together imply",
       supports: "supports",
       implies: "implies",
       contrasts: "contrasts",

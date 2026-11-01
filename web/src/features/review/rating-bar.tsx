@@ -7,7 +7,7 @@ import { useReducedMotion } from "@/hooks/use-reduced-motion"
 import { cn } from "@/lib/utils"
 
 import type { IntervalPreview, Rating } from "@/api/pending-types"
-import type { components } from "./schema"
+import type { components } from "@/api/schema"
 import { REVIEW_COPY } from "./copy"
 import { formatIntervalDays } from "./time"
 

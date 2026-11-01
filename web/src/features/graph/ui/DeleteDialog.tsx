@@ -142,13 +142,10 @@ export function DeleteDialog({
                   data-testid="graph-delete-blast"
                   className="flex max-h-44 flex-col gap-1 overflow-y-auto border border-border p-2"
                 >
-                  {data.blastRadius.slice(0, LIST_LIMIT).map((item) => (
-                    <li key={item.id} className="flex flex-col">
+                  {data.blastRadius.slice(0, LIST_LIMIT).map((item, i) => (
+                    <li key={`${i}:${item}`} className="flex flex-col">
                       <span dir="auto" className="truncate">
-                        {item.text}
-                      </span>
-                      <span className="text-[11px] text-muted-foreground">
-                        {item.reason}
+                        {item}
                       </span>
                     </li>
                   ))}

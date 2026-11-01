@@ -119,6 +119,7 @@ export function NodeDrawer({
   const headingRef = useRef<HTMLHeadingElement>(null)
   const source = SOURCES[scene.source[idx] as number] ?? "chat"
   const kind = NODE_KINDS[scene.kind[idx] as number] ?? "claim"
+  const provenance = detail.data?.provenanceDetail[0]
   const cards = detail.data?.cards ?? []
   const inReview = cards.filter((c) => c.state === "review").length
 
@@ -219,13 +220,15 @@ export function NodeDrawer({
               <h3 className="text-[11px] font-medium tracking-wide text-muted-foreground uppercase">
                 {copy.drawer.provenance}
               </h3>
-              <blockquote
-                dir="auto"
-                className="border-s-2 border-border ps-3 text-[12px] leading-[1.5] text-muted-foreground"
-              >
-                {detail.data.provenanceDetail.snippet}
-              </blockquote>
-              {detail.data.provenanceDetail.chatId ? (
+              {provenance ? (
+                <blockquote
+                  dir="auto"
+                  className="border-s-2 border-border ps-3 text-[12px] leading-[1.5] text-muted-foreground"
+                >
+                  {provenance.snippet}
+                </blockquote>
+              ) : null}
+              {provenance ? (
                 <Button
                   asChild
                   variant="link"
@@ -234,7 +237,7 @@ export function NodeDrawer({
                 >
                   <Link
                     to="/w/$ws/learn/$chat"
-                    params={{ ws, chat: detail.data.provenanceDetail.chatId }}
+                    params={{ ws, chat: provenance.chatId }}
                     data-testid="graph-drawer-open-chat"
                   >
                     {copy.drawer.openChat}

@@ -4,6 +4,7 @@ import { HttpResponse, http } from "msw"
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest"
 
 import { state } from "@/test/msw/db"
+import { cardPage } from "@/test/msw/fixtures/review-contract"
 import { server } from "@/test/msw/server"
 import { renderApp, resetUi } from "@/test/render"
 import { useUi } from "@/stores/ui"
@@ -367,7 +368,7 @@ describe("Card browser", () => {
   })
 
   it("shows an empty state when the workspace has no cards", async () => {
-    server.use(http.get(`${API}/cards`, () => HttpResponse.json([])))
+    server.use(http.get(`${API}/cards`, () => HttpResponse.json(cardPage([]))))
     renderApp(`${PATH}?tab=cards`)
     expect(
       await screen.findByText("No cards match these filters")
