@@ -18,6 +18,8 @@ pub fn provider_name(p: ProviderKind) -> &'static str {
         ProviderKind::ClaudeCli => "claude",
         ProviderKind::CodexCli => "codex",
         ProviderKind::AgyCli => "agy",
+        ProviderKind::KiroCli => "kiro",
+        ProviderKind::OpencodeCli => "opencode",
     }
 }
 
@@ -95,6 +97,8 @@ pub fn roots(
         claude_config_dir,
         extra_claude_dirs: settings.claude_dirs.clone(),
         now_ms: u64::try_from(crate::now_ms()).unwrap_or(0),
+        probe_clis: true,
+        ..Default::default()
     }
 }
 

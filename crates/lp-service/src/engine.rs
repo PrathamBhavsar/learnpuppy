@@ -123,6 +123,8 @@ impl CliPoolEngine {
                 ProviderKind::ClaudeCli => CliKind::Claude,
                 ProviderKind::CodexCli => CliKind::Codex,
                 ProviderKind::AgyCli => CliKind::Agy,
+                ProviderKind::KiroCli => CliKind::Kiro,
+                ProviderKind::OpencodeCli => CliKind::Opencode,
             })?;
             engine.config_dir = acct.config_dir.clone();
             engine.role = self.role.clone();
