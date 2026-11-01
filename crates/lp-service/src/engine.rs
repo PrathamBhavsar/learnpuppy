@@ -165,6 +165,17 @@ impl CliPoolEngine {
                         Failure::Other => return Err(DriverError::Exit { code, stderr }),
                     }
                 }
+                // agy reports a spent quota as a failed run, not a non-zero exit.
+                Err(DriverError::Failed(msg))
+                    if !seen.emitted.load(Ordering::Relaxed)
+                        && matches!(classify(&msg, ""), Failure::RateLimit) =>
+                {
+                    let epoch = SystemTime::now()
+                        .duration_since(UNIX_EPOCH)
+                        .map_or(0, |d| d.as_secs());
+                    self.pool
+                        .report_rate_limit(&acct.id, &msg, Instant::now(), epoch);
+                }
                 Err(e) => return Err(e),
             }
             last = Some(DriverError::Exit {
@@ -270,6 +281,8 @@ fn classify(stderr: &str, stdout: &str) -> Failure {
         &["rate", "limit"],
         &["usage", "limit"],
         &["limit", "reached"],
+        &["quota", "reached"],
+        &["quota", "exceeded"],
     ]) || has_code(&w, "429")
     {
         Failure::RateLimit
@@ -438,6 +451,10 @@ mod tests {
 
     #[test]
     fn classify_is_word_bounded_and_reads_stdout() {
+        assert!(matches!(
+            classify("agy ERROR: Individual quota reached. Please upgrade", ""),
+            Failure::RateLimit
+        ));
         for noise in [
             "open /home/u/401/x: denied",
             "connect 127.0.0.1:4290 refused",

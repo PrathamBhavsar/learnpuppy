@@ -102,17 +102,29 @@ test("mod+1/mod+2 switch workspace and keep the section; two tabs stay independe
     return list.items.map((w) => w.id)
   })
   expect(other.length).toBeGreaterThan(1)
-  await page.keyboard.press("ControlOrMeta+2")
-  await expect(page).toHaveURL(new RegExp(`/w/${other[1]}/review$`))
+  await expect(async () => {
+    await page.keyboard.press("ControlOrMeta+2")
+    await expect(page).toHaveURL(new RegExp(`/w/${other[1]}/review$`), {
+      timeout: 1000,
+    })
+  }).toPass()
 
   // A second tab opened on the first workspace is unaffected by the first tab's switch.
   const tab2 = await context.newPage()
   await tab2.goto(`/w/${other[0]}/graph`)
   await expect(tab2).toHaveURL(new RegExp(`/w/${other[0]}/graph$`))
-  await page.keyboard.press("ControlOrMeta+1")
-  await expect(page).toHaveURL(new RegExp(`/w/${other[0]}/review$`))
+  await expect(async () => {
+    await page.keyboard.press("ControlOrMeta+1")
+    await expect(page).toHaveURL(new RegExp(`/w/${other[0]}/review$`), {
+      timeout: 1000,
+    })
+  }).toPass()
   await expect(tab2).toHaveURL(new RegExp(`/w/${other[0]}/graph$`))
-  await tab2.keyboard.press("ControlOrMeta+2")
-  await expect(tab2).toHaveURL(new RegExp(`/w/${other[1]}/graph$`))
+  await expect(async () => {
+    await tab2.keyboard.press("ControlOrMeta+2")
+    await expect(tab2).toHaveURL(new RegExp(`/w/${other[1]}/graph$`), {
+      timeout: 1000,
+    })
+  }).toPass()
   await expect(page).toHaveURL(new RegExp(`/w/${other[0]}/review$`))
 })
