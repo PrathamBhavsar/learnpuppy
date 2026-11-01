@@ -3,7 +3,7 @@ export INSTA_WORKSPACE_ROOT := $(CURDIR)
 export PATH := /opt/homebrew/bin:/opt/homebrew/opt/rustup/bin:$(HOME)/.cargo/bin:$(PATH)
 CARGO ?= /opt/homebrew/opt/rustup/bin/cargo
 
-.PHONY: fmt clippy test okf deny api-gen api-check gate ci disk-guard e2e perf
+.PHONY: fmt clippy test okf deny api-gen api-check gate ci disk-guard e2e perf release install
 
 OPENAPI := web/openapi/openapi.json
 
@@ -56,3 +56,13 @@ perf: disk-guard
 	cd web && bun install --frozen-lockfile && bun run build && bun run bundle-size
 	cd web && bunx playwright test graph.spec -g "performance budgets"
 	cd web && bunx playwright test -c playwright.perf.config.ts
+
+# Single self-contained binary: the SPA (web/dist) is embedded at compile time, so build it first.
+release: disk-guard
+	cd web && bun install --frozen-lockfile && bun run build
+	$(CARGO) build --release -p lp-server
+	@echo "built target/release/learnpuppy"
+
+install: disk-guard
+	cd web && bun install --frozen-lockfile && bun run build
+	$(CARGO) install --path crates/lp-server --locked

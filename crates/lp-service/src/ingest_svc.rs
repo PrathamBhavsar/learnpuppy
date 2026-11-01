@@ -189,12 +189,17 @@ pub fn candidates(roots: &Roots, since: i64) -> anyhow::Result<Vec<Candidate>> {
             let entries = match std::fs::read_dir(&dir) {
                 Ok(e) => e,
                 Err(e) if e.kind() == std::io::ErrorKind::NotFound => continue,
-                Err(e) => return Err(e.into()),
+                // One odd root (a file, no permission) must not take the whole listing down.
+                Err(e) => {
+                    tracing::warn!(dir = %dir.display(), "skipping unreadable transcript dir: {e}");
+                    continue;
+                }
             };
-            for entry in entries {
-                let entry = entry?;
+            for entry in entries.flatten() {
                 let path = entry.path();
-                let kind = entry.file_type()?;
+                let Ok(kind) = entry.file_type() else {
+                    continue;
+                };
                 if kind.is_dir() && entry.file_name() != "subagents" {
                     stack.push(path);
                     continue;
@@ -205,12 +210,16 @@ pub fn candidates(roots: &Roots, since: i64) -> anyhow::Result<Vec<Candidate>> {
                 {
                     continue;
                 }
-                let mut reader = std::io::BufReader::new(std::fs::File::open(path)?);
+                let Ok(file) = std::fs::File::open(&path) else {
+                    continue;
+                };
+                let mut reader = std::io::BufReader::new(file);
                 let mut line = String::new();
                 let (mut cwd, mut last_seen) = (None, 0);
                 loop {
                     line.clear();
-                    if reader.read_line(&mut line)? == 0 {
+                    // Invalid UTF-8 or a read error ends this transcript; what was read still counts.
+                    if !matches!(reader.read_line(&mut line), Ok(n) if n > 0) {
                         break;
                     }
                     let Ok(v) = serde_json::from_str::<serde_json::Value>(&line) else {
@@ -313,6 +322,29 @@ fn agy_candidates(root: &Path, since: i64) -> anyhow::Result<Vec<Candidate>> {
 mod tests {
     use super::*;
     use crate::workspace::{NewWorkspace, NoopSink};
+
+    #[test]
+    fn candidates_skip_a_file_root_and_a_non_utf8_transcript() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let file_root = tmp.path().join("not-a-dir");
+        std::fs::write(&file_root, "x").expect("file");
+        let good = tmp.path().join("projects");
+        std::fs::create_dir_all(&good).expect("dir");
+        std::fs::write(
+            good.join("ok.jsonl"),
+            "{\"cwd\":\"/work/a\",\"timestamp\":\"2026-10-31T00:00:00Z\"}\n",
+        )
+        .expect("ok");
+        std::fs::write(good.join("bad.jsonl"), b"\xff\xfe not utf8\n").expect("bad");
+        let roots = Roots {
+            claude: vec![file_root, good],
+            codex: tmp.path().join("missing"),
+            agy: tmp.path().join("missing-agy"),
+        };
+        let found = candidates(&roots, 0).expect("a bad entry must not fail the listing");
+        assert_eq!(found.len(), 1);
+        assert_eq!(found[0].path, "/work/a");
+    }
 
     #[test]
     fn agy_discovery_reads_wal_snapshot_and_filters_old_sessions() {
