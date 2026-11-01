@@ -1122,6 +1122,10 @@ impl<E: LlmEngine + 'static> ChatRuntime<E> {
                     }
                     return Ok(Accepted::SteerQueued(t.clone()));
                 }
+                // A running turn means no question is pending, so an answer can only be stale.
+                if running && matches!(input, TurnInput::Answer { .. }) {
+                    return Err(Rejected::StaleQuestion);
+                }
                 return Err(Rejected::InProgress { turn_id: turn });
             }
         };

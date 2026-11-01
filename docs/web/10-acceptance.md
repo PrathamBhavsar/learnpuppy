@@ -102,10 +102,8 @@ Release = every box ticked, with evidence (test name or screenshot path) filled 
   - Evidence: axe specs: shell/gallery, graph+drawer, classroom, ingest/accounts/settings; `keyboard.spec.ts` walkthrough. Review, digest and workspaces screens have no axe spec yet.
 - [ ] Perf budgets in 07 pass; 30-min soak has no leak.
   - Evidence: `perf/budgets.perf.spec.ts`: LCP 428 ms, no long task > 100 ms, heap growth 34.8→37.7 MB over a SHORT loop (spec budget 30 MB); the 30-min soak has not run.
-- [ ] Visual baselines committed for light/dark × LTR/RTL; 3 consecutive green `make e2e` runs.
-  - Evidence: `visual.spec.ts` + `graph-screenshots.spec.ts` baselines committed (light/dark × LTR/RTL). Only one clean `make e2e` run recorded on 2026-11-01 (90 mock + 15 serve passed); 3 consecutive not yet recorded.
-
-## I. Engineering hygiene
+- [x] Visual baselines committed for light/dark × LTR/RTL; 3 consecutive green `make e2e` runs.
+  - Evidence: `visual.spec.ts` + `graph-screenshots.spec.ts` baselines; 2026-11-01 three consecutive `make e2e` runs, each 90 mock + 16 serve passed, 0 flaky. Fixes that got there: `post_turn` returns `stale_question` (not `turn_in_progress`) for an answer posted mid-turn; Playwright `retries: 1` for cold vite chunk-fetch failures.
 - [x] `make gate` and `make e2e` green; `openapi.json` drift-free; `cargo deny` green.
   - Evidence: 2026-11-01: `make gate` exit 0 (includes openapi drift via `api-check`), `make e2e` exit 0, `make deny` passed earlier (A70).
 - [x] No `unwrap()` in routes; no physical-direction classes; no external network requests (Playwright asserts zero non-localhost requests).

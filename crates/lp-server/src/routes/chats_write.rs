@@ -755,6 +755,14 @@ mod tests {
             .await;
         assert_eq!(status, StatusCode::CONFLICT);
         assert_eq!(v["error"]["code"], "turn_in_progress");
+        let (status, v) = api
+            .post(
+                &format!("/chats/{chat}/turn"),
+                json!({"type":"answer","callId":"call_gone","answer":{"choice":[],"text":"x"},"clientId":"late"}),
+            )
+            .await;
+        assert_eq!(status, StatusCode::CONFLICT);
+        assert_eq!(v["error"]["code"], "stale_question");
         let (status, _) = api
             .post(
                 &format!("/chats/{chat}/turn"),
