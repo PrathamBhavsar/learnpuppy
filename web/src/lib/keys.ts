@@ -37,6 +37,15 @@ export function isEditable(target: EventTarget | null): boolean {
   )
 }
 
+function inDialog(target: EventTarget | null): boolean {
+  return (
+    target instanceof Element &&
+    target.closest(
+      '[data-testid="info-dialog"], [data-testid="screen-guide"]'
+    ) !== null
+  )
+}
+
 /** `combo` is a key with optional `mod+` (⌘ on macOS, Ctrl elsewhere), `shift+` and `alt+` prefixes. */
 export function matchesCombo(event: KeyboardEvent, combo: string): boolean {
   const parts = combo.toLowerCase().split("+")
@@ -99,6 +108,8 @@ export function registerShortcut(
 function allowed(entry: Entry, event: KeyboardEvent): boolean {
   if (!entry.enabled.current) return false
   const allowInInput = entry.allowInInput ?? entry.keys.includes("mod")
+  // Plain keys belong to an open info dialog, never to the screen behind it.
+  if (!entry.keys.includes("mod") && inDialog(event.target)) return false
   return allowInInput || !isEditable(event.target)
 }
 

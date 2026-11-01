@@ -3,12 +3,14 @@ import { motion } from "motion/react"
 import { useEffect, useMemo, useState } from "react"
 
 import type { Rating } from "@/api/pending-types"
+import { InfoTip } from "@/components/app/info/info"
 import { CountUp } from "@/components/app/count-up"
 import { MasteryRing } from "@/components/app/mastery-ring"
 import { Button } from "@/components/ui/button"
 import { useReducedMotion } from "@/hooks/use-reduced-motion"
 
 import { REVIEW_COPY } from "./copy"
+import { reviewInfo } from "./info"
 import { formatRelativeDue } from "./time"
 import { type CardOutcome, type SessionState, gradedCount } from "./use-session"
 
@@ -89,6 +91,7 @@ export function SessionSummary({ state, onAgain, onExit, exitLabel }: Props) {
       <header className="flex flex-col gap-1">
         <h2 className="font-heading text-[24px] font-medium">
           {REVIEW_COPY.sessionComplete}
+          <InfoTip info={reviewInfo.summary} className="ms-2 align-middle" />
         </h2>
         <p className="text-[13px] text-muted-foreground tabular-nums">
           {total} card{total === 1 ? "" : "s"} reviewed

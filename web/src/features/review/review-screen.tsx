@@ -11,6 +11,7 @@ import { useCallback, useMemo, useState } from "react"
 import { toApiError } from "@/api/errors"
 import { EmptyState } from "@/components/app/empty-state"
 import { ErrorState } from "@/components/app/error-state"
+import { InfoTip, ScreenGuide } from "@/components/app/info/info"
 import { PageHeader } from "@/components/app/page-header"
 import { SkeletonBlock } from "@/components/app/skeleton-block"
 import { Button } from "@/components/ui/button"
@@ -24,6 +25,7 @@ import { type BrowserFilter, CardsBrowser } from "./cards-browser"
 import { useCards, useReviewQueue, useReviewStats } from "./api"
 import { REVIEW_COPY } from "./copy"
 import { Forecast } from "./forecast"
+import { reviewGuide, reviewInfo } from "./info"
 import { buildQueue, parseDecisionIds } from "./queue"
 import { ReviewControls, type ReviewControlsValue } from "./review-controls"
 import { ReviewSession } from "./review-session"
@@ -105,22 +107,25 @@ export function ReviewScreen({
           title={REVIEW_COPY.title}
           description={REVIEW_COPY.description}
           actions={
-            <TabsList data-testid="review-tabs">
-              <TabsTrigger
-                value="review"
-                data-testid="review-tab-review"
-                className="text-foreground"
-              >
-                Review
-              </TabsTrigger>
-              <TabsTrigger
-                value="cards"
-                data-testid="review-tab-cards"
-                className="text-foreground"
-              >
-                {REVIEW_COPY.browserTitle}
-              </TabsTrigger>
-            </TabsList>
+            <>
+              <ScreenGuide {...reviewGuide} />
+              <TabsList data-testid="review-tabs">
+                <TabsTrigger
+                  value="review"
+                  data-testid="review-tab-review"
+                  className="text-foreground"
+                >
+                  Review
+                </TabsTrigger>
+                <TabsTrigger
+                  value="cards"
+                  data-testid="review-tab-cards"
+                  className="text-foreground"
+                >
+                  {REVIEW_COPY.browserTitle}
+                </TabsTrigger>
+              </TabsList>
+            </>
           }
         />
 
@@ -206,16 +211,18 @@ export function ReviewScreen({
                 >
                   <div className="flex items-center justify-between gap-4">
                     <div className="flex flex-col gap-1">
-                      <h2 className="font-heading text-[20px] font-medium">
+                      <h2 className="flex items-center gap-2 font-heading text-[20px] font-medium">
                         {REVIEW_COPY.startReview(sessionCards.length)}
+                        <InfoTip info={reviewInfo.review} />
                       </h2>
                       <p
                         data-testid="review-start-note"
-                        className="text-[13px] text-muted-foreground"
+                        className="flex items-center gap-1.5 text-[13px] text-muted-foreground"
                       >
                         {decisions
                           ? REVIEW_COPY.filteredNote(decisions.size)
                           : REVIEW_COPY.dueNote}
+                        <InfoTip info={reviewInfo.spaced} />
                       </p>
                     </div>
                     <Button

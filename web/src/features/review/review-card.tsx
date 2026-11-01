@@ -4,6 +4,7 @@ import { motion, useIsPresent } from "motion/react"
 import { useEffect, useRef, useState } from "react"
 
 import type { Rating, ReviewCard } from "@/api/pending-types"
+import { InfoTip } from "@/components/app/info/info"
 import { Spinner } from "@/components/ui/spinner"
 import { useReducedMotion } from "@/hooks/use-reduced-motion"
 import { isEditable } from "@/lib/keys"
@@ -11,11 +12,22 @@ import { toastError } from "@/lib/toast"
 import { cn } from "@/lib/utils"
 
 import { Choices } from "./choices"
+import { reviewInfo } from "./info"
 import { useAnswerCard, useGradeCard } from "./api"
 import { PromptMarkdown } from "./prompt-markdown"
 import { RatingBar } from "./rating-bar"
 import { resolveSessionKey } from "./session-keys"
 import type { Session } from "./use-session"
+
+/** Keys typed inside an info dialog, or on an info button, belong to that control and never rate the card. */
+function inOverlayOrInfo(target: EventTarget | null): boolean {
+  return (
+    target instanceof Element &&
+    target.closest(
+      '[data-testid="info-dialog"], [data-testid="screen-guide"], button[aria-label^="About "]'
+    ) !== null
+  )
+}
 
 type Props = {
   ws: string
@@ -92,7 +104,12 @@ export function ReviewCardView({
   useEffect(() => {
     if (!keysEnabled || !present) return
     const onKey = (event: KeyboardEvent) => {
-      if (event.repeat || isEditable(event.target)) return
+      if (
+        event.repeat ||
+        isEditable(event.target) ||
+        inOverlayOrInfo(event.target)
+      )
+        return
       const action = resolveSessionKey(phase, optionCount, event)
       if (!action) return
       event.preventDefault()
@@ -148,6 +165,7 @@ export function ReviewCardView({
           ) : null}
           {card.sourceDecisionId ? <span aria-hidden>·</span> : null}
           <span data-testid="review-card-state">{card.state}</span>
+          <InfoTip info={reviewInfo.card} />
         </div>
         <div
           data-testid="review-card-prompt"
@@ -201,8 +219,9 @@ export function ReviewCardView({
               <XIcon className="mt-0.5 size-4 shrink-0 text-destructive" />
             )}
             <div className="flex min-w-0 flex-col gap-1">
-              <p className="text-[13px] font-medium">
+              <p className="flex items-center gap-1.5 text-[13px] font-medium">
                 {correct ? "Correct" : "Not quite"}
+                <InfoTip info={reviewInfo.verdict} />
               </p>
               <p dir="auto" className="text-[13px] text-muted-foreground">
                 {result.explanation}
@@ -211,8 +230,9 @@ export function ReviewCardView({
           </div>
 
           <div className="flex flex-col gap-1.5">
-            <p className="text-[12px] text-muted-foreground">
+            <p className="flex items-center gap-1.5 text-[12px] text-muted-foreground">
               How well did you recall it?
+              <InfoTip info={reviewInfo.rating} />
             </p>
             <RatingBar
               preview={result.preview}
