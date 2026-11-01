@@ -1,3 +1,4 @@
+import { InfoTip, ScreenGuide } from "@/components/app/info/info"
 import { PlusIcon, RefreshCwIcon, UsersRoundIcon } from "lucide-react"
 import { useState } from "react"
 
@@ -23,6 +24,7 @@ import { toastError } from "@/lib/toast"
 import { AccountCard } from "./AccountCard"
 import { AddProfileDialog } from "./AddProfileDialog"
 import { groupAccounts, readyCount } from "./model"
+import { ACCOUNTS_GUIDE_PARTS, ACCOUNTS_INFO } from "./help"
 import { useNow } from "./use-now"
 
 function RescanButton() {
@@ -105,6 +107,11 @@ export function AccountsScreen() {
         description="Model accounts found on this machine and the roles they fill."
         actions={
           <>
+            <ScreenGuide
+              title="Accounts"
+              summary="The AI logins this app borrows from your computer, and which one does which job."
+              parts={ACCOUNTS_GUIDE_PARTS}
+            />
             <RescanButton />
             <Button
               size="sm"
@@ -188,12 +195,15 @@ export function AccountsScreen() {
         className="flex flex-col gap-3"
       >
         <div className="flex flex-col gap-1">
-          <h2
-            id="role-slots-heading"
-            className="font-heading text-[16px] font-medium"
-          >
-            Role slots
-          </h2>
+          <div className="flex items-center gap-1.5">
+            <h2
+              id="role-slots-heading"
+              className="font-heading text-[16px] font-medium"
+            >
+              Role slots
+            </h2>
+            <InfoTip info={ACCOUNTS_INFO.roleSlots} />
+          </div>
           <p className="text-[13px] text-muted-foreground">
             Which provider, model and effort each agent role uses. Workspaces
             can override these in their own settings.

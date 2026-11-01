@@ -13,6 +13,16 @@ export default defineConfig({
   use: {
     baseURL: `http://localhost:${PORT}`,
     trace: "retain-on-failure",
+    // The welcome tour is covered by tour.spec.ts; every other spec starts with it already seen.
+    storageState: {
+      cookies: [],
+      origins: [
+        {
+          origin: `http://localhost:${PORT}`,
+          localStorage: [{ name: "lp-tour", value: "done" }],
+        },
+      ],
+    },
   },
   projects: [
     {

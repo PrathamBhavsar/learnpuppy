@@ -11,6 +11,7 @@ import { CompassIcon } from "lucide-react"
 
 import { EmptyState } from "@/components/app/empty-state"
 import { Button } from "@/components/ui/button"
+import { Tour } from "@/components/app/tour/Tour"
 import { CommandPalette } from "@/features/palette/CommandPalette"
 import { AuthRequired } from "@/features/shell/AuthRequired"
 import { ShortcutsSheet } from "@/features/shell/ShortcutsSheet"
@@ -61,6 +62,7 @@ function Root() {
       <Outlet />
       <CommandPalette />
       <ShortcutsSheet />
+      <Tour />
       {authRequired ? <AuthRequired /> : null}
     </>
   )

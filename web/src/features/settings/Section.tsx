@@ -1,3 +1,4 @@
+import { type InfoContent, InfoTip } from "@/components/app/info/info"
 import type { ReactNode } from "react"
 
 type SectionProps = {
@@ -6,6 +7,8 @@ type SectionProps = {
   description?: string
   children: ReactNode
   tone?: "default" | "danger"
+  /** Adds an (i) next to the title that explains the card in plain words. */
+  info?: InfoContent
 }
 
 export function Section({
@@ -14,6 +17,7 @@ export function Section({
   description,
   children,
   tone = "default",
+  info,
 }: SectionProps) {
   return (
     <section
@@ -26,12 +30,15 @@ export function Section({
       }
     >
       <div className="flex flex-col gap-1">
-        <h2
-          id={`${id}-heading`}
-          className="font-heading text-[15px] font-medium"
-        >
-          {title}
-        </h2>
+        <div className="flex items-center gap-1.5">
+          <h2
+            id={`${id}-heading`}
+            className="font-heading text-[15px] font-medium"
+          >
+            {title}
+          </h2>
+          {info ? <InfoTip info={info} testId={`info-${id}`} /> : null}
+        </div>
         {description ? (
           <p className="text-[13px] text-muted-foreground">{description}</p>
         ) : null}

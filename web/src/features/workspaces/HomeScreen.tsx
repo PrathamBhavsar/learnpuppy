@@ -16,6 +16,8 @@ import {
   useSetWorkspaceArchived,
   useWorkspaces,
 } from "@/api/queries/workspaces"
+import { HelpMenu } from "@/components/app/help-menu"
+import { InfoTip, ScreenGuide } from "@/components/app/info/info"
 import { DirectionToggle } from "@/components/app/direction-toggle"
 import { EmptyState } from "@/components/app/empty-state"
 import { ErrorState } from "@/components/app/error-state"
@@ -36,6 +38,7 @@ import { useStartExport } from "./exports"
 import { ImportDialog } from "./ImportDialog"
 import { Onboarding } from "./Onboarding"
 import type { CardActions } from "./WorkspaceCard"
+import { HOME_GUIDE_PARTS, HOME_INFO } from "./help"
 import { WorkspaceDialog } from "./WorkspaceDialog"
 import { WorkspaceGrid, WorkspaceGridSkeleton } from "./WorkspaceGrid"
 
@@ -132,59 +135,68 @@ export function HomeScreen({ newRequested }: Props) {
       title="Workspaces"
       description="Each workspace is its own knowledge base."
       actions={
-        showOnboarding ? undefined : (
-          <>
-            {due > 0 ? (
-              <Button asChild variant="secondary" size="sm">
-                <Link to="/review-all" data-testid="due-all-link">
-                  <LayersIcon data-icon="inline-start" />
-                  <span className="tabular-nums">
-                    Due today: {due} across {dueIn}
-                  </span>
+        <>
+          <ScreenGuide
+            title="Workspaces"
+            summary="The home screen lists every workspace, one per subject. Here is what each part does."
+            parts={HOME_GUIDE_PARTS}
+          />
+          {showOnboarding ? null : (
+            <>
+              {due > 0 ? (
+                <Button asChild variant="secondary" size="sm">
+                  <Link to="/review-all" data-testid="due-all-link">
+                    <LayersIcon data-icon="inline-start" />
+                    <span className="tabular-nums">
+                      Due today: {due} across {dueIn}
+                    </span>
+                  </Link>
+                </Button>
+              ) : null}
+              {archivedList.length > 0 ? (
+                <div className="flex items-center gap-1.5">
+                  <Switch
+                    id="show-archived"
+                    checked={showArchived}
+                    onCheckedChange={setShowArchived}
+                    data-testid="archived-toggle"
+                  />
+                  <Label htmlFor="show-archived" className="text-[12px]">
+                    Archived
+                    <Badge variant="outline" className="tabular-nums">
+                      {archivedList.length}
+                    </Badge>
+                  </Label>
+                  <InfoTip info={HOME_INFO.archived} />
+                </div>
+              ) : null}
+              <Button variant="ghost" size="sm" asChild>
+                <Link to="/trash" data-testid="trash-link">
+                  <Trash2Icon data-icon="inline-start" />
+                  Trash
                 </Link>
               </Button>
-            ) : null}
-            {archivedList.length > 0 ? (
-              <div className="flex items-center gap-1.5">
-                <Switch
-                  id="show-archived"
-                  checked={showArchived}
-                  onCheckedChange={setShowArchived}
-                  data-testid="archived-toggle"
-                />
-                <Label htmlFor="show-archived" className="text-[12px]">
-                  Archived
-                  <Badge variant="outline" className="tabular-nums">
-                    {archivedList.length}
-                  </Badge>
-                </Label>
-              </div>
-            ) : null}
-            <Button variant="ghost" size="sm" asChild>
-              <Link to="/trash" data-testid="trash-link">
-                <Trash2Icon data-icon="inline-start" />
-                Trash
-              </Link>
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setImporting(true)}
-              data-testid="import-open"
-            >
-              <UploadIcon data-icon="inline-start" />
-              Import
-            </Button>
-            <Button
-              size="sm"
-              onClick={() => setCreating(true)}
-              data-testid="new-workspace"
-            >
-              <PlusIcon data-icon="inline-start" />
-              New workspace
-            </Button>
-          </>
-        )
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setImporting(true)}
+                data-testid="import-open"
+              >
+                <UploadIcon data-icon="inline-start" />
+                Import
+              </Button>
+              <Button
+                size="sm"
+                onClick={() => setCreating(true)}
+                data-testid="new-workspace"
+                data-tour="home-new"
+              >
+                <PlusIcon data-icon="inline-start" />
+                New workspace
+              </Button>
+            </>
+          )}
+        </>
       }
     />
   )
@@ -197,10 +209,15 @@ export function HomeScreen({ newRequested }: Props) {
     >
       <div className="mx-auto flex max-w-5xl flex-col gap-6 p-8">
         <div className="flex items-start justify-between gap-4">
-          <div className="min-w-0 flex-1">{header}</div>
+          <div className="min-w-0 flex-1" data-tour="home-header">
+            {header}
+          </div>
           <div className="flex items-center gap-1">
-            <DirectionToggle />
-            <ThemeToggle />
+            <div className="flex items-center gap-1" data-tour="appearance">
+              <DirectionToggle />
+              <ThemeToggle />
+            </div>
+            <HelpMenu />
           </div>
         </div>
 

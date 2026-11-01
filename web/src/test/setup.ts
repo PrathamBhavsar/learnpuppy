@@ -3,6 +3,7 @@ import { cleanup } from "@testing-library/react"
 import { afterAll, afterEach, beforeAll, vi } from "vitest"
 
 import { setSseManager } from "@/hooks/use-server-events"
+import { useTour } from "@/components/app/tour/tour-store"
 import { useConnection } from "@/stores/connection"
 import { useLive } from "@/stores/live"
 import { usePalette } from "@/stores/palette"
@@ -44,6 +45,7 @@ afterEach(() => {
   FakeEventSource.reset()
   useConnection.getState().reset()
   useLive.getState().reset()
+  useTour.setState({ phase: "idle" })
   useStatus.setState({ authRequired: false, engineUnavailable: false })
   usePalette.setState({
     open: false,
