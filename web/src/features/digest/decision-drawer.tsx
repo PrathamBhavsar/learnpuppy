@@ -8,6 +8,7 @@ import {
 
 import { ApiError, toApiError } from "@/api/errors"
 import type { RegenerateResult } from "@/api/pending-types"
+import { type InfoContent, InfoTip } from "@/components/app/info/info"
 import { ErrorState } from "@/components/app/error-state"
 import { SkeletonBlock } from "@/components/app/skeleton-block"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
@@ -28,6 +29,7 @@ import { toastError, toastSuccess } from "@/lib/toast"
 import { useState } from "react"
 
 import { DIGEST_COPY } from "./copy"
+import { digestInfo } from "./info"
 import { useDecision, useRegenerateCards } from "./api"
 
 type Props = {
@@ -132,13 +134,18 @@ export function DecisionDrawer({ ws, decisionId, onClose }: Props) {
         ) : (
           <div className="flex flex-col gap-5 px-4 pb-6">
             <div className="flex flex-col gap-2">
-              <Badge
-                variant={decision.basis === "stated" ? "default" : "secondary"}
-                data-testid="digest-drawer-basis"
-                className="self-start"
-              >
-                {DIGEST_COPY.basis[decision.basis].label}
-              </Badge>
+              <div className="flex items-center gap-1.5">
+                <Badge
+                  variant={
+                    decision.basis === "stated" ? "default" : "secondary"
+                  }
+                  data-testid="digest-drawer-basis"
+                >
+                  {DIGEST_COPY.basis[decision.basis].label}
+                </Badge>
+                <InfoTip info={digestInfo.basis} />
+                <InfoTip info={digestInfo.decision} className="ms-auto" />
+              </div>
               <p className="text-[12px] text-muted-foreground">
                 {DIGEST_COPY.basis[decision.basis].explanation}
               </p>
@@ -164,7 +171,10 @@ export function DecisionDrawer({ ws, decisionId, onClose }: Props) {
               </p>
             </Field>
 
-            <Field label={DIGEST_COPY.alternatives}>
+            <Field
+              label={DIGEST_COPY.alternatives}
+              info={digestInfo.alternatives}
+            >
               {decision.alternatives.length === 0 ? (
                 <p className="text-[13px] text-muted-foreground">
                   None recorded.
@@ -212,7 +222,7 @@ export function DecisionDrawer({ ws, decisionId, onClose }: Props) {
               </Field>
             ) : null}
 
-            <Field label={DIGEST_COPY.commits}>
+            <Field label={DIGEST_COPY.commits} info={digestInfo.commits}>
               {decision.commitsError ? (
                 <p role="status" className="text-[13px] text-warning">
                   {decision.commitsError}
@@ -256,7 +266,7 @@ export function DecisionDrawer({ ws, decisionId, onClose }: Props) {
               )}
             </Field>
 
-            <Field label={DIGEST_COPY.generatedCards}>
+            <Field label={DIGEST_COPY.generatedCards} info={digestInfo.cards}>
               {decision.cardIds.length === 0 ? (
                 <p className="text-[13px] text-muted-foreground">
                   {DIGEST_COPY.noCards}
@@ -295,22 +305,24 @@ export function DecisionDrawer({ ws, decisionId, onClose }: Props) {
                   })}
                 </ul>
               )}
-              <Button
-                variant="outline"
-                onClick={runRegenerate}
-                disabled={regenerate.isPending}
-                data-testid="digest-regenerate"
-                className="self-start"
-              >
-                {regenerate.isPending ? (
-                  <Spinner data-icon="inline-start" />
-                ) : (
-                  <RefreshCwIcon data-icon="inline-start" />
-                )}
-                {regenerate.isPending
-                  ? DIGEST_COPY.regenerating
-                  : DIGEST_COPY.regenerate}
-              </Button>
+              <div className="flex items-center gap-1.5 self-start">
+                <Button
+                  variant="outline"
+                  onClick={runRegenerate}
+                  disabled={regenerate.isPending}
+                  data-testid="digest-regenerate"
+                >
+                  {regenerate.isPending ? (
+                    <Spinner data-icon="inline-start" />
+                  ) : (
+                    <RefreshCwIcon data-icon="inline-start" />
+                  )}
+                  {regenerate.isPending
+                    ? DIGEST_COPY.regenerating
+                    : DIGEST_COPY.regenerate}
+                </Button>
+                <InfoTip info={digestInfo.regenerate} />
+              </div>
               {problems.length > 0 ? (
                 <Alert
                   variant="destructive"
@@ -341,14 +353,19 @@ export function DecisionDrawer({ ws, decisionId, onClose }: Props) {
 
 function Field({
   label,
+  info,
   children,
 }: {
   label: string
+  info?: InfoContent
   children: React.ReactNode
 }) {
   return (
     <section className="flex flex-col gap-1.5">
-      <h3 className="text-[12px] text-muted-foreground">{label}</h3>
+      <h3 className="flex items-center gap-1 text-[12px] text-muted-foreground">
+        {label}
+        {info ? <InfoTip info={info} /> : null}
+      </h3>
       {children}
     </section>
   )

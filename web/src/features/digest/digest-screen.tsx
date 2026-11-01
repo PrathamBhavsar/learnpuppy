@@ -11,6 +11,7 @@ import { toApiError } from "@/api/errors"
 import type { NodeSource } from "@/api/pending-types"
 import { EmptyState } from "@/components/app/empty-state"
 import { ErrorState } from "@/components/app/error-state"
+import { InfoTip, ScreenGuide } from "@/components/app/info/info"
 import { PageHeader } from "@/components/app/page-header"
 import { SkeletonBlock } from "@/components/app/skeleton-block"
 import { Alert, AlertDescription } from "@/components/ui/alert"
@@ -24,6 +25,7 @@ import { useDigest } from "./api"
 import { DayGroup } from "./day-group"
 import { DecisionDrawer } from "./decision-drawer"
 import { DigestControls } from "./digest-controls"
+import { digestGuide, digestInfo } from "./info"
 import { filterDays, reviewableDecisionIds } from "./filter"
 import { type RangePreset, resolveRange } from "./range"
 
@@ -93,18 +95,28 @@ export function DigestScreen({ ws, filters, onFilters }: Props) {
         title={DIGEST_COPY.title}
         description={DIGEST_COPY.description}
         actions={
-          reviewable.length > 0 ? (
-            <Button asChild variant="outline" data-testid="digest-review-these">
-              <Link
-                to="/w/$ws/review"
-                params={{ ws }}
-                search={{ decisions: reviewable.join(",") }}
-              >
-                <ListChecksIcon data-icon="inline-start" />
-                {DIGEST_COPY.reviewThese(reviewable.length)}
-              </Link>
-            </Button>
-          ) : null
+          <>
+            <ScreenGuide {...digestGuide} />
+            {reviewable.length > 0 ? (
+              <>
+                <Button
+                  asChild
+                  variant="outline"
+                  data-testid="digest-review-these"
+                >
+                  <Link
+                    to="/w/$ws/review"
+                    params={{ ws }}
+                    search={{ decisions: reviewable.join(",") }}
+                  >
+                    <ListChecksIcon data-icon="inline-start" />
+                    {DIGEST_COPY.reviewThese(reviewable.length)}
+                  </Link>
+                </Button>
+                <InfoTip info={digestInfo.reviewThese} />
+              </>
+            ) : null}
+          </>
         }
       />
 
