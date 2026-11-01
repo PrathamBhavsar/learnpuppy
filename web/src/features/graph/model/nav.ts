@@ -52,7 +52,10 @@ export function nearestInDirection(
 }
 
 /** Visible nodes in Tab order (degree desc, then id). */
-export function tabOrder(scene: Scene, visible: Uint8Array | null): Uint32Array {
+export function tabOrder(
+  scene: Scene,
+  visible: Uint8Array | null
+): Uint32Array {
   if (!visible) return scene.order
   return scene.order.filter((i) => visible[i] === 1)
 }
@@ -87,7 +90,10 @@ export function nearestToPoint(
   let bestDist = Infinity
   for (let i = 0; i < scene.count; i++) {
     if (visible && !visible[i]) continue
-    const d = Math.hypot((scene.x[i] as number) - wx, (scene.y[i] as number) - wy)
+    const d = Math.hypot(
+      (scene.x[i] as number) - wx,
+      (scene.y[i] as number) - wy
+    )
     if (d < bestDist) {
       bestDist = d
       best = i

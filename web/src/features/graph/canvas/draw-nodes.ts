@@ -35,7 +35,13 @@ export function drawNodes(ctx: CanvasRenderingContext2D, f: FrameState): void {
     if (f.special[i] || (visible && !visible[i])) continue
     const sx = px[i]! * cam.k + cam.x
     const sy = py[i]! * cam.k + cam.y
-    if (sx < -margin || sy < -margin || sx > size.w + margin || sy > size.h + margin) continue
+    if (
+      sx < -margin ||
+      sy < -margin ||
+      sx > size.w + margin ||
+      sy > size.h + margin
+    )
+      continue
 
     let level = 0
     if (!f.performance) {
@@ -44,7 +50,8 @@ export function drawNodes(ctx: CanvasRenderingContext2D, f: FrameState): void {
     }
     const group = f.clusterAlpha ? scene.cluster[i]! + 1 : 0
     const hollow = !f.performance && scene.kind[i] === KIND_CONCEPT ? 1 : 0
-    const key = ((group * levels + level) * 2 + hollow) * N_SOURCES + scene.source[i]!
+    const key =
+      ((group * levels + level) * 2 + hollow) * N_SOURCES + scene.source[i]!
     let path = buckets[key]
     if (!path) path = buckets[key] = new Path2D()
 
@@ -60,7 +67,8 @@ export function drawNodes(ctx: CanvasRenderingContext2D, f: FrameState): void {
       if (kind === KIND_PROCEDURE) {
         const d = Math.max(2, snap(s * 0.3))
         decorDots.rect(snap(sx - d / 2), snap(sy - d / 2), d, d)
-      } else if (kind === KIND_DECISION) decorRings.rect(x0 - 2.5, y0 - 2.5, s + 5, s + 5)
+      } else if (kind === KIND_DECISION)
+        decorRings.rect(x0 - 2.5, y0 - 2.5, s + 5, s + 5)
     }
   }
 
@@ -73,7 +81,11 @@ export function drawNodes(ctx: CanvasRenderingContext2D, f: FrameState): void {
     const hollow = Math.floor(key / N_SOURCES) % 2 === 1
     const level = Math.floor(key / (N_SOURCES * 2)) % levels
     const group = Math.floor(key / (N_SOURCES * 2 * levels))
-    const fade = f.clusterAlpha ? (f.clusterAlpha[group - 1 < 0 ? f.clusterAlpha.length - 1 : group - 1] ?? 1) : 1
+    const fade = f.clusterAlpha
+      ? (f.clusterAlpha[
+          group - 1 < 0 ? f.clusterAlpha.length - 1 : group - 1
+        ] ?? 1)
+      : 1
     const color = theme.sources[source] ?? theme.foreground
     const alpha = levelAlpha[level]! * fade
     if (alpha <= 0.001) continue
@@ -101,7 +113,10 @@ export function drawNodes(ctx: CanvasRenderingContext2D, f: FrameState): void {
 }
 
 /** Individually drawn nodes: hovered, selected, newborn, dying and delete-preview nodes. */
-export function drawSpecialNodes(ctx: CanvasRenderingContext2D, f: FrameState): void {
+export function drawSpecialNodes(
+  ctx: CanvasRenderingContext2D,
+  f: FrameState
+): void {
   const { scene, px, py, cam, theme } = f
   const drawn = new Set<number>()
   const base = (i: number): { sx: number; sy: number; side: number } => ({
@@ -121,7 +136,13 @@ export function drawSpecialNodes(ctx: CanvasRenderingContext2D, f: FrameState): 
       ctx.fillRect(sx - inner / 2, sy - inner / 2, inner, inner)
     }
   }
-  const ring = (i: number, grow: number, width: number, color: string, alpha: number): void => {
+  const ring = (
+    i: number,
+    grow: number,
+    width: number,
+    color: string,
+    alpha: number
+  ): void => {
     const { sx, sy, side } = base(i)
     const s = side + grow * 2
     ctx.globalAlpha = alpha
@@ -150,7 +171,8 @@ export function drawSpecialNodes(ctx: CanvasRenderingContext2D, f: FrameState): 
   if (f.deleteTint) {
     const pulse = 0.55 + 0.45 * Math.sin(f.now / 140)
     for (let i = 0; i < scene.count; i++) {
-      if (!f.deleteTint[i] || drawn.has(i) || (f.visible && !f.visible[i])) continue
+      if (!f.deleteTint[i] || drawn.has(i) || (f.visible && !f.visible[i]))
+        continue
       drawn.add(i)
       square(i, 1, 1)
       ring(i, 2.5, 2, theme.destructive, pulse)
@@ -165,10 +187,20 @@ export function drawSpecialNodes(ctx: CanvasRenderingContext2D, f: FrameState): 
     if (!f.selected[i] || drawn.has(i) || (f.visible && !f.visible[i])) continue
     drawn.add(i)
     square(i, 1, 1)
-    ring(i, i === f.activeIdx ? 4 : 3, i === f.activeIdx ? 2 : 1.5, theme.primary, 1)
+    ring(
+      i,
+      i === f.activeIdx ? 4 : 3,
+      i === f.activeIdx ? 2 : 1.5,
+      theme.primary,
+      1
+    )
   }
 
-  if (f.hoverIdx >= 0 && !drawn.has(f.hoverIdx) && !(f.visible && !f.visible[f.hoverIdx])) {
+  if (
+    f.hoverIdx >= 0 &&
+    !drawn.has(f.hoverIdx) &&
+    !(f.visible && !f.visible[f.hoverIdx])
+  ) {
     const i = f.hoverIdx
     drawn.add(i)
     square(i, 1 + 0.15 * f.hoverMix, 1)
@@ -186,7 +218,10 @@ export function drawSpecialNodes(ctx: CanvasRenderingContext2D, f: FrameState): 
 }
 
 /** Marks search matches with a thin ring so they read at any zoom, up to a sane count. */
-export function drawMatchRings(ctx: CanvasRenderingContext2D, f: FrameState): void {
+export function drawMatchRings(
+  ctx: CanvasRenderingContext2D,
+  f: FrameState
+): void {
   const list = f.matchList
   if (!list || list.length === 0 || list.length > 300) return
   const { scene, px, py, cam, size } = f

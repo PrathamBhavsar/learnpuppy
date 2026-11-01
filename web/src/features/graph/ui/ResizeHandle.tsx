@@ -12,7 +12,8 @@ const STEP = 24
 /** Horizontal splitter above the chain table: drag or use the arrow keys. */
 export function ResizeHandle({ height, onResize }: Props) {
   const drag = useRef<{ y: number; h: number } | null>(null)
-  const clamp = (h: number) => Math.min(TABLE_MAX, Math.max(TABLE_MIN, Math.round(h)))
+  const clamp = (h: number) =>
+    Math.min(TABLE_MAX, Math.max(TABLE_MIN, Math.round(h)))
   return (
     <div
       role="separator"
@@ -29,7 +30,8 @@ export function ResizeHandle({ height, onResize }: Props) {
         drag.current = { y: e.clientY, h: height }
       }}
       onPointerMove={(e) => {
-        if (drag.current) onResize(clamp(drag.current.h + (drag.current.y - e.clientY)))
+        if (drag.current)
+          onResize(clamp(drag.current.h + (drag.current.y - e.clientY)))
       }}
       onPointerUp={() => (drag.current = null)}
       onKeyDown={(e) => {

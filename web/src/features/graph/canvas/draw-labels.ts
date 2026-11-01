@@ -19,15 +19,24 @@ class Occupancy {
   private readonly cell = 96
   private keys(r: Placed): number[] {
     const out: number[] = []
-    for (let cx = Math.floor(r.x0 / this.cell); cx <= Math.floor(r.x1 / this.cell); cx++)
-      for (let cy = Math.floor(r.y0 / this.cell); cy <= Math.floor(r.y1 / this.cell); cy++)
+    for (
+      let cx = Math.floor(r.x0 / this.cell);
+      cx <= Math.floor(r.x1 / this.cell);
+      cx++
+    )
+      for (
+        let cy = Math.floor(r.y0 / this.cell);
+        cy <= Math.floor(r.y1 / this.cell);
+        cy++
+      )
         out.push(cx * 100003 + cy)
     return out
   }
   hits(r: Placed): boolean {
     for (const key of this.keys(r))
       for (const o of this.cells.get(key) ?? [])
-        if (r.x0 < o.x1 && r.x1 > o.x0 && r.y0 < o.y1 && r.y1 > o.y0) return true
+        if (r.x0 < o.x1 && r.x1 > o.x0 && r.y0 < o.y1 && r.y1 > o.y0)
+          return true
     return false
   }
   add(r: Placed): void {
@@ -43,12 +52,21 @@ class Occupancy {
  * Node labels with a priority order: hovered, active, selected, search matches, then the most
  * connected nodes while there is room. Auto mode fades them in as the cluster hulls fade out.
  */
-export function drawNodeLabels(ctx: CanvasRenderingContext2D, f: FrameState): void {
+export function drawNodeLabels(
+  ctx: CanvasRenderingContext2D,
+  f: FrameState
+): void {
   if (f.performance) return
   const { scene, px, py, cam, size, theme } = f
   const lod = lodFor(f.z)
-  const bulk = f.labels === "never" || f.interacting ? 0 : f.labels === "always" ? 1 : lod.nodeLabels
-  const hasFocus = f.hoverIdx >= 0 || f.activeIdx >= 0 || f.selectedAny || f.matchList !== null
+  const bulk =
+    f.labels === "never" || f.interacting
+      ? 0
+      : f.labels === "always"
+        ? 1
+        : lod.nodeLabels
+  const hasFocus =
+    f.hoverIdx >= 0 || f.activeIdx >= 0 || f.selectedAny || f.matchList !== null
   if (bulk <= 0.02 && !hasFocus) return
 
   ctx.font = `11px ${theme.font}`
@@ -64,11 +82,17 @@ export function drawNodeLabels(ctx: CanvasRenderingContext2D, f: FrameState): vo
 
   // `strong` draws in the foreground colour; `force` skips collision avoidance (hovered and active only,
   // so a large selection or match set never piles labels on top of each other).
-  const place = (i: number, alpha: number, strong: boolean, force = false): boolean => {
+  const place = (
+    i: number,
+    alpha: number,
+    strong: boolean,
+    force = false
+  ): boolean => {
     if (placed.has(i) || (f.visible && !f.visible[i])) return false
     const sx = px[i]! * cam.k + cam.x
     const sy = py[i]! * cam.k + cam.y
-    if (sx < -10 || sy < -10 || sx > size.w + 10 || sy > size.h + 10) return false
+    if (sx < -10 || sy < -10 || sx > size.w + 10 || sy > size.h + 10)
+      return false
     let w = widths.get(i)
     if (w === undefined) {
       w = ctx.measureText(truncate(scene.texts[i]!)).width
@@ -76,7 +100,12 @@ export function drawNodeLabels(ctx: CanvasRenderingContext2D, f: FrameState): vo
     }
     const side = nodeScreenSide(f.basePx, scene.weight[i]!, f.z)
     const x0 = sx + side / 2 + 5
-    const rect = { x0: x0 - 2, y0: sy - LINE_HEIGHT / 2, x1: x0 + w + 2, y1: sy + LINE_HEIGHT / 2 }
+    const rect = {
+      x0: x0 - 2,
+      y0: sy - LINE_HEIGHT / 2,
+      x1: x0 + w + 2,
+      y1: sy + LINE_HEIGHT / 2,
+    }
     if (!force && occupied.hits(rect)) return false
     occupied.add(rect)
     placed.add(i)
@@ -90,7 +119,8 @@ export function drawNodeLabels(ctx: CanvasRenderingContext2D, f: FrameState): vo
     return true
   }
 
-  if (f.hoverIdx >= 0) place(f.hoverIdx, Math.max(f.hoverMix, 0.001), true, true)
+  if (f.hoverIdx >= 0)
+    place(f.hoverIdx, Math.max(f.hoverMix, 0.001), true, true)
   if (f.activeIdx >= 0) place(f.activeIdx, 1, true, true)
   if (f.selectedAny) {
     let n = 0
@@ -107,7 +137,11 @@ export function drawNodeLabels(ctx: CanvasRenderingContext2D, f: FrameState): vo
   if (bulk > 0.02) {
     let accepted = 0
     const limit = f.labels === "always" ? MAX_AUTO_LABELS * 2 : MAX_AUTO_LABELS
-    for (let o = 0; o < scene.order.length && accepted < limit && o < 1500; o++) {
+    for (
+      let o = 0;
+      o < scene.order.length && accepted < limit && o < 1500;
+      o++
+    ) {
       const i = scene.order[o]!
       if (f.match && !f.match[i]) continue
       if (place(i, bulk, false)) accepted++

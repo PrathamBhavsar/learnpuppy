@@ -2,7 +2,12 @@
 // inertia, and eased programmatic moves (fit, fly-to, double-click zoom). d3-zoom holds the *target*
 // transform; `cam` is what is drawn and chases it.
 import { select } from "d3-selection"
-import { type D3ZoomEvent, type ZoomBehavior, zoom, zoomIdentity } from "d3-zoom"
+import {
+  type D3ZoomEvent,
+  type ZoomBehavior,
+  zoom,
+  zoomIdentity,
+} from "d3-zoom"
 
 import {
   type Cam,
@@ -59,7 +64,8 @@ export class CameraController {
         const e = event as MouseEvent
         if (e.type === "dblclick") return false
         // Shift-drag is the marquee; secondary buttons belong to the context menu.
-        if (e.type === "mousedown" && (e.shiftKey || e.button !== 0)) return false
+        if (e.type === "mousedown" && (e.shiftKey || e.button !== 0))
+          return false
         return e.type === "wheel" ? true : !e.ctrlKey
       })
       .wheelDelta((event: WheelEvent) => {
@@ -74,7 +80,9 @@ export class CameraController {
           hooks.onUserInput()
         }
       })
-      .on("zoom", (e: D3ZoomEvent<HTMLCanvasElement, unknown>) => this.onZoom(e))
+      .on("zoom", (e: D3ZoomEvent<HTMLCanvasElement, unknown>) =>
+        this.onZoom(e)
+      )
       .on("end", (e: D3ZoomEvent<HTMLCanvasElement, unknown>) => this.onEnd(e))
     select(canvas).call(this.behavior).on("dblclick.zoom", null)
     // Capture phase: a new gesture must stop an in-flight fly-to or inertia before d3 reads its state.
@@ -96,7 +104,10 @@ export class CameraController {
 
   /** Cancels fly-to and inertia, leaving the camera exactly where it is drawn. */
   stop(): void {
-    const moving = this.tweens.has(CAM_TWEEN) || this.inertia !== null || !camEquals(this.cam, this.target)
+    const moving =
+      this.tweens.has(CAM_TWEEN) ||
+      this.inertia !== null ||
+      !camEquals(this.cam, this.target)
     this.tweens.cancel(CAM_TWEEN)
     this.inertia = null
     if (moving) {
@@ -134,7 +145,13 @@ export class CameraController {
     this.hooks.invalidate()
   }
 
-  zoomAt(px: number, py: number, factor: number, now: number, animate = true): void {
+  zoomAt(
+    px: number,
+    py: number,
+    factor: number,
+    now: number,
+    animate = true
+  ): void {
     const base = this.tweens.has(CAM_TWEEN) ? this.target : this.cam
     const to = zoomAbout(base, px, py, factor, this.extent)
     if (animate) this.animateTo(to, 260, now)
@@ -154,7 +171,11 @@ export class CameraController {
       const step = inertiaStep(this.inertia, now - prev)
       if (step) {
         this.inertia = step.next
-        this.target = { ...this.target, x: this.target.x + step.dx, y: this.target.y + step.dy }
+        this.target = {
+          ...this.target,
+          x: this.target.x + step.dx,
+          y: this.target.y + step.dy,
+        }
         this.cam = this.target
         this.sync(this.target)
         busy = true
@@ -188,12 +209,21 @@ export class CameraController {
 
   private onZoom(e: D3ZoomEvent<HTMLCanvasElement, unknown>): void {
     if (this.programmatic > 0 || !e.sourceEvent) return
-    const t: Cam = { x: e.transform.x, y: e.transform.y, k: clampK(e.transform.k, this.extent) }
+    const t: Cam = {
+      x: e.transform.x,
+      y: e.transform.y,
+      k: clampK(e.transform.k, this.extent),
+    }
     if (e.sourceEvent.type === "wheel") {
       this.target = t
     } else {
       const now = performance.now()
-      this.velocity = blendVelocity(this.velocity, t.x - this.target.x, t.y - this.target.y, now - this.lastMove)
+      this.velocity = blendVelocity(
+        this.velocity,
+        t.x - this.target.x,
+        t.y - this.target.y,
+        now - this.lastMove
+      )
       this.lastMove = now
       this.cam = this.target = t
     }
@@ -212,6 +242,7 @@ export class CameraController {
         return
       }
     }
-    if (!this.inertia && camEquals(this.cam, this.target)) this.interacting = false
+    if (!this.inertia && camEquals(this.cam, this.target))
+      this.interacting = false
   }
 }

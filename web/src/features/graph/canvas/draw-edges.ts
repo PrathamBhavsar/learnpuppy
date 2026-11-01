@@ -62,8 +62,10 @@ export function drawEdges(ctx: CanvasRenderingContext2D, f: FrameState): void {
     const by = py[b]! * k + oy
 
     let bucket: Path2D = buckets.base
-    if (hoverActive && (a === f.hoverIdx || b === f.hoverIdx)) bucket = buckets.hi
-    else if (f.selectedAny && (f.selected[a] || f.selected[b])) bucket = buckets.sel
+    if (hoverActive && (a === f.hoverIdx || b === f.hoverIdx))
+      bucket = buckets.hi
+    else if (f.selectedAny && (f.selected[a] || f.selected[b]))
+      bucket = buckets.sel
     else if (searching && !(f.match![a] || f.match![b])) bucket = buckets.faint
     else if (hoverActive) bucket = buckets.lo
 
@@ -75,7 +77,14 @@ export function drawEdges(ctx: CanvasRenderingContext2D, f: FrameState): void {
       const bow = 0.14
       const nx = -dy * bow
       const ny = dx * bow
-      bucket.bezierCurveTo(ax + dx / 3 + nx, ay + dy / 3 + ny, ax + (2 * dx) / 3 + nx, ay + (2 * dy) / 3 + ny, bx, by)
+      bucket.bezierCurveTo(
+        ax + dx / 3 + nx,
+        ay + dy / 3 + ny,
+        ax + (2 * dx) / 3 + nx,
+        ay + (2 * dy) / 3 + ny,
+        bx,
+        by
+      )
     } else {
       bucket.lineTo(bx, by)
     }
@@ -90,8 +99,14 @@ export function drawEdges(ctx: CanvasRenderingContext2D, f: FrameState): void {
         const tipY = by - uy * (half + 2)
         const size2 = 5
         buckets.arrows.moveTo(tipX, tipY)
-        buckets.arrows.lineTo(tipX - ux * size2 - uy * size2 * 0.55, tipY - uy * size2 + ux * size2 * 0.55)
-        buckets.arrows.lineTo(tipX - ux * size2 + uy * size2 * 0.55, tipY - uy * size2 - ux * size2 * 0.55)
+        buckets.arrows.lineTo(
+          tipX - ux * size2 - uy * size2 * 0.55,
+          tipY - uy * size2 + ux * size2 * 0.55
+        )
+        buckets.arrows.lineTo(
+          tipX - ux * size2 + uy * size2 * 0.55,
+          tipY - uy * size2 - ux * size2 * 0.55
+        )
         buckets.arrows.closePath()
       }
     }

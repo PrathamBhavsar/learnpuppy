@@ -62,7 +62,9 @@ function ChainList({
         {title}
       </h3>
       {chains.length === 0 ? (
-        <p className="text-[12px] text-muted-foreground">{copy.drawer.noChains}</p>
+        <p className="text-[12px] text-muted-foreground">
+          {copy.drawer.noChains}
+        </p>
       ) : (
         <ul className="flex flex-col">
           {chains.map((chain) => {
@@ -83,7 +85,9 @@ function ChainList({
                       side === "from" && "rotate-180 rtl:-rotate-180"
                     )}
                   />
-                  <span dir="auto" className="min-w-0 flex-1 line-clamp-2">{text}</span>
+                  <span dir="auto" className="line-clamp-2 min-w-0 flex-1">
+                    {text}
+                  </span>
                   <Badge variant="outline" className="shrink-0">
                     {copy.drawer.chainKinds[chain.kind] ?? chain.kind}
                   </Badge>
@@ -135,8 +139,14 @@ export function NodeDrawer({
       className="absolute inset-y-0 z-30 flex max-w-[92%] flex-col border-s border-border bg-background shadow-sm"
     >
       <header className="flex items-center gap-2 border-b border-border px-4 py-2.5">
-        <Badge variant="outline" data-testid="graph-drawer-kind">{kind}</Badge>
-        <Badge variant="secondary" className="gap-1.5" data-testid="graph-drawer-source">
+        <Badge variant="outline" data-testid="graph-drawer-kind">
+          {kind}
+        </Badge>
+        <Badge
+          variant="secondary"
+          className="gap-1.5"
+          data-testid="graph-drawer-source"
+        >
           <span aria-hidden className={cn("size-2", SOURCE_BG[source])} />
           {copy.legend.sourceNames[source]}
         </Badge>
@@ -164,26 +174,48 @@ export function NodeDrawer({
 
         <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-[12px]">
           <dt className="text-muted-foreground">{copy.drawer.born}</dt>
-          <dd className="tabular-nums">{dateFormat.format(scene.createdAt[idx] as number)}</dd>
+          <dd className="tabular-nums">
+            {dateFormat.format(scene.createdAt[idx] as number)}
+          </dd>
           <dt className="text-muted-foreground">{copy.drawer.session}</dt>
-          <dd className="min-w-0 truncate" title={scene.sessionIds[idx]}>{scene.sessionIds[idx]}</dd>
+          <dd className="min-w-0 truncate" title={scene.sessionIds[idx]}>
+            {scene.sessionIds[idx]}
+          </dd>
         </dl>
 
         {detail.isPending ? (
-          <div role="status" aria-label="Loading details" className="flex flex-col gap-3">
+          <div
+            role="status"
+            aria-label="Loading details"
+            className="flex flex-col gap-3"
+          >
             <SkeletonBlock className="h-16 w-full" />
             <SkeletonBlock className="h-4 w-2/3" />
             <SkeletonBlock className="h-4 w-full" />
           </div>
         ) : detail.isError ? (
-          <div role="alert" className="flex flex-col items-start gap-2 text-[12px]">
+          <div
+            role="alert"
+            className="flex flex-col items-start gap-2 text-[12px]"
+          >
             <p className="text-destructive">{copy.drawer.loadFailed}</p>
-            <p className="text-muted-foreground">{toApiError(detail.error).message}</p>
-            <Button variant="outline" size="sm" onClick={() => void detail.refetch()}>Retry</Button>
+            <p className="text-muted-foreground">
+              {toApiError(detail.error).message}
+            </p>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => void detail.refetch()}
+            >
+              Retry
+            </Button>
           </div>
         ) : (
           <>
-            <section aria-label={copy.drawer.provenance} className="flex flex-col gap-1.5">
+            <section
+              aria-label={copy.drawer.provenance}
+              className="flex flex-col gap-1.5"
+            >
               <h3 className="text-[11px] font-medium tracking-wide text-muted-foreground uppercase">
                 {copy.drawer.provenance}
               </h3>
@@ -194,28 +226,53 @@ export function NodeDrawer({
                 {detail.data.provenanceDetail.snippet}
               </blockquote>
               {detail.data.provenanceDetail.chatId ? (
-                <Button asChild variant="link" size="xs" className="self-start px-0">
+                <Button
+                  asChild
+                  variant="link"
+                  size="xs"
+                  className="self-start px-0"
+                >
                   <Link
                     to="/w/$ws/learn/$chat"
                     params={{ ws, chat: detail.data.provenanceDetail.chatId }}
                     data-testid="graph-drawer-open-chat"
                   >
                     {copy.drawer.openChat}
-                    <ExternalLinkIcon data-icon="inline-end" className="rtl:-scale-x-100" />
+                    <ExternalLinkIcon
+                      data-icon="inline-end"
+                      className="rtl:-scale-x-100"
+                    />
                   </Link>
                 </Button>
               ) : null}
             </section>
 
-            <ChainList title={copy.drawer.incoming} chains={detail.data.incoming} side="from" scene={scene} onHop={onHop} />
-            <ChainList title={copy.drawer.outgoing} chains={detail.data.outgoing} side="to" scene={scene} onHop={onHop} />
+            <ChainList
+              title={copy.drawer.incoming}
+              chains={detail.data.incoming}
+              side="from"
+              scene={scene}
+              onHop={onHop}
+            />
+            <ChainList
+              title={copy.drawer.outgoing}
+              chains={detail.data.outgoing}
+              side="to"
+              scene={scene}
+              onHop={onHop}
+            />
 
-            <section aria-label={copy.drawer.cards} className="flex flex-col gap-1.5">
+            <section
+              aria-label={copy.drawer.cards}
+              className="flex flex-col gap-1.5"
+            >
               <h3 className="text-[11px] font-medium tracking-wide text-muted-foreground uppercase">
                 {copy.drawer.cards}
               </h3>
               {cards.length === 0 ? (
-                <p className="text-[12px] text-muted-foreground">{copy.drawer.noCards}</p>
+                <p className="text-[12px] text-muted-foreground">
+                  {copy.drawer.noCards}
+                </p>
               ) : (
                 <>
                   <div className="flex items-center gap-2 text-[12px]">
@@ -224,15 +281,25 @@ export function NodeDrawer({
                       size={24}
                       label={`${copy.drawer.mastery}: ${inReview} of ${cards.length} cards in review`}
                     />
-                    <span className="tabular-nums text-muted-foreground">
+                    <span className="text-muted-foreground tabular-nums">
                       {inReview} / {cards.length}
                     </span>
                   </div>
                   <ul className="flex flex-col">
                     {cards.map((card) => (
-                      <li key={card.id} className="flex items-start gap-2 px-1.5 py-1.5 text-[12px]">
-                        <span dir="auto" className="min-w-0 flex-1 line-clamp-2">{card.front}</span>
-                        <Badge variant="outline">{copy.drawer.cardStates[card.state] ?? card.state}</Badge>
+                      <li
+                        key={card.id}
+                        className="flex items-start gap-2 px-1.5 py-1.5 text-[12px]"
+                      >
+                        <span
+                          dir="auto"
+                          className="line-clamp-2 min-w-0 flex-1"
+                        >
+                          {card.front}
+                        </span>
+                        <Badge variant="outline">
+                          {copy.drawer.cardStates[card.state] ?? card.state}
+                        </Badge>
                       </li>
                     ))}
                   </ul>

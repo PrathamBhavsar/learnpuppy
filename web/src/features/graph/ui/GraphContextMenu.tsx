@@ -1,4 +1,9 @@
-import { CopyIcon, GraduationCapIcon, MessageSquareIcon, Trash2Icon } from "lucide-react"
+import {
+  CopyIcon,
+  GraduationCapIcon,
+  MessageSquareIcon,
+  Trash2Icon,
+} from "lucide-react"
 
 import { useGraphNode } from "@/api/queries/graph"
 import {
@@ -23,7 +28,15 @@ type Props = {
 }
 
 /** Right-click menu for a node: practice, copy, jump to the source chat, delete. */
-export function GraphContextMenu({ ws, nodeId, text, count, onPractice, onDelete, onOpenChat }: Props) {
+export function GraphContextMenu({
+  ws,
+  nodeId,
+  text,
+  count,
+  onPractice,
+  onDelete,
+  onOpenChat,
+}: Props) {
   const detail = useGraphNode(ws, nodeId)
   const chatId = detail.data?.provenanceDetail.chatId ?? null
   return (
@@ -53,7 +66,11 @@ export function GraphContextMenu({ ws, nodeId, text, count, onPractice, onDelete
         {copy.menu.sourceChat}
       </ContextMenuItem>
       <ContextMenuSeparator />
-      <ContextMenuItem variant="destructive" onSelect={onDelete} data-testid="graph-menu-delete">
+      <ContextMenuItem
+        variant="destructive"
+        onSelect={onDelete}
+        data-testid="graph-menu-delete"
+      >
         <Trash2Icon />
         {copy.menu.delete}
       </ContextMenuItem>

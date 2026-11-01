@@ -56,7 +56,8 @@ export class TweenClock {
       if (this.active.get(key) !== tween) continue
       const elapsed = now - tween.start - tween.delay
       if (elapsed < 0) continue
-      const raw = tween.duration === 0 ? 1 : Math.min(1, elapsed / tween.duration)
+      const raw =
+        tween.duration === 0 ? 1 : Math.min(1, elapsed / tween.duration)
       const eased = raw >= 1 ? 1 : (tween.ease ?? easings.out)(raw)
       tween.update(eased)
       if (raw >= 1) {

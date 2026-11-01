@@ -48,7 +48,8 @@ export function Minimap({ engine, scene, visible }: Props) {
     ctx.globalAlpha = 0.75
     for (let i = 0; i < scene.count; i += step) {
       if (visible && !visible[i]) continue
-      ctx.fillStyle = theme.sources[scene.source[i] as number] ?? theme.foreground
+      ctx.fillStyle =
+        theme.sources[scene.source[i] as number] ?? theme.foreground
       ctx.fillRect(
         (scene.x[i] as number) * scale + map.current.ox - 1,
         (scene.y[i] as number) * scale + map.current.oy - 1,
@@ -134,7 +135,7 @@ export function Minimap({ engine, scene, visible }: Props) {
       data-testid="graph-minimap"
       dir="ltr"
       style={{ width: W, height: H }}
-      className="pointer-events-auto touch-none cursor-pointer border border-border bg-background/90"
+      className="pointer-events-auto cursor-pointer touch-none border border-border bg-background/90"
       onPointerDown={(e) => {
         e.currentTarget.setPointerCapture(e.pointerId)
         moveTo(e)

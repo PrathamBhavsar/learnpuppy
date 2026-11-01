@@ -86,7 +86,12 @@ export type ToolbarProps = {
   dockInset: number
 }
 
-function SearchBox(props: Pick<ToolbarProps, "query" | "onQuery" | "matchCount" | "searching" | "onSubmitSearch">) {
+function SearchBox(
+  props: Pick<
+    ToolbarProps,
+    "query" | "onQuery" | "matchCount" | "searching" | "onSubmitSearch"
+  >
+) {
   const { query, onQuery, matchCount, searching, onSubmitSearch } = props
   const [draft, setDraft] = useState(query)
   const lastSent = useRef(query)
@@ -137,7 +142,10 @@ function SearchBox(props: Pick<ToolbarProps, "query" | "onQuery" | "matchCount" 
       {draft ? (
         <InputGroupAddon align="inline-end">
           {searching && matchCount !== null ? (
-            <span data-testid="graph-search-count" className="text-[11px] tabular-nums">
+            <span
+              data-testid="graph-search-count"
+              className="text-[11px] tabular-nums"
+            >
               {copy.searchMatches(matchCount)}
             </span>
           ) : null}
@@ -156,7 +164,16 @@ function SearchBox(props: Pick<ToolbarProps, "query" | "onQuery" | "matchCount" 
 }
 
 function Filters(props: ToolbarProps) {
-  const { sources, onSources, clusters, cluster, onCluster, minDegree, maxDegree, onMinDegree } = props
+  const {
+    sources,
+    onSources,
+    clusters,
+    cluster,
+    onCluster,
+    minDegree,
+    maxDegree,
+    onMinDegree,
+  } = props
   return (
     <>
       <ToggleGroup
@@ -183,7 +200,10 @@ function Filters(props: ToolbarProps) {
           </ToggleGroupItem>
         ))}
       </ToggleGroup>
-      <Select value={cluster ?? ALL} onValueChange={(v) => onCluster(v === ALL ? null : v)}>
+      <Select
+        value={cluster ?? ALL}
+        onValueChange={(v) => onCluster(v === ALL ? null : v)}
+      >
         <SelectTrigger
           size="sm"
           aria-label={copy.cluster}
@@ -263,10 +283,25 @@ function ViewToggles(props: ToolbarProps) {
         <DropdownMenuContent align="end">
           <DropdownMenuLabel>{copy.labels}</DropdownMenuLabel>
           <DropdownMenuSeparator />
-          <DropdownMenuRadioGroup value={props.labels} onValueChange={(v) => props.onLabels(v as LabelMode)}>
-            <DropdownMenuRadioItem value="auto" data-testid="graph-labels-auto">{copy.labelsAuto}</DropdownMenuRadioItem>
-            <DropdownMenuRadioItem value="always" data-testid="graph-labels-always">{copy.labelsAlways}</DropdownMenuRadioItem>
-            <DropdownMenuRadioItem value="never" data-testid="graph-labels-never">{copy.labelsNever}</DropdownMenuRadioItem>
+          <DropdownMenuRadioGroup
+            value={props.labels}
+            onValueChange={(v) => props.onLabels(v as LabelMode)}
+          >
+            <DropdownMenuRadioItem value="auto" data-testid="graph-labels-auto">
+              {copy.labelsAuto}
+            </DropdownMenuRadioItem>
+            <DropdownMenuRadioItem
+              value="always"
+              data-testid="graph-labels-always"
+            >
+              {copy.labelsAlways}
+            </DropdownMenuRadioItem>
+            <DropdownMenuRadioItem
+              value="never"
+              data-testid="graph-labels-never"
+            >
+              {copy.labelsNever}
+            </DropdownMenuRadioItem>
           </DropdownMenuRadioGroup>
         </DropdownMenuContent>
       </DropdownMenu>

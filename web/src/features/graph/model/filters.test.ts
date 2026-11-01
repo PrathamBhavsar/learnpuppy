@@ -47,7 +47,11 @@ describe("visibilityMask", () => {
   })
 
   it("combines filters with AND", () => {
-    const m = visibilityMask(scene, { sources: ["claude"], cluster: "k1", minDegree: 0 })
+    const m = visibilityMask(scene, {
+      sources: ["claude"],
+      cluster: "k1",
+      minDegree: 0,
+    })
     expect(Array.from(m ?? [])).toEqual([1, 0, 0, 0])
   })
 
@@ -70,7 +74,9 @@ describe("countVisible", () => {
 
 describe("matchMask", () => {
   it("marks matched ids and ignores unknown ones", () => {
-    expect(Array.from(matchMask(scene, ["b", "nope", "d"]) ?? [])).toEqual([0, 1, 0, 1])
+    expect(Array.from(matchMask(scene, ["b", "nope", "d"]) ?? [])).toEqual([
+      0, 1, 0, 1,
+    ])
   })
   it("is null without a search and all-zero for a search with no hits", () => {
     expect(matchMask(scene, null)).toBeNull()

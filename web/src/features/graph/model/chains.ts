@@ -48,36 +48,54 @@ export function groupRows(rows: readonly ChainTableRow[]): ChainGroup[] {
   return [...groups.values()]
 }
 
-const compare = (a: string, b: string): number => a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" })
+const compare = (a: string, b: string): number =>
+  a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" })
 
-export function sortGroups(groups: ChainGroup[], sort: ChainSort, textOf: TextOf): ChainGroup[] {
+export function sortGroups(
+  groups: ChainGroup[],
+  sort: ChainSort,
+  textOf: TextOf
+): ChainGroup[] {
   const sign = sort.dir === "asc" ? 1 : -1
   const rowCmp = (a: ChainTableRow, b: ChainTableRow): number => {
     switch (sort.key) {
       case "kind":
         return compare(a.kind, b.kind) || compare(a.chainId, b.chainId)
       case "from":
-        return compare(textOf(a.from), textOf(b.from)) || compare(a.chainId, b.chainId)
+        return (
+          compare(textOf(a.from), textOf(b.from)) ||
+          compare(a.chainId, b.chainId)
+        )
       case "to":
-        return compare(textOf(a.to), textOf(b.to)) || compare(a.chainId, b.chainId)
+        return (
+          compare(textOf(a.to), textOf(b.to)) || compare(a.chainId, b.chainId)
+        )
       default:
         return compare(a.chainId, b.chainId)
     }
   }
   const sortedRows = (g: ChainGroup): ChainGroup => ({
     ...g,
-    rows: ["kind", "from", "to"].includes(sort.key) ? [...g.rows].sort((a, b) => sign * rowCmp(a, b)) : g.rows,
+    rows: ["kind", "from", "to"].includes(sort.key)
+      ? [...g.rows].sort((a, b) => sign * rowCmp(a, b))
+      : g.rows,
   })
   const withRows = groups.map(sortedRows)
   if (sort.key === "group")
     return withRows.sort((a, b) => sign * compare(a.label, b.label))
   if (sort.key === "count")
-    return withRows.sort((a, b) => sign * (a.rows.length - b.rows.length) || compare(a.label, b.label))
+    return withRows.sort(
+      (a, b) =>
+        sign * (a.rows.length - b.rows.length) || compare(a.label, b.label)
+    )
   return withRows.sort((a, b) => compare(a.label, b.label))
 }
 
 /** Rows for the virtualizer: expanded groups reveal their chains, expanded chains reveal both ends. */
-export function flattenChains(groups: readonly ChainGroup[], expanded: ReadonlySet<string>): FlatRow[] {
+export function flattenChains(
+  groups: readonly ChainGroup[],
+  expanded: ReadonlySet<string>
+): FlatRow[] {
   const out: FlatRow[] = []
   for (const group of groups) {
     const gKey = `g:${group.id}`
@@ -90,8 +108,22 @@ export function flattenChains(groups: readonly ChainGroup[], expanded: ReadonlyS
       out.push({ level: 2, key: cKey, row, groupId: group.id, expanded: cOpen })
       if (!cOpen) continue
       out.push(
-        { level: 3, key: `${cKey}:from`, nodeId: row.from, role: "from", kind: row.kind, chainId: row.chainId },
-        { level: 3, key: `${cKey}:to`, nodeId: row.to, role: "to", kind: row.kind, chainId: row.chainId }
+        {
+          level: 3,
+          key: `${cKey}:from`,
+          nodeId: row.from,
+          role: "from",
+          kind: row.kind,
+          chainId: row.chainId,
+        },
+        {
+          level: 3,
+          key: `${cKey}:to`,
+          nodeId: row.to,
+          role: "to",
+          kind: row.kind,
+          chainId: row.chainId,
+        }
       )
     }
   }
@@ -104,14 +136,33 @@ export function csvField(value: string): string {
   return /[",\n\r]/.test(safe) ? `"${safe.replace(/"/g, '""')}"` : safe
 }
 
-const CSV_HEADER = ["group", "chain", "kind", "from_id", "from_text", "to_id", "to_text"] as const
+const CSV_HEADER = [
+  "group",
+  "chain",
+  "kind",
+  "from_id",
+  "from_text",
+  "to_id",
+  "to_text",
+] as const
 
-export function chainsToCsv(groups: readonly ChainGroup[], textOf: TextOf): string {
+export function chainsToCsv(
+  groups: readonly ChainGroup[],
+  textOf: TextOf
+): string {
   const lines: string[] = [CSV_HEADER.join(",")]
   for (const group of groups)
     for (const row of group.rows)
       lines.push(
-        [group.label, row.chainId, row.kind, row.from, textOf(row.from), row.to, textOf(row.to)]
+        [
+          group.label,
+          row.chainId,
+          row.kind,
+          row.from,
+          textOf(row.from),
+          row.to,
+          textOf(row.to),
+        ]
           .map(csvField)
           .join(",")
       )

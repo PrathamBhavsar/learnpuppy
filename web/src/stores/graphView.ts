@@ -52,18 +52,28 @@ function readPrefs(): Prefs {
     return {
       hulls: typeof r["hulls"] === "boolean" ? r["hulls"] : DEFAULT_PREFS.hulls,
       labels:
-        r["labels"] === "always" || r["labels"] === "never" || r["labels"] === "auto"
+        r["labels"] === "always" ||
+        r["labels"] === "never" ||
+        r["labels"] === "auto"
           ? r["labels"]
           : DEFAULT_PREFS.labels,
-      minimap: typeof r["minimap"] === "boolean" ? r["minimap"] : DEFAULT_PREFS.minimap,
-      followNew: typeof r["followNew"] === "boolean" ? r["followNew"] : DEFAULT_PREFS.followNew,
+      minimap:
+        typeof r["minimap"] === "boolean"
+          ? r["minimap"]
+          : DEFAULT_PREFS.minimap,
+      followNew:
+        typeof r["followNew"] === "boolean"
+          ? r["followNew"]
+          : DEFAULT_PREFS.followNew,
       table: typeof r["table"] === "boolean" ? r["table"] : DEFAULT_PREFS.table,
       tableHeight:
         typeof r["tableHeight"] === "number"
           ? Math.min(TABLE_MAX, Math.max(TABLE_MIN, r["tableHeight"]))
           : DEFAULT_PREFS.tableHeight,
       performance:
-        r["performance"] === "on" || r["performance"] === "off" || r["performance"] === "auto"
+        r["performance"] === "on" ||
+        r["performance"] === "off" ||
+        r["performance"] === "auto"
           ? r["performance"]
           : DEFAULT_PREFS.performance,
     }

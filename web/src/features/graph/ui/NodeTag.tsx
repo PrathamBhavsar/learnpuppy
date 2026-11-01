@@ -1,6 +1,12 @@
 // The hovered node's text as a DOM tag that follows the node (docs/web/00 D10: DOM overlay for labels).
 // Position is written straight to the element on every camera event, never through React state.
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react"
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react"
 
 import { cn } from "@/lib/utils"
 
@@ -53,7 +59,7 @@ export function NodeTag({ engine, scene }: Props) {
       // Positioned from the canvas' top-left corner regardless of the page direction.
       dir="ltr"
       style={{ insetInlineStart: 0, top: 0 }}
-      className="pointer-events-none absolute z-10 max-w-[300px] animate-in border border-border bg-popover px-2.5 py-2 text-popover-foreground shadow-sm fade-in-0 duration-150"
+      className="pointer-events-none absolute z-10 max-w-[300px] animate-in border border-border bg-popover px-2.5 py-2 text-popover-foreground shadow-sm duration-150 fade-in-0"
     >
       <p dir="auto" className="line-clamp-4 text-[12px] leading-[1.45]">
         {scene.texts[idx]}

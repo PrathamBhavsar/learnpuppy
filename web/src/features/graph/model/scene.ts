@@ -178,8 +178,10 @@ export function buildScene(snapshot: SnapshotInput): Scene {
 
   const adjStart = new Uint32Array(count + 1)
   for (let e = 0; e < edgeCount; e++) {
-    adjStart[(edgeFrom[e] as number) + 1] = (adjStart[(edgeFrom[e] as number) + 1] as number) + 1
-    adjStart[(edgeTo[e] as number) + 1] = (adjStart[(edgeTo[e] as number) + 1] as number) + 1
+    adjStart[(edgeFrom[e] as number) + 1] =
+      (adjStart[(edgeFrom[e] as number) + 1] as number) + 1
+    adjStart[(edgeTo[e] as number) + 1] =
+      (adjStart[(edgeTo[e] as number) + 1] as number) + 1
   }
   for (let i = 0; i < count; i++)
     adjStart[i + 1] = (adjStart[i + 1] as number) + (adjStart[i] as number)
@@ -211,7 +213,8 @@ export function buildScene(snapshot: SnapshotInput): Scene {
     }
   })
   const allPlaced: Point[] = []
-  for (let i = 0; i < count; i++) if (placed[i] === 1) allPlaced.push([x[i] as number, y[i] as number])
+  for (let i = 0; i < count; i++)
+    if (placed[i] === 1) allPlaced.push([x[i] as number, y[i] as number])
   const origin = centroid(allPlaced)
   const clusterPlaced = sceneClusters.map((c) =>
     c.nodes.some((n) => placed[n] === 1)
@@ -219,7 +222,10 @@ export function buildScene(snapshot: SnapshotInput): Scene {
   for (let i = 0; i < count; i++) {
     if (placed[i] === 1) continue
     const ci = cluster[i] as number
-    const base = ci >= 0 && clusterPlaced[ci] ? (sceneClusters[ci] as SceneCluster).centroid : origin
+    const base =
+      ci >= 0 && clusterPlaced[ci]
+        ? (sceneClusters[ci] as SceneCluster).centroid
+        : origin
     const angle = hash01(ids[i] as string, 1) * Math.PI * 2
     const radius = 30 + hash01(ids[i] as string, 2) * 120
     x[i] = base[0] + Math.cos(angle) * radius
@@ -247,13 +253,17 @@ export function buildScene(snapshot: SnapshotInput): Scene {
   const diag = Math.hypot(maxX - minX, maxY - minY)
   const pad = Math.max(diag * 0.018, 8)
   for (const c of sceneClusters) {
-    const pts: Point[] = Array.from(c.nodes, (i) => [x[i] as number, y[i] as number])
+    const pts: Point[] = Array.from(c.nodes, (i) => [
+      x[i] as number,
+      y[i] as number,
+    ])
     c.centroid = centroid(pts)
     c.hull = paddedHull(trimOutliers(pts, c.centroid), pad)
   }
 
   const weight = new Float32Array(count)
-  for (let i = 0; i < count; i++) weight[i] = weightForDegree(degree[i] as number)
+  for (let i = 0; i < count; i++)
+    weight[i] = weightForDegree(degree[i] as number)
   const order = Uint32Array.from({ length: count }, (_, i) => i).sort(
     byDegreeThenId(degree, ids)
   )

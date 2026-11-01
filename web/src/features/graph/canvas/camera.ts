@@ -20,11 +20,19 @@ export const FIT_PADDING = 56
 
 const FRAME_MS = 1000 / 60
 
-export function screenToWorld(cam: Cam, sx: number, sy: number): [number, number] {
+export function screenToWorld(
+  cam: Cam,
+  sx: number,
+  sy: number
+): [number, number] {
   return [(sx - cam.x) / cam.k, (sy - cam.y) / cam.k]
 }
 
-export function worldToScreen(cam: Cam, wx: number, wy: number): [number, number] {
+export function worldToScreen(
+  cam: Cam,
+  wx: number,
+  wy: number
+): [number, number] {
   return [wx * cam.k + cam.x, wy * cam.k + cam.y]
 }
 
@@ -35,7 +43,10 @@ export function viewBounds(cam: Cam, size: Size, margin = 0): Bounds {
   return { minX, minY, maxX, maxY }
 }
 
-export function clampK(k: number, [min, max]: readonly [number, number]): number {
+export function clampK(
+  k: number,
+  [min, max]: readonly [number, number]
+): number {
   return Math.min(max, Math.max(min, k))
 }
 
@@ -186,8 +197,15 @@ export function baseSidePx(count: number, size: Size): number {
 }
 
 /** Screen side (px) of a node square: grows gently with relative zoom `z`, clamped to stay legible. */
-export function nodeScreenSide(basePx: number, weight: number, z: number): number {
-  return Math.min(Math.max(basePx * weight * Math.pow(Math.max(z, 0.05), 0.62), 3), 34)
+export function nodeScreenSide(
+  basePx: number,
+  weight: number,
+  z: number
+): number {
+  return Math.min(
+    Math.max(basePx * weight * Math.pow(Math.max(z, 0.05), 0.62), 3),
+    34
+  )
 }
 
 /** Fly-to duration in ms: short hops are quick, long ones cap at 500 ms (docs/web/05 #18). */

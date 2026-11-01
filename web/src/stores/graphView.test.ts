@@ -43,7 +43,13 @@ describe("graph view store", () => {
   it("ignores corrupt or out-of-range stored values field by field", async () => {
     localStorage.setItem(
       KEY,
-      JSON.stringify({ hulls: "yes", labels: "bold", tableHeight: 99_999, performance: "sometimes", minimap: false })
+      JSON.stringify({
+        hulls: "yes",
+        labels: "bold",
+        tableHeight: 99_999,
+        performance: "sometimes",
+        minimap: false,
+      })
     )
     const s = (await freshStore()).getState()
     expect(s.hulls).toBe(true)

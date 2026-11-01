@@ -742,7 +742,9 @@ export interface PendingPaths {
   "/workspaces/{ws}/review/cards": Path<
     Method<"get", GetOp<CardListItem[], WsP, { state?: CardState; q?: string }>>
   >
-  "/workspaces/{ws}/review/cards/{id}": Path<Method<"get", GetOp<CardDetail, WsId>>>
+  "/workspaces/{ws}/review/cards/{id}": Path<
+    Method<"get", GetOp<CardDetail, WsId>>
+  >
   "/workspaces/{ws}/review/sync": Path<
     Method<"post", BodylessOp<Record<string, never>, WsP>>
   >

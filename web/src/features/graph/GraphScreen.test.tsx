@@ -68,7 +68,9 @@ async function openGraph(path = PATH) {
 describe("graph screen", () => {
   it("loads the snapshot into the toolbar counts and the accessible list", async () => {
     await openGraph()
-    expect(screen.getByTestId("graph-counts")).toHaveTextContent("150 nodes · 201 chains")
+    expect(screen.getByTestId("graph-counts")).toHaveTextContent(
+      "150 nodes · 201 chains"
+    )
     const list = screen.getByRole("listbox", { name: /most connected first/i })
     const rows = within(list).getAllByTestId("graph-list-item")
     expect(rows.length).toBeGreaterThan(3)
@@ -84,14 +86,26 @@ describe("graph screen", () => {
     const first = screen.getAllByTestId("graph-list-item")[0]!
     await user.click(first)
     expect(first).toHaveAttribute("aria-selected", "true")
-    expect(await screen.findByTestId("graph-selection-count")).toHaveTextContent("1 selected")
-    expect(screen.getByTestId("graph-live")).toHaveTextContent(`Selected: ${topNode().text}`)
+    expect(
+      await screen.findByTestId("graph-selection-count")
+    ).toHaveTextContent("1 selected")
+    expect(screen.getByTestId("graph-live")).toHaveTextContent(
+      `Selected: ${topNode().text}`
+    )
     expect(await screen.findByTestId("graph-drawer")).toBeInTheDocument()
 
     await user.click(screen.getByTestId("graph-selection-clear"))
-    await waitFor(() => expect(screen.queryByTestId("graph-selection-bar")).not.toBeInTheDocument())
-    await waitFor(() => expect(screen.queryByTestId("graph-drawer")).not.toBeInTheDocument())
-    expect(screen.getByTestId("graph-live")).toHaveTextContent("Selection cleared")
+    await waitFor(() =>
+      expect(
+        screen.queryByTestId("graph-selection-bar")
+      ).not.toBeInTheDocument()
+    )
+    await waitFor(() =>
+      expect(screen.queryByTestId("graph-drawer")).not.toBeInTheDocument()
+    )
+    expect(screen.getByTestId("graph-live")).toHaveTextContent(
+      "Selection cleared"
+    )
   })
 
   it("Enter on the list opens the drawer with provenance, and the close button dismisses it", async () => {
@@ -101,37 +115,59 @@ describe("graph screen", () => {
     list.focus()
     await user.keyboard("{Enter}")
     const drawer = await screen.findByTestId("graph-drawer")
-    expect(within(drawer).getByTestId("graph-drawer-text")).toHaveTextContent(topNode().text)
-    await waitFor(() => expect(within(drawer).getByTestId("graph-drawer-source")).toBeInTheDocument())
+    expect(within(drawer).getByTestId("graph-drawer-text")).toHaveTextContent(
+      topNode().text
+    )
+    await waitFor(() =>
+      expect(
+        within(drawer).getByTestId("graph-drawer-source")
+      ).toBeInTheDocument()
+    )
     expect(router.state.location.search).toMatchObject({ node: topNode().id })
 
     await user.click(within(drawer).getByTestId("graph-drawer-close"))
-    await waitFor(() => expect(screen.queryByTestId("graph-drawer")).not.toBeInTheDocument())
+    await waitFor(() =>
+      expect(screen.queryByTestId("graph-drawer")).not.toBeInTheDocument()
+    )
   })
 
   it("restores the open node from ?node= on a cold load", async () => {
     const id = topNode().id
     await openGraph(`${PATH}?node=${id}`)
     const drawer = await screen.findByTestId("graph-drawer")
-    expect(within(drawer).getByTestId("graph-drawer-text")).toHaveTextContent(topNode().text)
+    expect(within(drawer).getByTestId("graph-drawer-text")).toHaveTextContent(
+      topNode().text
+    )
   })
 
   it("search filters the list to matches and writes ?q=", async () => {
     const user = userEvent.setup()
     const { router } = await openGraph()
     await user.type(screen.getByTestId("graph-search"), "executor")
-    await waitFor(() => expect(router.state.location.search).toMatchObject({ q: "executor" }))
-    await waitFor(() => expect(screen.getByTestId("graph-search-count")).toHaveTextContent(/match/))
+    await waitFor(() =>
+      expect(router.state.location.search).toMatchObject({ q: "executor" })
+    )
+    await waitFor(() =>
+      expect(screen.getByTestId("graph-search-count")).toHaveTextContent(
+        /match/
+      )
+    )
     const rows = screen.getAllByTestId("graph-list-item")
     const total = Number(rows[0]!.getAttribute("aria-setsize"))
     expect(total).toBeGreaterThan(0)
     expect(total).toBeLessThan(150)
-    for (const row of rows) expect(row.textContent?.toLowerCase()).toContain("executor")
+    for (const row of rows)
+      expect(row.textContent?.toLowerCase()).toContain("executor")
 
     await user.click(screen.getByTestId("graph-search-clear"))
-    await waitFor(() => expect(router.state.location.search).not.toHaveProperty("q"))
     await waitFor(() =>
-      expect(screen.getAllByTestId("graph-list-item")[0]).toHaveAttribute("aria-setsize", "150")
+      expect(router.state.location.search).not.toHaveProperty("q")
+    )
+    await waitFor(() =>
+      expect(screen.getAllByTestId("graph-list-item")[0]).toHaveAttribute(
+        "aria-setsize",
+        "150"
+      )
     )
   })
 
@@ -143,7 +179,9 @@ describe("graph screen", () => {
     await user.click(await screen.findByTestId("graph-selection-delete"))
 
     const dialog = await screen.findByTestId("graph-delete-dialog")
-    expect(await within(dialog).findByTestId("graph-delete-summary")).toHaveTextContent(/chains? lose/)
+    expect(
+      await within(dialog).findByTestId("graph-delete-summary")
+    ).toHaveTextContent(/chains? lose/)
     expect(within(dialog).getByTestId("graph-delete-blast")).toBeInTheDocument()
     const confirm = within(dialog).getByTestId("graph-delete-confirm")
     expect(confirm).toBeDisabled()
@@ -152,9 +190,17 @@ describe("graph screen", () => {
     expect(confirm).toBeEnabled()
     await user.click(confirm)
 
-    await waitFor(() => expect(screen.queryByTestId("graph-delete-dialog")).not.toBeInTheDocument())
-    await waitFor(() => expect(screen.getByTestId("graph-counts")).toHaveTextContent("149 nodes"))
-    expect(state.db.graphs.get(WS)?.snapshot.nodes.some((n) => n.id === doomed)).toBe(false)
+    await waitFor(() =>
+      expect(
+        screen.queryByTestId("graph-delete-dialog")
+      ).not.toBeInTheDocument()
+    )
+    await waitFor(() =>
+      expect(screen.getByTestId("graph-counts")).toHaveTextContent("149 nodes")
+    )
+    expect(
+      state.db.graphs.get(WS)?.snapshot.nodes.some((n) => n.id === doomed)
+    ).toBe(false)
   })
 
   it("cancelling the delete keeps the graph untouched", async () => {
@@ -163,7 +209,11 @@ describe("graph screen", () => {
     await user.click(screen.getAllByTestId("graph-list-item")[0]!)
     await user.click(await screen.findByTestId("graph-selection-delete"))
     await user.click(await screen.findByTestId("graph-delete-cancel"))
-    await waitFor(() => expect(screen.queryByTestId("graph-delete-dialog")).not.toBeInTheDocument())
+    await waitFor(() =>
+      expect(
+        screen.queryByTestId("graph-delete-dialog")
+      ).not.toBeInTheDocument()
+    )
     expect(screen.getByTestId("graph-counts")).toHaveTextContent("150 nodes")
   })
 
@@ -172,23 +222,35 @@ describe("graph screen", () => {
     await openGraph()
     await user.click(screen.getByTestId("graph-toggle-table"))
     const table = await screen.findByTestId("graph-table")
-    expect(within(table).getByTestId("graph-table-scope")).toHaveTextContent("All chains")
-    expect(await within(table).findByTestId("graph-table-tree")).toBeInTheDocument()
+    expect(within(table).getByTestId("graph-table-scope")).toHaveTextContent(
+      "All chains"
+    )
+    expect(
+      await within(table).findByTestId("graph-table-tree")
+    ).toBeInTheDocument()
     await user.click(screen.getByTestId("graph-table-close"))
-    await waitFor(() => expect(screen.queryByTestId("graph-table")).not.toBeInTheDocument())
+    await waitFor(() =>
+      expect(screen.queryByTestId("graph-table")).not.toBeInTheDocument()
+    )
   })
 
   it("a source filter hides other sources from the list and clears again", async () => {
     const user = userEvent.setup()
     const { router } = await openGraph()
     await user.click(screen.getByTestId("graph-filter-source-git"))
-    await waitFor(() => expect(router.state.location.search).toHaveProperty("src"))
+    await waitFor(() =>
+      expect(router.state.location.search).toHaveProperty("src")
+    )
     const rows = screen.getAllByTestId("graph-list-item")
     expect(Number(rows[0]!.getAttribute("aria-setsize"))).toBeLessThan(150)
     expect(screen.getByTestId("graph-counts")).toHaveTextContent(/of 150 nodes/)
 
     await user.click(screen.getByTestId("graph-clear-filters"))
-    await waitFor(() => expect(screen.getByTestId("graph-counts")).toHaveTextContent("150 nodes · 201 chains"))
+    await waitFor(() =>
+      expect(screen.getByTestId("graph-counts")).toHaveTextContent(
+        "150 nodes · 201 chains"
+      )
+    )
   })
 })
 
@@ -196,7 +258,14 @@ describe("graph screen states", () => {
   it("shows the empty state with both calls to action when there are no nodes", async () => {
     server.use(
       http.get(GRAPH_URL, () =>
-        HttpResponse.json({ version: 1, nodes: [], chains: [], clusters: [], positions: {}, layoutVersion: 1 })
+        HttpResponse.json({
+          version: 1,
+          nodes: [],
+          chains: [],
+          clusters: [],
+          positions: {},
+          layoutVersion: 1,
+        })
       )
     )
     renderApp(PATH)
@@ -218,7 +287,11 @@ describe("graph screen states", () => {
     )
     const user = userEvent.setup()
     renderApp(PATH)
-    expect(await screen.findByText("Could not load the graph", undefined, { timeout: 4000 })).toBeInTheDocument()
+    expect(
+      await screen.findByText("Could not load the graph", undefined, {
+        timeout: 4000,
+      })
+    ).toBeInTheDocument()
     const before = calls
     await user.click(screen.getByRole("button", { name: /retry|try again/i }))
     await waitFor(() => expect(calls).toBeGreaterThan(before))
@@ -226,9 +299,16 @@ describe("graph screen states", () => {
 
   it("switches to performance mode above the node limit, and the chip can turn it off", async () => {
     const user = userEvent.setup()
-    state.db.graphs.set(WS, buildLargeGraph(WS, PERFORMANCE_NODE_LIMIT + 1, state.db.now, 5))
+    state.db.graphs.set(
+      WS,
+      buildLargeGraph(WS, PERFORMANCE_NODE_LIMIT + 1, state.db.now, 5)
+    )
     renderApp(PATH)
-    const chip = await screen.findByTestId("graph-performance-chip", undefined, { timeout: 8000 })
+    const chip = await screen.findByTestId(
+      "graph-performance-chip",
+      undefined,
+      { timeout: 8000 }
+    )
     expect(chip).toHaveTextContent(/performance mode/i)
     expect(useGraphView.getState().performance).toBe("auto")
 
@@ -237,9 +317,14 @@ describe("graph screen states", () => {
   }, 20_000)
 
   it("does not show the performance chip at the limit", async () => {
-    state.db.graphs.set(WS, buildLargeGraph(WS, PERFORMANCE_NODE_LIMIT, state.db.now, 5))
+    state.db.graphs.set(
+      WS,
+      buildLargeGraph(WS, PERFORMANCE_NODE_LIMIT, state.db.now, 5)
+    )
     renderApp(PATH)
     await screen.findByTestId("graph-toolbar", undefined, { timeout: 8000 })
-    expect(screen.queryByTestId("graph-performance-chip")).not.toBeInTheDocument()
+    expect(
+      screen.queryByTestId("graph-performance-chip")
+    ).not.toBeInTheDocument()
   }, 20_000)
 })

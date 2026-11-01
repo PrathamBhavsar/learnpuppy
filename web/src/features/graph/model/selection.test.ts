@@ -30,13 +30,25 @@ describe("selection", () => {
 
   it("marquee replaces, shift-marquee adds", () => {
     const base = selectOnly("a")
-    expect(selectMany(base, ["b", "c"], false)).toEqual({ selected: ["b", "c"], active: null })
-    expect(selectMany(base, ["b", "c"], true)).toEqual({ selected: ["a", "b", "c"], active: "a" })
+    expect(selectMany(base, ["b", "c"], false)).toEqual({
+      selected: ["b", "c"],
+      active: null,
+    })
+    expect(selectMany(base, ["b", "c"], true)).toEqual({
+      selected: ["a", "b", "c"],
+      active: "a",
+    })
   })
 
   it("a single swept node becomes active; duplicates collapse", () => {
-    expect(selectMany(EMPTY_SELECTION, ["x"], false)).toEqual({ selected: ["x"], active: "x" })
-    expect(selectMany(selectOnly("a"), ["a", "b"], true).selected).toEqual(["a", "b"])
+    expect(selectMany(EMPTY_SELECTION, ["x"], false)).toEqual({
+      selected: ["x"],
+      active: "x",
+    })
+    expect(selectMany(selectOnly("a"), ["a", "b"], true).selected).toEqual([
+      "a",
+      "b",
+    ])
   })
 
   it("an empty sweep without shift clears; with shift it keeps", () => {
@@ -47,7 +59,10 @@ describe("selection", () => {
   it("prunes ids that no longer exist and returns the same object when nothing changed", () => {
     const s = { selected: ["a", "b"], active: "b" }
     expect(pruneSelection(s, () => true)).toBe(s)
-    expect(pruneSelection(s, (id) => id === "a")).toEqual({ selected: ["a"], active: "a" })
+    expect(pruneSelection(s, (id) => id === "a")).toEqual({
+      selected: ["a"],
+      active: "a",
+    })
     expect(pruneSelection(s, () => false)).toEqual(EMPTY_SELECTION)
   })
 })

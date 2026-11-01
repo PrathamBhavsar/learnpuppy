@@ -6,7 +6,13 @@ import { useHotkeys } from "@/hooks/use-hotkey"
 
 import { screenToWorld } from "./canvas/camera"
 import type { GraphEngine } from "./canvas/engine"
-import { type Direction, nearestInDirection, nearestToPoint, stepTab, tabOrder } from "./model/nav"
+import {
+  type Direction,
+  nearestInDirection,
+  nearestToPoint,
+  stepTab,
+  tabOrder,
+} from "./model/nav"
 import type { Scene } from "./model/scene"
 
 const ARROWS: Record<string, Direction> = {
@@ -31,7 +37,11 @@ type Params = {
   visible: Uint8Array | null
   activeIdx: number
   selectedCount: number
-  pick: (idx: number, mode?: "replace" | "toggle", opts?: { open?: boolean }) => void
+  pick: (
+    idx: number,
+    mode?: "replace" | "toggle",
+    opts?: { open?: boolean }
+  ) => void
   clear: () => void
   openDrawer: () => void
   requestDelete: () => void
@@ -50,7 +60,11 @@ export function useGraphKeys({
 }: Params) {
   const startIdx = useCallback((): number => {
     if (!scene || !engine) return -1
-    const [wx, wy] = screenToWorld(engine.camera.cam, engine.size.w / 2, engine.size.h / 2)
+    const [wx, wy] = screenToWorld(
+      engine.camera.cam,
+      engine.size.w / 2,
+      engine.size.h / 2
+    )
     return nearestToPoint(scene, visible, wx, wy)
   }, [scene, engine, visible])
 
@@ -61,8 +75,10 @@ export function useGraphKeys({
       const dir = ARROWS[e.key]
       if (dir) {
         const from = activeIdx >= 0 ? activeIdx : -1
-        const to = from < 0 ? startIdx() : nearestInDirection(scene, visible, from, dir)
-        if (to >= 0) pick(to, e.shiftKey ? "toggle" : "replace", { open: false })
+        const to =
+          from < 0 ? startIdx() : nearestInDirection(scene, visible, from, dir)
+        if (to >= 0)
+          pick(to, e.shiftKey ? "toggle" : "replace", { open: false })
         e.preventDefault()
         return
       }
@@ -92,7 +108,17 @@ export function useGraphKeys({
         default:
       }
     },
-    [scene, engine, visible, activeIdx, selectedCount, pick, clear, openDrawer, startIdx]
+    [
+      scene,
+      engine,
+      visible,
+      activeIdx,
+      selectedCount,
+      pick,
+      clear,
+      openDrawer,
+      startIdx,
+    ]
   )
 
   useHotkeys([

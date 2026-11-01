@@ -11,14 +11,28 @@ export function convexHull(points: readonly Point[]): Point[] {
   const sorted = [...points].sort((a, b) => a[0] - b[0] || a[1] - b[1])
   const lower: Point[] = []
   for (const p of sorted) {
-    while (lower.length >= 2 && cross(lower[lower.length - 2] as Point, lower[lower.length - 1] as Point, p) <= 0)
+    while (
+      lower.length >= 2 &&
+      cross(
+        lower[lower.length - 2] as Point,
+        lower[lower.length - 1] as Point,
+        p
+      ) <= 0
+    )
       lower.pop()
     lower.push(p)
   }
   const upper: Point[] = []
   for (let i = sorted.length - 1; i >= 0; i--) {
     const p = sorted[i] as Point
-    while (upper.length >= 2 && cross(upper[upper.length - 2] as Point, upper[upper.length - 1] as Point, p) <= 0)
+    while (
+      upper.length >= 2 &&
+      cross(
+        upper[upper.length - 2] as Point,
+        upper[upper.length - 1] as Point,
+        p
+      ) <= 0
+    )
       upper.pop()
     upper.push(p)
   }
@@ -32,7 +46,12 @@ export function paddedHull(points: readonly Point[], pad: number): Point[] {
   if (points.length === 0) return []
   const grown: Point[] = []
   for (const [x, y] of convexHull(points)) {
-    grown.push([x - pad, y - pad], [x + pad, y - pad], [x + pad, y + pad], [x - pad, y + pad])
+    grown.push(
+      [x - pad, y - pad],
+      [x + pad, y - pad],
+      [x + pad, y + pad],
+      [x - pad, y + pad]
+    )
   }
   return convexHull(grown)
 }

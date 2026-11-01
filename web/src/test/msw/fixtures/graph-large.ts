@@ -65,11 +65,14 @@ export function buildLargeGraph(
   const rand = mulberry32(seed)
   const prefix = `n_${wsId.slice(3)}_`
   const sessions = Array.from({ length: 24 }, (_, i) => `sess_${wsId}_${i + 1}`)
-  const clusters: GraphCluster[] = Array.from({ length: clusterCount }, (_, i) => ({
-    id: `cl_${wsId}_${i + 1}`,
-    label: `Topic ${i + 1}`,
-    nodeIds: [],
-  }))
+  const clusters: GraphCluster[] = Array.from(
+    { length: clusterCount },
+    (_, i) => ({
+      id: `cl_${wsId}_${i + 1}`,
+      label: `Topic ${i + 1}`,
+      nodeIds: [],
+    })
+  )
   // Blob centres on a ring; the radius grows with sqrt(count) so density stays constant.
   const ring = Math.sqrt(count) * 18
   const spread = Math.sqrt(count / clusterCount) * 7
@@ -106,7 +109,9 @@ export function buildLargeGraph(
 
   const chains: GraphChain[] = []
   const seen = new Set<number>()
-  const members = clusters.map((c) => c.nodeIds.map((id) => Number(id.slice(prefix.length)) - 1))
+  const members = clusters.map((c) =>
+    c.nodeIds.map((id) => Number(id.slice(prefix.length)) - 1)
+  )
   const add = (a: number, b: number): void => {
     if (a === b) return
     const key = a < b ? a * count + b : b * count + a
@@ -167,7 +172,14 @@ export function buildLargeGraph(
   })
 
   return {
-    snapshot: { version: 1, nodes, chains, clusters, positions, layoutVersion: 1 },
+    snapshot: {
+      version: 1,
+      nodes,
+      chains,
+      clusters,
+      positions,
+      layoutVersion: 1,
+    },
     details,
   }
 }

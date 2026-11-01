@@ -11,7 +11,13 @@ import {
   sortGroups,
 } from "./chains"
 
-const row = (chainId: string, groupId: string, from: string, to: string, kind: ChainTableRow["kind"] = "supports"): ChainTableRow => ({
+const row = (
+  chainId: string,
+  groupId: string,
+  from: string,
+  to: string,
+  kind: ChainTableRow["kind"] = "supports"
+): ChainTableRow => ({
   groupId,
   groupLabel: `Session ${groupId}`,
   chainId,
@@ -37,18 +43,34 @@ describe("grouping and sorting", () => {
   const sorted = (sort: ChainSort) => sortGroups(groupRows(rows), sort, text)
 
   it("sorts groups by chain count", () => {
-    expect(sorted({ key: "count", dir: "desc" }).map((g) => g.id)).toEqual(["s2", "s1"])
-    expect(sorted({ key: "count", dir: "asc" }).map((g) => g.id)).toEqual(["s1", "s2"])
+    expect(sorted({ key: "count", dir: "desc" }).map((g) => g.id)).toEqual([
+      "s2",
+      "s1",
+    ])
+    expect(sorted({ key: "count", dir: "asc" }).map((g) => g.id)).toEqual([
+      "s1",
+      "s2",
+    ])
   })
 
   it("sorts groups by label", () => {
-    expect(sorted({ key: "group", dir: "asc" }).map((g) => g.id)).toEqual(["s1", "s2"])
-    expect(sorted({ key: "group", dir: "desc" }).map((g) => g.id)).toEqual(["s2", "s1"])
+    expect(sorted({ key: "group", dir: "asc" }).map((g) => g.id)).toEqual([
+      "s1",
+      "s2",
+    ])
+    expect(sorted({ key: "group", dir: "desc" }).map((g) => g.id)).toEqual([
+      "s2",
+      "s1",
+    ])
   })
 
   it("sorts chains within a group by kind", () => {
     const g = sorted({ key: "kind", dir: "asc" }).find((x) => x.id === "s2")
-    expect(g?.rows.map((r) => r.kind)).toEqual(["contrasts", "implies", "supports"])
+    expect(g?.rows.map((r) => r.kind)).toEqual([
+      "contrasts",
+      "implies",
+      "supports",
+    ])
   })
 
   it("sorts chains within a group by endpoint text", () => {
@@ -69,11 +91,17 @@ describe("flattenChains", () => {
     const flat = flattenChains(groups, new Set(["g:s2", "c:c1"]))
     expect(flat.map((r) => r.level)).toEqual([1, 2, 3, 3, 2, 2, 1])
     const level3 = flat.filter((r) => r.level === 3)
-    expect(level3.map((r) => (r.level === 3 ? r.role : ""))).toEqual(["from", "to"])
+    expect(level3.map((r) => (r.level === 3 ? r.role : ""))).toEqual([
+      "from",
+      "to",
+    ])
   })
 
   it("gives every row a unique key", () => {
-    const flat = flattenChains(groups, new Set(["g:s2", "g:s1", "c:c1", "c:c2"]))
+    const flat = flattenChains(
+      groups,
+      new Set(["g:s2", "g:s1", "c:c1", "c:c2"])
+    )
     expect(new Set(flat.map((r) => r.key)).size).toBe(flat.length)
   })
 })
@@ -93,7 +121,10 @@ describe("csv", () => {
   })
 
   it("exports a header and one line per chain", () => {
-    const csv = chainsToCsv(sortGroups(groupRows(rows), { key: "group", dir: "asc" }, text), text)
+    const csv = chainsToCsv(
+      sortGroups(groupRows(rows), { key: "group", dir: "asc" }, text),
+      text
+    )
     const lines = csv.trimEnd().split("\n")
     expect(lines[0]).toBe("group,chain,kind,from_id,from_text,to_id,to_text")
     expect(lines).toHaveLength(1 + rows.length)

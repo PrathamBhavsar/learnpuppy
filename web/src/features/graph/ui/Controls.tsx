@@ -70,10 +70,18 @@ export function Controls({
       aria-label="Graph view controls"
       className="pointer-events-auto flex flex-col gap-1"
     >
-      <ControlButton label={copy.zoomIn} testId="graph-zoom-in" onClick={onZoomIn}>
+      <ControlButton
+        label={copy.zoomIn}
+        testId="graph-zoom-in"
+        onClick={onZoomIn}
+      >
         <PlusIcon />
       </ControlButton>
-      <ControlButton label={copy.zoomOut} testId="graph-zoom-out" onClick={onZoomOut}>
+      <ControlButton
+        label={copy.zoomOut}
+        testId="graph-zoom-out"
+        onClick={onZoomOut}
+      >
         <MinusIcon />
       </ControlButton>
       <ControlButton label={copy.fit} testId="graph-fit" onClick={onFit}>

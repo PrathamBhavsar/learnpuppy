@@ -33,7 +33,16 @@ function Chevron({ open }: { open: boolean }) {
 }
 
 /** One virtualized row of the 3-level chain table (group → chain → proposition). */
-export function ChainRow({ row, position, size, active, selected, textOf, onToggle, onPick }: Props) {
+export function ChainRow({
+  row,
+  position,
+  size,
+  active,
+  selected,
+  textOf,
+  onToggle,
+  onPick,
+}: Props) {
   const common = {
     role: "treeitem" as const,
     id: `graph-chain-row-${row.key}`,
@@ -44,7 +53,7 @@ export function ChainRow({ row, position, size, active, selected, textOf, onTogg
     "data-testid": `graph-chain-row-l${row.level}`,
     style: { paddingInlineStart: 8 + INDENT[row.level] },
     className: cn(
-      "flex h-full animate-in items-center gap-2 pe-3 text-[12px] fade-in-0 slide-in-from-top-1 duration-150",
+      "flex h-full animate-in items-center gap-2 pe-3 text-[12px] duration-150 fade-in-0 slide-in-from-top-1",
       "cursor-pointer border-b border-border/50 hover:bg-muted/60",
       selected && "bg-primary/10",
       active && "outline outline-1 -outline-offset-1 outline-ring"
@@ -53,10 +62,21 @@ export function ChainRow({ row, position, size, active, selected, textOf, onTogg
 
   if (row.level === 1) {
     return (
-      <div {...common} aria-expanded={row.expanded} onClick={() => onToggle(row.key)}>
+      <div
+        {...common}
+        aria-expanded={row.expanded}
+        onClick={() => onToggle(row.key)}
+      >
         <Chevron open={row.expanded} />
-        <span className="min-w-0 flex-1 truncate font-medium" title={row.group.label}>{row.group.label}</span>
-        <span className="text-muted-foreground tabular-nums">{formatCount(row.group.rows.length)}</span>
+        <span
+          className="min-w-0 flex-1 truncate font-medium"
+          title={row.group.label}
+        >
+          {row.group.label}
+        </span>
+        <span className="text-muted-foreground tabular-nums">
+          {formatCount(row.group.rows.length)}
+        </span>
       </div>
     )
   }
@@ -77,10 +97,23 @@ export function ChainRow({ row, position, size, active, selected, textOf, onTogg
         >
           <Chevron open={row.expanded} />
         </button>
-        <Badge variant="outline" className="shrink-0">{copy.drawer.chainKinds[row.row.kind] ?? row.row.kind}</Badge>
-        <span dir="auto" className="min-w-0 flex-1 truncate" title={`${from} → ${to}`}>{from}</span>
-        <ArrowRightIcon aria-hidden className="size-3 shrink-0 text-muted-foreground rtl:-scale-x-100" />
-        <span dir="auto" className="min-w-0 flex-1 truncate">{to}</span>
+        <Badge variant="outline" className="shrink-0">
+          {copy.drawer.chainKinds[row.row.kind] ?? row.row.kind}
+        </Badge>
+        <span
+          dir="auto"
+          className="min-w-0 flex-1 truncate"
+          title={`${from} → ${to}`}
+        >
+          {from}
+        </span>
+        <ArrowRightIcon
+          aria-hidden
+          className="size-3 shrink-0 text-muted-foreground rtl:-scale-x-100"
+        />
+        <span dir="auto" className="min-w-0 flex-1 truncate">
+          {to}
+        </span>
       </div>
     )
   }
@@ -89,7 +122,13 @@ export function ChainRow({ row, position, size, active, selected, textOf, onTogg
       <Badge variant="secondary" className="shrink-0">
         {row.role === "from" ? copy.table_.premise : copy.table_.conclusion}
       </Badge>
-      <span dir="auto" className="min-w-0 flex-1 truncate" title={textOf(row.nodeId)}>{textOf(row.nodeId)}</span>
+      <span
+        dir="auto"
+        className="min-w-0 flex-1 truncate"
+        title={textOf(row.nodeId)}
+      >
+        {textOf(row.nodeId)}
+      </span>
     </div>
   )
 }

@@ -12,15 +12,8 @@
     "e2e/serve/*.spec.ts",
     "e2e/perf/*.spec.ts"
   ],
-  "project": [
-    "src/**/*.{ts,tsx}",
-    "scripts/**/*.ts",
-    "e2e/**/*.ts"
-  ],
-  "ignore": [
-    "src/components/ui/**",
-    "src/api/schema.d.ts"
-  ],
+  "project": ["src/**/*.{ts,tsx}", "scripts/**/*.ts", "e2e/**/*.ts"],
+  "ignore": ["src/components/ui/**", "src/api/schema.d.ts"],
   "ignoreDependencies": [
     "shadcn",
     "tw-animate-css",

@@ -27,7 +27,8 @@ export function useGraphModel(ws: string, url: GraphUrl) {
   const snapshot = query.data
 
   const scene: Scene | null = useMemo(
-    () => (snapshot && snapshot.positions !== null ? buildScene(snapshot) : null),
+    () =>
+      snapshot && snapshot.positions !== null ? buildScene(snapshot) : null,
     [snapshot]
   )
 
@@ -35,21 +36,34 @@ export function useGraphModel(ws: string, url: GraphUrl) {
     () => ({ sources: url.sources, cluster: url.cluster, minDegree }),
     [url.sources, url.cluster, minDegree]
   )
-  const visible = useMemo(() => (scene ? visibilityMask(scene, filters) : null), [scene, filters])
-  const counts = useMemo(() => (scene ? countVisible(scene, visible) : { nodes: 0, chains: 0 }), [scene, visible])
+  const visible = useMemo(
+    () => (scene ? visibilityMask(scene, filters) : null),
+    [scene, filters]
+  )
+  const counts = useMemo(
+    () => (scene ? countVisible(scene, visible) : { nodes: 0, chains: 0 }),
+    [scene, visible]
+  )
 
   const term = url.q.trim()
   const search = useGraphSearch(ws, term)
   const hits = term && search.data ? search.data : null
   const match = useMemo(
-    () => (scene && hits ? matchMask(scene, hits.map((h) => h.id)) : null),
+    () =>
+      scene && hits
+        ? matchMask(
+            scene,
+            hits.map((h) => h.id)
+          )
+        : null,
     [scene, hits]
   )
 
   const maxDegree = useMemo(() => {
     if (!scene) return 0
     let max = 0
-    for (let i = 0; i < scene.count; i++) if ((scene.degree[i] as number) > max) max = scene.degree[i] as number
+    for (let i = 0; i < scene.count; i++)
+      if ((scene.degree[i] as number) > max) max = scene.degree[i] as number
     return Math.min(max, MAX_DEGREE_CAP)
   }, [scene])
 
@@ -62,11 +76,13 @@ export function useGraphModel(ws: string, url: GraphUrl) {
     }
     return out
   }, [scene, selection.selected])
-  const activeIdx = scene && selection.active ? (scene.index.get(selection.active) ?? -1) : -1
+  const activeIdx =
+    scene && selection.active ? (scene.index.get(selection.active) ?? -1) : -1
 
   const nodeCount = snapshot?.nodes.length ?? 0
   const overLimit = nodeCount > PERFORMANCE_NODE_LIMIT
-  const performance = overLimit && performancePref !== "off" ? true : performancePref === "on"
+  const performance =
+    overLimit && performancePref !== "off" ? true : performancePref === "on"
 
   return {
     query,

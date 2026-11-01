@@ -16,11 +16,20 @@ export type TestNode = {
 export function snapshotOf(
   nodes: TestNode[],
   chains: [string, string, ChainKind?][] = [],
-  opts: { layoutVersion?: number; version?: number; clusters?: { id: string; label: string }[] } = {}
+  opts: {
+    layoutVersion?: number
+    version?: number
+    clusters?: { id: string; label: string }[]
+  } = {}
 ): SnapshotInput {
   const positions: Record<string, [number, number]> = {}
-  for (const n of nodes) if (n.x !== undefined && n.y !== undefined) positions[n.id] = [n.x, n.y]
-  const clusterIds = opts.clusters ?? [...new Set(nodes.map((n) => n.cluster).filter((c): c is string => !!c))].map((id) => ({ id, label: id }))
+  for (const n of nodes)
+    if (n.x !== undefined && n.y !== undefined) positions[n.id] = [n.x, n.y]
+  const clusterIds =
+    opts.clusters ??
+    [
+      ...new Set(nodes.map((n) => n.cluster).filter((c): c is string => !!c)),
+    ].map((id) => ({ id, label: id }))
   return {
     version: opts.version ?? 1,
     layoutVersion: opts.layoutVersion ?? 1,
@@ -33,7 +42,12 @@ export function snapshotOf(
       createdAt: 0,
       degree: 0,
     })),
-    chains: chains.map(([from, to, kind], i) => ({ id: `c${i + 1}`, from, to, kind: kind ?? "supports" })),
+    chains: chains.map(([from, to, kind], i) => ({
+      id: `c${i + 1}`,
+      from,
+      to,
+      kind: kind ?? "supports",
+    })),
     clusters: clusterIds.map((c) => ({
       id: c.id,
       label: c.label,

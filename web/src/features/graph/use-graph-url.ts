@@ -63,10 +63,25 @@ export function useGraphUrl(): GraphUrl {
     sources,
     cluster: search.cluster ?? null,
     // Picking a node adds a history entry so Back closes the drawer; filters replace.
-    setNode: useCallback((id) => patch({ node: id ?? undefined }, false), [patch]),
-    setQuery: useCallback((q) => patch({ q: q.trim() ? q : undefined }, true), [patch]),
-    setSources: useCallback((s) => patch({ src: serializeSources(s) }, true), [patch]),
-    setCluster: useCallback((id) => patch({ cluster: id ?? undefined }, true), [patch]),
-    clearFilters: useCallback(() => patch({ src: undefined, cluster: undefined }, true), [patch]),
+    setNode: useCallback(
+      (id) => patch({ node: id ?? undefined }, false),
+      [patch]
+    ),
+    setQuery: useCallback(
+      (q) => patch({ q: q.trim() ? q : undefined }, true),
+      [patch]
+    ),
+    setSources: useCallback(
+      (s) => patch({ src: serializeSources(s) }, true),
+      [patch]
+    ),
+    setCluster: useCallback(
+      (id) => patch({ cluster: id ?? undefined }, true),
+      [patch]
+    ),
+    clearFilters: useCallback(
+      () => patch({ src: undefined, cluster: undefined }, true),
+      [patch]
+    ),
   }
 }

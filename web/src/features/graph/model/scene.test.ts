@@ -9,7 +9,14 @@ describe("buildScene", () => {
     [
       { id: "a", x: 0, y: 0, cluster: "k1", source: "codex" },
       { id: "b", x: 100, y: 0, cluster: "k1" },
-      { id: "c", x: 100, y: 100, cluster: "k2", source: "git", kind: "decision" },
+      {
+        id: "c",
+        x: 100,
+        y: 100,
+        cluster: "k2",
+        source: "git",
+        kind: "decision",
+      },
       { id: "d", x: -50, y: 80 },
     ],
     [
@@ -73,7 +80,9 @@ describe("unplaced nodes", () => {
     const one = buildScene(snap)
     const two = buildScene(snap)
     const i = one.index.get("new") as number
-    expect(Math.hypot((one.x[i] as number) - 510, (one.y[i] as number) - 490)).toBeLessThan(200)
+    expect(
+      Math.hypot((one.x[i] as number) - 510, (one.y[i] as number) - 490)
+    ).toBeLessThan(200)
     expect(one.x[i]).toBe(two.x[i])
     expect(one.y[i]).toBe(two.y[i])
   })

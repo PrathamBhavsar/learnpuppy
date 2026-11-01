@@ -47,9 +47,15 @@ export function selectMany(
 }
 
 /** Drops ids that no longer exist (after a delete or a refetch). */
-export function pruneSelection(sel: Selection, exists: (id: string) => boolean): Selection {
+export function pruneSelection(
+  sel: Selection,
+  exists: (id: string) => boolean
+): Selection {
   const selected = sel.selected.filter(exists)
   if (selected.length === sel.selected.length) return sel
-  const active = sel.active && exists(sel.active) ? sel.active : (selected[selected.length - 1] ?? null)
+  const active =
+    sel.active && exists(sel.active)
+      ? sel.active
+      : (selected[selected.length - 1] ?? null)
   return { selected, active }
 }

@@ -42,7 +42,12 @@ function fakeContext() {
 // Five nodes 8px apart: every label overlaps its neighbours.
 const crowded = () =>
   sceneOf(
-    [0, 1, 2, 3, 4].map((i) => ({ id: `n${i}`, x: i * 8, y: 0, text: `Proposition number ${i}` }))
+    [0, 1, 2, 3, 4].map((i) => ({
+      id: `n${i}`,
+      x: i * 8,
+      y: 0,
+      text: `Proposition number ${i}`,
+    }))
   )
 
 function frame(over: Partial<FrameState>): FrameState {
@@ -93,7 +98,10 @@ describe("drawNodeLabels", () => {
 
   it("does not pile labels on top of each other for a large selection", () => {
     const { ctx, drawn } = fakeContext()
-    drawNodeLabels(ctx, frame({ selectedAny: true, selected: new Uint8Array([1, 1, 1, 1, 1]) }))
+    drawNodeLabels(
+      ctx,
+      frame({ selectedAny: true, selected: new Uint8Array([1, 1, 1, 1, 1]) })
+    )
     expect(drawn.length).toBeGreaterThanOrEqual(1)
     expect(drawn.length).toBeLessThan(5)
   })
@@ -108,7 +116,12 @@ describe("drawNodeLabels", () => {
     const { ctx, drawn } = fakeContext()
     drawNodeLabels(
       ctx,
-      frame({ hoverIdx: 1, hoverMix: 1, selectedAny: true, selected: new Uint8Array([1, 1, 1, 1, 1]) })
+      frame({
+        hoverIdx: 1,
+        hoverMix: 1,
+        selectedAny: true,
+        selected: new Uint8Array([1, 1, 1, 1, 1]),
+      })
     )
     expect(drawn[0]).toBe("Proposition number 1")
     expect(new Set(drawn).size).toBe(drawn.length)

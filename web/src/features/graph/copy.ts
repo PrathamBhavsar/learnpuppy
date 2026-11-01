@@ -1,15 +1,22 @@
 // All user-visible strings for the graph screen live here (docs/web/04 §Conventions).
-const counts = new Intl.NumberFormat(undefined, { notation: "compact", maximumFractionDigits: 1 })
+const counts = new Intl.NumberFormat(undefined, {
+  notation: "compact",
+  maximumFractionDigits: 1,
+})
 const whole = new Intl.NumberFormat()
 const plural = new Intl.PluralRules()
 
-export const formatCount = (n: number): string => (n >= 10_000 ? counts.format(n) : whole.format(n))
+export const formatCount = (n: number): string =>
+  n >= 10_000 ? counts.format(n) : whole.format(n)
 
 function pluralize(n: number, one: string, other: string): string {
   return `${formatCount(n)} ${plural.select(n) === "one" ? one : other}`
 }
 
-export const dateFormat = new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" })
+export const dateFormat = new Intl.DateTimeFormat(undefined, {
+  dateStyle: "medium",
+  timeStyle: "short",
+})
 
 export const copy = {
   title: "Graph",
@@ -22,7 +29,8 @@ export const copy = {
   search: "Search propositions",
   searchPlaceholder: "Search propositions",
   searchClear: "Clear search",
-  searchMatches: (n: number) => (n === 0 ? "No matches" : pluralize(n, "match", "matches")),
+  searchMatches: (n: number) =>
+    n === 0 ? "No matches" : pluralize(n, "match", "matches"),
   sources: "Source",
   allClusters: "All clusters",
   cluster: "Cluster",
@@ -60,12 +68,17 @@ export const copy = {
   },
   pending: {
     title: "Computing layout…",
-    description: "Placing propositions so related ones sit together. This takes a moment on large graphs.",
+    description:
+      "Placing propositions so related ones sit together. This takes a moment on large graphs.",
   },
-  error: { title: "Could not load the graph", message: "The graph snapshot failed to load." },
+  error: {
+    title: "Could not load the graph",
+    message: "The graph snapshot failed to load.",
+  },
   noMatchesFilter: {
     title: "Nothing matches these filters",
-    description: "Relax the source, cluster or connection filters to see propositions again.",
+    description:
+      "Relax the source, cluster or connection filters to see propositions again.",
   },
   legend: {
     title: "Legend",
@@ -77,7 +90,13 @@ export const copy = {
     decision: "Decision",
     chain: "Chain, from premise to conclusion",
     hull: "Cluster outline",
-    sourceNames: { claude: "Claude", codex: "Codex", agy: "Antigravity", git: "Git", chat: "Chat" } as Record<string, string>,
+    sourceNames: {
+      claude: "Claude",
+      codex: "Codex",
+      agy: "Antigravity",
+      git: "Git",
+      chat: "Chat",
+    } as Record<string, string>,
   },
   drawer: {
     label: "Proposition details",
@@ -97,8 +116,18 @@ export const copy = {
     practice: "Practice this",
     delete: "Delete…",
     loadFailed: "Could not load details",
-    chainKinds: { supports: "supports", implies: "implies", contrasts: "contrasts", part_of: "part of" } as Record<string, string>,
-    cardStates: { new: "New", learning: "Learning", review: "Review", relearning: "Relearning" } as Record<string, string>,
+    chainKinds: {
+      supports: "supports",
+      implies: "implies",
+      contrasts: "contrasts",
+      part_of: "part of",
+    } as Record<string, string>,
+    cardStates: {
+      new: "New",
+      learning: "Learning",
+      review: "Review",
+      relearning: "Relearning",
+    } as Record<string, string>,
   },
   selection: {
     count: (n: number) => `${formatCount(n)} selected`,
@@ -108,17 +137,21 @@ export const copy = {
     practiceFailed: "Could not start a practice chat",
   },
   del: {
-    title: (n: number) => `Delete ${pluralize(n, "proposition", "propositions")}?`,
-    description: "Deleted propositions move out of the graph. Chains that lose an endpoint are removed with them.",
+    title: (n: number) =>
+      `Delete ${pluralize(n, "proposition", "propositions")}?`,
+    description:
+      "Deleted propositions move out of the graph. Chains that lose an endpoint are removed with them.",
     loading: "Checking what this affects…",
-    orphaned: (n: number) => `${pluralize(n, "chain loses", "chains lose")} an endpoint`,
+    orphaned: (n: number) =>
+      `${pluralize(n, "chain loses", "chains lose")} an endpoint`,
     none: "No chains are affected.",
     more: (n: number) => `and ${formatCount(n)} more`,
     understand: "I understand these chains will be removed",
     confirm: "Delete",
     cancel: "Cancel",
     working: "Deleting…",
-    done: (n: number) => `Deleted ${pluralize(n, "proposition", "propositions")}`,
+    done: (n: number) =>
+      `Deleted ${pluralize(n, "proposition", "propositions")}`,
     failed: "Could not delete",
     previewFailed: "Could not check what deleting affects",
     stale: "The graph changed since this preview. Review it again.",
@@ -139,7 +172,10 @@ export const copy = {
     collapse: "Collapse",
     resize: "Resize chain table",
     loadFailed: "Could not load chains",
-    scope: (n: number) => (n === 0 ? "All chains" : `Chains of ${pluralize(n, "selected proposition", "selected propositions")}`),
+    scope: (n: number) =>
+      n === 0
+        ? "All chains"
+        : `Chains of ${pluralize(n, "selected proposition", "selected propositions")}`,
     csvName: "graph-chains.csv",
   },
   menu: {

@@ -30,9 +30,12 @@ const SOURCE_VARS: Record<string, string> = {
 
 const FALLBACK = "gray"
 
-export function readCanvasTheme(root: Element = document.documentElement): CanvasTheme {
+export function readCanvasTheme(
+  root: Element = document.documentElement
+): CanvasTheme {
   const style = getComputedStyle(root)
-  const read = (name: string): string => style.getPropertyValue(name).trim() || FALLBACK
+  const read = (name: string): string =>
+    style.getPropertyValue(name).trim() || FALLBACK
   const font = read("--font-mono")
   return {
     background: read("--background"),

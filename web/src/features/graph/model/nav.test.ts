@@ -28,22 +28,32 @@ describe("nearestInDirection", () => {
   it("moves to the neighbour in each direction", () => {
     const at = (id: string) => scene.index.get(id) as number
     expect(nearestInDirection(scene, null, at("center"), "up")).toBe(at("up"))
-    expect(nearestInDirection(scene, null, at("center"), "down")).toBe(at("down"))
-    expect(nearestInDirection(scene, null, at("center"), "left")).toBe(at("left"))
-    expect(nearestInDirection(scene, null, at("center"), "right")).toBe(at("right"))
+    expect(nearestInDirection(scene, null, at("center"), "down")).toBe(
+      at("down")
+    )
+    expect(nearestInDirection(scene, null, at("center"), "left")).toBe(
+      at("left")
+    )
+    expect(nearestInDirection(scene, null, at("center"), "right")).toBe(
+      at("right")
+    )
   })
 
   it("prefers the straight-ahead node over a nearer diagonal one", () => {
     const at = (id: string) => scene.index.get(id) as number
     // `diag` (70,70) is ~99 away at 45° down-right; `right` is 100 straight ahead.
-    expect(nearestInDirection(scene, null, at("center"), "right")).toBe(at("right"))
+    expect(nearestInDirection(scene, null, at("center"), "right")).toBe(
+      at("right")
+    )
   })
 
   it("skips hidden nodes", () => {
     const at = (id: string) => scene.index.get(id) as number
     const visible = new Uint8Array(scene.count).fill(1)
     visible[at("right")] = 0
-    expect(nearestInDirection(scene, visible, at("center"), "right")).toBe(at("far"))
+    expect(nearestInDirection(scene, visible, at("center"), "right")).toBe(
+      at("far")
+    )
   })
 
   it("returns -1 when nothing lies that way", () => {
@@ -67,7 +77,9 @@ describe("tab order", () => {
     expect(order[0]).toBe(scene.index.get("center"))
     const visible = new Uint8Array(scene.count).fill(1)
     visible[scene.index.get("center") as number] = 0
-    expect(Array.from(tabOrder(scene, visible))).not.toContain(scene.index.get("center"))
+    expect(Array.from(tabOrder(scene, visible))).not.toContain(
+      scene.index.get("center")
+    )
   })
 
   it("steps forward and backward, entering from -1", () => {
@@ -91,6 +103,8 @@ describe("nearestToPoint", () => {
     expect(nearestToPoint(scene, null, 95, -5)).toBe(scene.index.get("right"))
     const visible = new Uint8Array(scene.count).fill(1)
     visible[scene.index.get("right") as number] = 0
-    expect(nearestToPoint(scene, visible, 95, -5)).not.toBe(scene.index.get("right"))
+    expect(nearestToPoint(scene, visible, 95, -5)).not.toBe(
+      scene.index.get("right")
+    )
   })
 })

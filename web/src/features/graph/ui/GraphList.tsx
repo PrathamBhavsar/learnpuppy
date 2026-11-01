@@ -25,9 +25,19 @@ type Props = {
   announcement: string
 }
 
-export function GraphList({ scene, visible, match, selected, active, onPick, onOpen, announcement }: Props) {
+export function GraphList({
+  scene,
+  visible,
+  match,
+  selected,
+  active,
+  onPick,
+  onOpen,
+  announcement,
+}: Props) {
   const items = useMemo(() => {
-    const keep = (i: number) => (!visible || visible[i] === 1) && (!match || match[i] === 1)
+    const keep = (i: number) =>
+      (!visible || visible[i] === 1) && (!match || match[i] === 1)
     return scene.order.filter(keep)
   }, [scene, visible, match])
   const scroller = useRef<HTMLDivElement>(null)
@@ -76,7 +86,9 @@ export function GraphList({ scene, visible, match, selected, active, onPick, onO
         role="listbox"
         tabIndex={0}
         aria-label={copy.list.label}
-        aria-activedescendant={current !== undefined ? `graph-list-${scene.ids[current]}` : undefined}
+        aria-activedescendant={
+          current !== undefined ? `graph-list-${scene.ids[current]}` : undefined
+        }
         data-testid="graph-list"
         className="size-full overflow-y-auto outline-none focus-visible:ring-1 focus-visible:ring-ring/50 focus-visible:ring-inset"
         onKeyDown={(e) => {
@@ -90,7 +102,9 @@ export function GraphList({ scene, visible, match, selected, active, onPick, onO
           e.preventDefault()
         }}
       >
-        <div style={{ height: virtualizer.getTotalSize(), position: "relative" }}>
+        <div
+          style={{ height: virtualizer.getTotalSize(), position: "relative" }}
+        >
           {virtualizer.getVirtualItems().map((item) => {
             const idx = items[item.index]
             if (idx === undefined) return null
@@ -104,25 +118,43 @@ export function GraphList({ scene, visible, match, selected, active, onPick, onO
                 aria-posinset={item.index + 1}
                 aria-setsize={items.length}
                 data-testid="graph-list-item"
-                style={{ position: "absolute", insetInlineStart: 0, insetInlineEnd: 0, top: 0, height: item.size, transform: `translateY(${item.start}px)` }}
+                style={{
+                  position: "absolute",
+                  insetInlineStart: 0,
+                  insetInlineEnd: 0,
+                  top: 0,
+                  height: item.size,
+                  transform: `translateY(${item.start}px)`,
+                }}
                 className={cn(
                   "flex cursor-pointer items-center gap-2 px-2 text-[12px]",
                   selected.has(idx) && "bg-primary/10",
-                  item.index === cursor && "outline outline-1 -outline-offset-1 outline-ring"
+                  item.index === cursor &&
+                    "outline outline-1 -outline-offset-1 outline-ring"
                 )}
                 onClick={() => {
                   setCursor(item.index)
                   onPick(idx)
                 }}
               >
-                <span dir="auto" className="min-w-0 flex-1 truncate">{scene.texts[idx]}</span>
-                <span className="text-muted-foreground tabular-nums">{scene.degree[idx]}</span>
+                <span dir="auto" className="min-w-0 flex-1 truncate">
+                  {scene.texts[idx]}
+                </span>
+                <span className="text-muted-foreground tabular-nums">
+                  {scene.degree[idx]}
+                </span>
               </div>
             )
           })}
         </div>
       </div>
-      <div role="status" aria-live="polite" aria-atomic className="sr-only" data-testid="graph-live">
+      <div
+        role="status"
+        aria-live="polite"
+        aria-atomic
+        className="sr-only"
+        data-testid="graph-live"
+      >
         {announcement}
       </div>
     </div>

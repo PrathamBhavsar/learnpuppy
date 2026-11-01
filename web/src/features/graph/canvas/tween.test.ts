@@ -7,7 +7,10 @@ describe("TweenClock", () => {
     const clock = new TweenClock()
     const update = vi.fn()
     const done = vi.fn()
-    clock.start({ key: "a", duration: 100, ease: easings.linear, update, done }, 0)
+    clock.start(
+      { key: "a", duration: 100, ease: easings.linear, update, done },
+      0
+    )
     expect(clock.tick(50)).toBe(true)
     expect(update).toHaveBeenLastCalledWith(0.5)
     expect(clock.tick(100)).toBe(false)
@@ -20,7 +23,10 @@ describe("TweenClock", () => {
   it("waits out the delay before moving", () => {
     const clock = new TweenClock()
     const update = vi.fn()
-    clock.start({ key: "a", duration: 100, delay: 40, ease: easings.linear, update }, 0)
+    clock.start(
+      { key: "a", duration: 100, delay: 40, ease: easings.linear, update },
+      0
+    )
     clock.tick(30)
     expect(update).not.toHaveBeenCalled()
     clock.tick(90)
@@ -31,9 +37,15 @@ describe("TweenClock", () => {
     const clock = new TweenClock()
     const first = vi.fn()
     const second = vi.fn()
-    clock.start({ key: "cam", duration: 100, ease: easings.linear, update: first }, 0)
+    clock.start(
+      { key: "cam", duration: 100, ease: easings.linear, update: first },
+      0
+    )
     clock.tick(40)
-    clock.start({ key: "cam", duration: 100, ease: easings.linear, update: second }, 40)
+    clock.start(
+      { key: "cam", duration: 100, ease: easings.linear, update: second },
+      40
+    )
     clock.tick(90)
     expect(first).toHaveBeenCalledTimes(1)
     expect(second).toHaveBeenLastCalledWith(0.5)
@@ -54,7 +66,15 @@ describe("TweenClock", () => {
     const clock = new TweenClock()
     let runs = 0
     const loop = (now: number) =>
-      clock.start({ key: "a", duration: 10, update: () => {}, done: () => runs++ < 1 && loop(now + 10) }, now)
+      clock.start(
+        {
+          key: "a",
+          duration: 10,
+          update: () => {},
+          done: () => runs++ < 1 && loop(now + 10),
+        },
+        now
+      )
     loop(0)
     clock.tick(10)
     expect(clock.has("a")).toBe(true)

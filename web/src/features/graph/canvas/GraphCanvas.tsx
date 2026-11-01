@@ -9,7 +9,12 @@ import { useUi } from "@/stores/ui"
 import { copy } from "../copy"
 import type { Scene } from "../model/scene"
 
-import { GraphEngine, type EngineEvents, type EngineOptions, type Insets } from "./engine"
+import {
+  GraphEngine,
+  type EngineEvents,
+  type EngineOptions,
+  type Insets,
+} from "./engine"
 
 type CanvasSelection = {
   indices: readonly number[]
@@ -80,9 +85,9 @@ export function GraphCanvas({
       ] as const
     ).map((name) =>
       engine.on(name, ((...args: unknown[]) =>
-        (handlersRef.current[name] as ((...a: unknown[]) => void) | undefined)?.(
-          ...args
-        )) as never)
+        (
+          handlersRef.current[name] as ((...a: unknown[]) => void) | undefined
+        )?.(...args)) as never)
     )
     const parent = canvas.parentElement
     const measure = () => {
@@ -95,7 +100,10 @@ export function GraphCanvas({
     if (parent) observer.observe(parent)
     // Re-read the canvas colors whenever the theme class on <html> flips (also inside a View Transition).
     const theme = new MutationObserver(() => engine.setTheme())
-    theme.observe(document.documentElement, { attributes: true, attributeFilter: ["class"] })
+    theme.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ["class"],
+    })
     onEngine(engine)
     return () => {
       observer.disconnect()
@@ -130,7 +138,11 @@ export function GraphCanvas({
     engineRef.current?.setMatch(match)
   }, [scene, match])
   useEffect(() => {
-    engineRef.current?.setSelection(selection.indices, selection.active, selection.pulse)
+    engineRef.current?.setSelection(
+      selection.indices,
+      selection.active,
+      selection.pulse
+    )
   }, [scene, selection])
   useEffect(() => {
     engineRef.current?.setDeleteTint(deleteTint)
@@ -144,7 +156,10 @@ export function GraphCanvas({
         // Spatial data: x grows to the right even when the surrounding chrome is mirrored.
         dir="ltr"
         aria-hidden
-        className={cn("absolute inset-0 size-full touch-none select-none", className)}
+        className={cn(
+          "absolute inset-0 size-full touch-none select-none",
+          className
+        )}
       />
       {unsupported ? (
         <p

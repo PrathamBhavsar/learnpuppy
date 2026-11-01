@@ -5,7 +5,10 @@ import { drawNodeLabels } from "./draw-labels"
 import { drawMatchRings, drawNodes, drawSpecialNodes } from "./draw-nodes"
 import type { FrameState } from "./frame"
 
-export function renderFrame(ctx: CanvasRenderingContext2D, f: FrameState): void {
+export function renderFrame(
+  ctx: CanvasRenderingContext2D,
+  f: FrameState
+): void {
   ctx.setTransform(f.dpr, 0, 0, f.dpr, 0, 0)
   ctx.clearRect(0, 0, f.size.w, f.size.h)
   drawHulls(ctx, f)
@@ -40,11 +43,20 @@ export function renderPending(
   const pulse = animate ? 0.5 + 0.5 * Math.sin(now / 520) : 0.5
   clusterSizes.forEach((count, i) => {
     const angle = (i / n) * Math.PI * 2 - Math.PI / 2
-    const r = Math.max(28, Math.min(size.w, size.h) * 0.16 * Math.sqrt(count / total) * 2.2)
+    const r = Math.max(
+      28,
+      Math.min(size.w, size.h) * 0.16 * Math.sqrt(count / total) * 2.2
+    )
     ctx.globalAlpha = 0.06 + 0.05 * pulse
     ctx.fillStyle = colors[i % colors.length] ?? "gray"
     ctx.beginPath()
-    ctx.arc(cx + Math.cos(angle) * ring, cy + Math.sin(angle) * ring, r, 0, Math.PI * 2)
+    ctx.arc(
+      cx + Math.cos(angle) * ring,
+      cy + Math.sin(angle) * ring,
+      r,
+      0,
+      Math.PI * 2
+    )
     ctx.fill()
   })
   ctx.globalAlpha = 1

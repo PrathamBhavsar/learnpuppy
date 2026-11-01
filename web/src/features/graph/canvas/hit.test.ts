@@ -46,12 +46,18 @@ describe("nodesInRect", () => {
   const index = buildHitIndex(x, y, 5, null)
 
   it("returns nodes inside the rectangle, whichever way it was dragged", () => {
-    expect(nodesInRect(index, x, y, { x0: -10, y0: -10, x1: 60, y1: 10 }).sort()).toEqual([0, 1, 2])
-    expect(nodesInRect(index, x, y, { x0: 60, y0: 10, x1: -10, y1: -10 }).sort()).toEqual([0, 1, 2])
+    expect(
+      nodesInRect(index, x, y, { x0: -10, y0: -10, x1: 60, y1: 10 }).sort()
+    ).toEqual([0, 1, 2])
+    expect(
+      nodesInRect(index, x, y, { x0: 60, y0: 10, x1: -10, y1: -10 }).sort()
+    ).toEqual([0, 1, 2])
   })
 
   it("returns nothing for an empty region", () => {
-    expect(nodesInRect(index, x, y, { x0: 100, y0: 200, x1: 150, y1: 250 })).toEqual([])
+    expect(
+      nodesInRect(index, x, y, { x0: 100, y0: 200, x1: 150, y1: 250 })
+    ).toEqual([])
   })
 
   it("handles many coincident points", () => {
@@ -59,6 +65,8 @@ describe("nodesInRect", () => {
     const cx = new Float32Array(n).fill(10)
     const cy = new Float32Array(n).fill(10)
     const dense = buildHitIndex(cx, cy, n, null)
-    expect(nodesInRect(dense, cx, cy, { x0: 0, y0: 0, x1: 20, y1: 20 })).toHaveLength(n)
+    expect(
+      nodesInRect(dense, cx, cy, { x0: 0, y0: 0, x1: 20, y1: 20 })
+    ).toHaveLength(n)
   })
 })

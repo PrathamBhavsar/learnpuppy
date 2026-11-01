@@ -45,7 +45,8 @@ export function diffScenes(prev: Scene | null, next: Scene): SceneDiff {
     moved,
     fromX,
     fromY,
-    layoutChanged: next.layoutVersion !== prev.layoutVersion && moved.length > 0,
+    layoutChanged:
+      next.layoutVersion !== prev.layoutVersion && moved.length > 0,
   }
 }
 

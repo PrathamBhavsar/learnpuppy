@@ -42,7 +42,12 @@ export function hitTest(
   let bestDist = Infinity
   const reach = maxHalfWorld + tolWorld
   index.tree.visit((node, x0, y0, x1, y1) => {
-    if (wx < x0 - reach || wx > x1 + reach || wy < y0 - reach || wy > y1 + reach)
+    if (
+      wx < x0 - reach ||
+      wx > x1 + reach ||
+      wy < y0 - reach ||
+      wy > y1 + reach
+    )
       return true
     if (!node.length) {
       let leaf: typeof node | undefined = node
@@ -86,7 +91,8 @@ export function nodesInRect(
       let leaf: typeof node | undefined = node
       while (leaf) {
         const i = (leaf as { data: number }).data
-        if (x[i]! >= x0 && x[i]! <= x1 && y[i]! >= y0 && y[i]! <= y1) found.push(i)
+        if (x[i]! >= x0 && x[i]! <= x1 && y[i]! >= y0 && y[i]! <= y1)
+          found.push(i)
         leaf = (leaf as { next?: typeof node }).next
       }
     }

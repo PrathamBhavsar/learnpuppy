@@ -19,7 +19,14 @@ type Props = {
 }
 
 /** Springs up from the bottom edge whenever at least one proposition is selected (docs/web/05 #20). */
-export function SelectionBar({ count, onPractice, onDelete, onClear, practicePending, dockInset }: Props) {
+export function SelectionBar({
+  count,
+  onPractice,
+  onDelete,
+  onClear,
+  practicePending,
+  dockInset,
+}: Props) {
   const reduced = useReducedMotion()
   return (
     <motion.div
@@ -33,21 +40,49 @@ export function SelectionBar({ count, onPractice, onDelete, onClear, practicePen
       // Glides sideways (a transform) when the drawer opens or closes and the free area changes.
       layout={reduced ? false : "position"}
       // Both insets plus auto margins centre a fit-content box in the free area, in either direction.
-      style={{ insetInlineStart: 0, insetInlineEnd: dockInset, marginInline: "auto", width: "fit-content" }}
+      style={{
+        insetInlineStart: 0,
+        insetInlineEnd: dockInset,
+        marginInline: "auto",
+        width: "fit-content",
+      }}
       className="pointer-events-auto absolute bottom-4 z-20 flex items-center gap-2 border border-border bg-background px-3 py-2 shadow-sm"
     >
-      <span aria-live="polite" data-testid="graph-selection-count" className="pe-2 text-[12px] font-medium tabular-nums">
+      <span
+        aria-live="polite"
+        data-testid="graph-selection-count"
+        className="pe-2 text-[12px] font-medium tabular-nums"
+      >
         {copy.selection.count(count)}
       </span>
-      <Button size="sm" onClick={onPractice} disabled={practicePending} data-testid="graph-selection-practice">
-        {practicePending ? <Spinner data-icon="inline-start" /> : <GraduationCapIcon data-icon="inline-start" />}
+      <Button
+        size="sm"
+        onClick={onPractice}
+        disabled={practicePending}
+        data-testid="graph-selection-practice"
+      >
+        {practicePending ? (
+          <Spinner data-icon="inline-start" />
+        ) : (
+          <GraduationCapIcon data-icon="inline-start" />
+        )}
         {copy.selection.practice}
       </Button>
-      <Button variant="destructive" size="sm" onClick={onDelete} data-testid="graph-selection-delete">
+      <Button
+        variant="destructive"
+        size="sm"
+        onClick={onDelete}
+        data-testid="graph-selection-delete"
+      >
         <Trash2Icon data-icon="inline-start" />
         {copy.selection.delete}
       </Button>
-      <Button variant="ghost" size="sm" onClick={onClear} data-testid="graph-selection-clear">
+      <Button
+        variant="ghost"
+        size="sm"
+        onClick={onClear}
+        data-testid="graph-selection-clear"
+      >
         <XIcon data-icon="inline-start" />
         {copy.selection.clear}
       </Button>

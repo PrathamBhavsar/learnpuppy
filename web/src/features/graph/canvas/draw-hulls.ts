@@ -11,7 +11,9 @@ export function drawHulls(ctx: CanvasRenderingContext2D, f: FrameState): void {
   scene.clusters.forEach((cluster, ci) => {
     const pts = cluster.hull
     if (pts.length < 3) return
-    const color = theme.clusters[(cluster.slot - 1) % theme.clusters.length] ?? theme.primary
+    const color =
+      theme.clusters[(cluster.slot - 1) % theme.clusters.length] ??
+      theme.primary
     const fade = f.clusterAlpha ? (f.clusterAlpha[ci] ?? 1) : 1
     const path = new Path2D()
     const n = pts.length
@@ -41,7 +43,10 @@ export function drawHulls(ctx: CanvasRenderingContext2D, f: FrameState): void {
 }
 
 /** Cluster names, fading with the hulls they belong to. */
-export function drawClusterLabels(ctx: CanvasRenderingContext2D, f: FrameState): void {
+export function drawClusterLabels(
+  ctx: CanvasRenderingContext2D,
+  f: FrameState
+): void {
   if (!f.hulls || f.performance) return
   const alpha = lodFor(f.z).hulls * f.hullFade
   if (alpha <= 0.05) return
@@ -58,7 +63,9 @@ export function drawClusterLabels(ctx: CanvasRenderingContext2D, f: FrameState):
     if (sx < -80 || sx > size.w + 80 || sy < -20 || sy > size.h + 20) return
     const fade = f.clusterAlpha ? (f.clusterAlpha[ci] ?? 1) : 1
     ctx.globalAlpha = alpha * fade * 0.9
-    ctx.fillStyle = theme.clusters[(cluster.slot - 1) % theme.clusters.length] ?? theme.foreground
+    ctx.fillStyle =
+      theme.clusters[(cluster.slot - 1) % theme.clusters.length] ??
+      theme.foreground
     ctx.fillText(cluster.label.toUpperCase(), sx, sy)
   })
   ctx.globalAlpha = 1

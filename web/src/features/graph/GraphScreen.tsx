@@ -34,7 +34,14 @@ import { Controls } from "./ui/Controls"
 import { DeleteDialog } from "./ui/DeleteDialog"
 import { GraphContextMenu } from "./ui/GraphContextMenu"
 import { GraphList } from "./ui/GraphList"
-import { GraphEmpty, GraphError, GraphLoading, LayoutPending, NoVisible, PerformanceChip } from "./ui/GraphStates"
+import {
+  GraphEmpty,
+  GraphError,
+  GraphLoading,
+  LayoutPending,
+  NoVisible,
+  PerformanceChip,
+} from "./ui/GraphStates"
 import { Legend } from "./ui/Legend"
 import { MarqueeBox } from "./ui/MarqueeBox"
 import { Minimap } from "./ui/Minimap"
@@ -75,21 +82,35 @@ export default function GraphScreen({ ws }: { ws: string }) {
 
   const actions = useGraphActions({ ws, scene, engine, url, insetsFor })
   const { selection, drawerOpen } = actions
-  const selectedIds = useMemo(() => new Set(model.selectedIdx), [model.selectedIdx])
+  const selectedIds = useMemo(
+    () => new Set(model.selectedIdx),
+    [model.selectedIdx]
+  )
 
   const canvasSelection = useMemo(
-    () => ({ indices: model.selectedIdx, active: model.activeIdx, pulse: actions.pulse }),
+    () => ({
+      indices: model.selectedIdx,
+      active: model.activeIdx,
+      pulse: actions.pulse,
+    }),
     [model.selectedIdx, model.activeIdx, actions.pulse]
   )
   const deleteTint = useMemo(
     () =>
       scene && actions.deleteIds
-        ? actions.deleteIds.map((id) => scene.index.get(id)).filter((i): i is number => i !== undefined)
+        ? actions.deleteIds
+            .map((id) => scene.index.get(id))
+            .filter((i): i is number => i !== undefined)
         : null,
     [scene, actions.deleteIds]
   )
   const engineOptions = useMemo(
-    () => ({ hulls: view.hulls, labels: view.labels, performance: model.performance, followNew: view.followNew }),
+    () => ({
+      hulls: view.hulls,
+      labels: view.labels,
+      performance: model.performance,
+      followNew: view.followNew,
+    }),
     [view.hulls, view.labels, model.performance, view.followNew]
   )
 
@@ -123,7 +144,8 @@ export default function GraphScreen({ ws }: { ws: string }) {
     toggleHulls: () => view.setPref("hulls", !view.hulls),
     toggleMinimap: () => view.setPref("minimap", !view.minimap),
     toggleTable: () => view.setPref("table", !view.table),
-    focusSearch: () => document.querySelector<HTMLElement>("[data-screen-search]")?.focus(),
+    focusSearch: () =>
+      document.querySelector<HTMLElement>("[data-screen-search]")?.focus(),
     clearSelection: actions.clear,
     selectionCount: selection.selected.length,
   })
@@ -139,8 +161,12 @@ export default function GraphScreen({ ws }: { ws: string }) {
       screenPosition: (id) => {
         const idx = scene.index.get(id)
         const pos = idx === undefined ? null : engine.nodeScreen(idx)
-        const rect = document.querySelector("[data-testid='graph-canvas']")?.getBoundingClientRect()
-        return pos && rect ? { x: rect.left + pos[0], y: rect.top + pos[1] } : null
+        const rect = document
+          .querySelector("[data-testid='graph-canvas']")
+          ?.getBoundingClientRect()
+        return pos && rect
+          ? { x: rect.left + pos[0], y: rect.top + pos[1] }
+          : null
       },
       frameStats: () => engine.stats(),
       resetFrameStats: () => engine.resetStats(),
@@ -154,11 +180,20 @@ export default function GraphScreen({ ws }: { ws: string }) {
 
   const handlers = useMemo(
     () => ({
-      click: ({ idx, shift, meta }: { idx: number; shift: boolean; meta: boolean }) => {
+      click: ({
+        idx,
+        shift,
+        meta,
+      }: {
+        idx: number
+        shift: boolean
+        meta: boolean
+      }) => {
         if (idx >= 0) actions.pickIdx(idx, shift || meta ? "toggle" : "replace")
         else if (!shift) actions.clear()
       },
-      dblclick: ({ idx }: { idx: number }) => actions.pickIdx(idx, "replace", { fly: "group", open: true }),
+      dblclick: ({ idx }: { idx: number }) =>
+        actions.pickIdx(idx, "replace", { fly: "group", open: true }),
       marquee: ({ idx }: { idx: number[] }) => actions.marquee(idx),
     }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -177,15 +212,30 @@ export default function GraphScreen({ ws }: { ws: string }) {
   }
 
   const menuId = menuNode >= 0 ? (scene?.ids[menuNode] ?? null) : null
-  const menuIds = menuId && selection.selected.includes(menuId) ? [...selection.selected] : menuId ? [menuId] : []
+  const menuIds =
+    menuId && selection.selected.includes(menuId)
+      ? [...selection.selected]
+      : menuId
+        ? [menuId]
+        : []
 
   const nodes = model.snapshot?.nodes.length ?? 0
   const body = (() => {
     if (model.query.isPending) return <GraphLoading />
     if (model.query.isError && !model.snapshot)
-      return <GraphError error={model.query.error} onRetry={() => model.query.refetch()} />
+      return (
+        <GraphError
+          error={model.query.error}
+          onRetry={() => model.query.refetch()}
+        />
+      )
     if (model.snapshot && nodes === 0)
-      return <GraphEmpty onLearn={() => goto(`/w/${ws}/learn`)} onIngest={() => goto(`/w/${ws}/ingest`)} />
+      return (
+        <GraphEmpty
+          onLearn={() => goto(`/w/${ws}/learn`)}
+          onIngest={() => goto(`/w/${ws}/ingest`)}
+        />
+      )
     return null
   })()
   const populated = body === null && model.snapshot !== undefined
@@ -193,15 +243,27 @@ export default function GraphScreen({ ws }: { ws: string }) {
   const drawerVisible = drawerOpen && activeNode >= 0
   const announcement =
     scene && activeNode >= 0 && selection.active
-      ? copy.list.announceSelected(scene.texts[activeNode] as string, scene.degree[activeNode] as number)
+      ? copy.list.announceSelected(
+          scene.texts[activeNode] as string,
+          scene.degree[activeNode] as number
+        )
       : selection.selected.length === 0
         ? copy.list.announceCleared
         : copy.selection.count(selection.selected.length)
 
   return (
-    <section data-testid="screen-graph" aria-busy={model.query.isPending} className="flex h-full min-h-0 flex-col">
-      <h1 tabIndex={-1} data-page-title className="sr-only">{copy.title}</h1>
-      <div data-testid="graph-stage" className="relative min-h-0 flex-1 overflow-hidden bg-background">
+    <section
+      data-testid="screen-graph"
+      aria-busy={model.query.isPending}
+      className="flex h-full min-h-0 flex-col"
+    >
+      <h1 tabIndex={-1} data-page-title className="sr-only">
+        {copy.title}
+      </h1>
+      <div
+        data-testid="graph-stage"
+        className="relative min-h-0 flex-1 overflow-hidden bg-background"
+      >
         {body}
         {populated ? (
           <>
@@ -231,14 +293,20 @@ export default function GraphScreen({ ws }: { ws: string }) {
               <GraphContextMenu
                 ws={ws}
                 nodeId={menuId}
-                text={menuNode >= 0 && scene ? (scene.texts[menuNode] as string) : ""}
+                text={
+                  menuNode >= 0 && scene
+                    ? (scene.texts[menuNode] as string)
+                    : ""
+                }
                 count={menuIds.length}
                 onPractice={() => actions.startPractice(menuIds)}
                 onDelete={() => actions.requestDelete(menuIds)}
                 onOpenChat={(chat) => goto(`/w/${ws}/learn/${chat}`)}
               />
             </ContextMenu>
-            <p id="graph-help" className="sr-only">{copy.canvasHelp}</p>
+            <p id="graph-help" className="sr-only">
+              {copy.canvasHelp}
+            </p>
 
             {scene ? <NodeTag engine={engine} scene={scene} /> : null}
             <MarqueeBox engine={engine} />
@@ -251,7 +319,8 @@ export default function GraphScreen({ ws }: { ws: string }) {
                 searching={model.searching}
                 onSubmitSearch={() => {
                   const first = model.match ? model.match.indexOf(1) : -1
-                  if (first >= 0) actions.pickIdx(first, "replace", { fly: "node" })
+                  if (first >= 0)
+                    actions.pickIdx(first, "replace", { fly: "node" })
                 }}
                 sources={url.sources}
                 onSources={url.setSources}
@@ -276,27 +345,44 @@ export default function GraphScreen({ ws }: { ws: string }) {
                 onFollowNew={(v) => view.setPref("followNew", v)}
                 table={view.table}
                 onTable={(v) => view.setPref("table", v)}
-                counts={copy.counts(model.counts.nodes, model.counts.chains, model.filtersActive ? model.totalNodes : undefined)}
+                counts={copy.counts(
+                  model.counts.nodes,
+                  model.counts.chains,
+                  model.filtersActive ? model.totalNodes : undefined
+                )}
                 dockInset={drawerVisible ? DRAWER_WIDTH : 0}
               />
             ) : null}
 
             {model.layoutPending ? <LayoutPending /> : null}
             {scene && model.filtersActive && model.counts.nodes === 0 ? (
-              <NoVisible onClear={() => { url.clearFilters(); view.setMinDegree(0) }} />
+              <NoVisible
+                onClear={() => {
+                  url.clearFilters()
+                  view.setMinDegree(0)
+                }}
+              />
             ) : null}
 
             <motion.div
               // Lifts clear of the selection bar. Transform only, so it never animates layout.
               animate={{ y: selection.selected.length > 0 ? -LEGEND_LIFT : 0 }}
-              transition={{ duration: reduced ? 0 : dur.base, ease: ease.inout }}
+              transition={{
+                duration: reduced ? 0 : dur.base,
+                ease: ease.inout,
+              }}
               className="pointer-events-none absolute start-3 bottom-3 z-10 flex flex-col items-start gap-2"
             >
               {model.overLimit ? (
                 <PerformanceChip
                   nodes={nodes}
                   on={model.performance}
-                  onToggle={() => view.setPref("performance", model.performance ? "off" : "on")}
+                  onToggle={() =>
+                    view.setPref(
+                      "performance",
+                      model.performance ? "off" : "on"
+                    )
+                  }
                 />
               ) : null}
               {scene ? <Legend /> : null}
@@ -304,11 +390,28 @@ export default function GraphScreen({ ws }: { ws: string }) {
 
             {scene ? (
               <motion.div
-                animate={{ x: drawerVisible ? (edge === "right" ? -DRAWER_WIDTH : DRAWER_WIDTH) : 0 }}
-                transition={{ duration: reduced ? 0 : dur.base, ease: ease.inout }}
-                className={cn("pointer-events-none absolute end-3 bottom-3 z-10 flex flex-col items-end gap-2")}
+                animate={{
+                  x: drawerVisible
+                    ? edge === "right"
+                      ? -DRAWER_WIDTH
+                      : DRAWER_WIDTH
+                    : 0,
+                }}
+                transition={{
+                  duration: reduced ? 0 : dur.base,
+                  ease: ease.inout,
+                }}
+                className={cn(
+                  "pointer-events-none absolute end-3 bottom-3 z-10 flex flex-col items-end gap-2"
+                )}
               >
-                {view.minimap ? <Minimap engine={engine} scene={scene} visible={model.visible} /> : null}
+                {view.minimap ? (
+                  <Minimap
+                    engine={engine}
+                    scene={scene}
+                    visible={model.visible}
+                  />
+                ) : null}
                 <Controls
                   onZoomIn={() => engine?.zoomBy(1.4)}
                   onZoomOut={() => engine?.zoomBy(1 / 1.4)}
@@ -316,7 +419,8 @@ export default function GraphScreen({ ws }: { ws: string }) {
                   onRelayout={() =>
                     relayout.mutate(undefined, {
                       onSuccess: () => toastSuccess(copy.relayoutDone),
-                      onError: (error) => toastError(error, copy.relayoutFailed),
+                      onError: (error) =>
+                        toastError(error, copy.relayoutFailed),
                     })
                   }
                   relayoutPending={relayout.isPending}
@@ -335,11 +439,14 @@ export default function GraphScreen({ ws }: { ws: string }) {
                   focusOnOpen={actions.focusDrawer}
                   onClose={() => {
                     actions.closeDrawer()
-                    document.querySelector<HTMLElement>("[data-testid='graph-focus']")?.focus()
+                    document
+                      .querySelector<HTMLElement>("[data-testid='graph-focus']")
+                      ?.focus()
                   }}
                   onHop={(id) => {
                     const i = scene.index.get(id)
-                    if (i !== undefined) actions.pickIdx(i, "replace", { fly: "node" })
+                    if (i !== undefined)
+                      actions.pickIdx(i, "replace", { fly: "node" })
                   }}
                   onPractice={(id) => actions.startPractice([id])}
                   onDelete={(id) => actions.requestDelete([id])}

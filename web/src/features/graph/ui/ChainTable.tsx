@@ -48,7 +48,9 @@ type Props = {
 
 function downloadText(name: string, text: string): void {
   if (typeof URL.createObjectURL !== "function") return
-  const url = URL.createObjectURL(new Blob([text], { type: "text/csv;charset=utf-8" }))
+  const url = URL.createObjectURL(
+    new Blob([text], { type: "text/csv;charset=utf-8" })
+  )
   const a = document.createElement("a")
   a.href = url
   a.download = name
@@ -58,7 +60,15 @@ function downloadText(name: string, text: string): void {
   URL.revokeObjectURL(url)
 }
 
-export function ChainTable({ ws, scene, selection, height, onResize, onClose, onPickNodes }: Props) {
+export function ChainTable({
+  ws,
+  scene,
+  selection,
+  height,
+  onResize,
+  onClose,
+  onPickNodes,
+}: Props) {
   const query = useChainTable(ws, selection)
   const [sort, setSort] = useState<ChainSort>(DEFAULT_SORT)
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(new Set())
@@ -80,7 +90,10 @@ export function ChainTable({ ws, scene, selection, height, onResize, onClose, on
     setSeeded(`${ws}:${selection.join(",")}`)
     setExpanded(new Set([`g:${firstGroup}`]))
   }
-  const rows = useMemo(() => flattenChains(groups, expanded), [groups, expanded])
+  const rows = useMemo(
+    () => flattenChains(groups, expanded),
+    [groups, expanded]
+  )
   const selectedIds = useMemo(() => new Set(selection), [selection])
 
   // eslint-disable-next-line react-hooks/incompatible-library -- the compiler is not enabled; the virtualizer is used as documented
@@ -124,10 +137,18 @@ export function ChainTable({ ws, scene, selection, height, onResize, onClose, on
   const onKeyDown = (e: React.KeyboardEvent) => {
     const row = rows[cursor]
     switch (e.key) {
-      case "ArrowDown": move(cursor + 1); break
-      case "ArrowUp": move(cursor - 1); break
-      case "Home": move(0); break
-      case "End": move(rows.length - 1); break
+      case "ArrowDown":
+        move(cursor + 1)
+        break
+      case "ArrowUp":
+        move(cursor - 1)
+        break
+      case "Home":
+        move(0)
+        break
+      case "End":
+        move(rows.length - 1)
+        break
       case "ArrowRight":
       case "ArrowLeft": {
         // Expand/collapse follow the reading direction, like the other keyboard-driven lists.
@@ -147,7 +168,10 @@ export function ChainTable({ ws, scene, selection, height, onResize, onClose, on
   }
 
   const sortBy = (key: ChainSort["key"]) =>
-    setSort((s) => ({ key, dir: s.key === key && s.dir === "asc" ? "desc" : "asc" }))
+    setSort((s) => ({
+      key,
+      dir: s.key === key && s.dir === "asc" ? "desc" : "asc",
+    }))
   const active = rows[Math.min(cursor, rows.length - 1)]
   const total = query.data?.length ?? 0
 
@@ -161,10 +185,17 @@ export function ChainTable({ ws, scene, selection, height, onResize, onClose, on
       <ResizeHandle height={height} onResize={onResize} />
       <header className="flex flex-wrap items-center gap-2 border-b border-border px-3 py-1.5">
         <h2 className="text-[12px] font-medium">{copy.table_.label}</h2>
-        <span className="text-[11px] text-muted-foreground tabular-nums" data-testid="graph-table-scope">
+        <span
+          className="text-[11px] text-muted-foreground tabular-nums"
+          data-testid="graph-table-scope"
+        >
           {copy.table_.scope(selection.length)} · {formatCount(total)}
         </span>
-        <div role="group" aria-label="Sort" className="ms-auto flex items-center">
+        <div
+          role="group"
+          aria-label="Sort"
+          className="ms-auto flex items-center"
+        >
           {SORTS.map(({ key, label }) => {
             const on = sort.key === key
             return (
@@ -176,10 +207,19 @@ export function ChainTable({ ws, scene, selection, height, onResize, onClose, on
                 aria-label={`Sort by ${label}${on ? `, ${sort.dir === "asc" ? "ascending" : "descending"}` : ""}`}
                 data-testid={`graph-table-sort-${key}`}
                 onClick={() => sortBy(key)}
-                className={cn("text-[11px]", on ? "text-foreground" : "text-muted-foreground")}
+                className={cn(
+                  "text-[11px]",
+                  on ? "text-foreground" : "text-muted-foreground"
+                )}
               >
                 {label}
-                {on ? sort.dir === "asc" ? <ArrowUpIcon data-icon="inline-end" /> : <ArrowDownIcon data-icon="inline-end" /> : null}
+                {on ? (
+                  sort.dir === "asc" ? (
+                    <ArrowUpIcon data-icon="inline-end" />
+                  ) : (
+                    <ArrowDownIcon data-icon="inline-end" />
+                  )
+                ) : null}
               </Button>
             )
           })}
@@ -188,22 +228,40 @@ export function ChainTable({ ws, scene, selection, height, onResize, onClose, on
           variant="outline"
           size="xs"
           disabled={groups.length === 0}
-          onClick={() => downloadText(copy.table_.csvName, chainsToCsv(groups, textOf))}
+          onClick={() =>
+            downloadText(copy.table_.csvName, chainsToCsv(groups, textOf))
+          }
           data-testid="graph-table-export"
         >
           <DownloadIcon data-icon="inline-start" />
           {copy.table_.export}
         </Button>
-        <Button variant="ghost" size="icon-xs" aria-label="Close chain table" onClick={onClose} data-testid="graph-table-close">
+        <Button
+          variant="ghost"
+          size="icon-xs"
+          aria-label="Close chain table"
+          onClick={onClose}
+          data-testid="graph-table-close"
+        >
           <XIcon />
         </Button>
       </header>
       {query.isPending ? (
-        <div className="p-3"><SkeletonRows rows={4} /></div>
+        <div className="p-3">
+          <SkeletonRows rows={4} />
+        </div>
       ) : query.isError ? (
         <div role="alert" className="flex items-center gap-3 p-3 text-[12px]">
-          <span className="text-destructive">{copy.table_.loadFailed}: {toApiError(query.error).message}</span>
-          <Button variant="outline" size="xs" onClick={() => void query.refetch()}>Retry</Button>
+          <span className="text-destructive">
+            {copy.table_.loadFailed}: {toApiError(query.error).message}
+          </span>
+          <Button
+            variant="outline"
+            size="xs"
+            onClick={() => void query.refetch()}
+          >
+            Retry
+          </Button>
         </div>
       ) : rows.length === 0 ? (
         <p role="status" className="p-4 text-[12px] text-muted-foreground">
@@ -215,19 +273,30 @@ export function ChainTable({ ws, scene, selection, height, onResize, onClose, on
           role="tree"
           tabIndex={0}
           aria-label={copy.table_.label}
-          aria-activedescendant={active ? `graph-chain-row-${active.key}` : undefined}
+          aria-activedescendant={
+            active ? `graph-chain-row-${active.key}` : undefined
+          }
           onKeyDown={onKeyDown}
           data-testid="graph-table-tree"
           className="lp-pane min-h-0 flex-1 overflow-y-auto outline-none focus-visible:ring-1 focus-visible:ring-ring/50 focus-visible:ring-inset"
         >
-          <div style={{ height: virtualizer.getTotalSize(), position: "relative" }}>
+          <div
+            style={{ height: virtualizer.getTotalSize(), position: "relative" }}
+          >
             {virtualizer.getVirtualItems().map((item) => {
               const row = rows[item.index]
               if (!row) return null
               return (
                 <div
                   key={item.key}
-                  style={{ position: "absolute", insetInlineStart: 0, insetInlineEnd: 0, top: 0, height: item.size, transform: `translateY(${item.start}px)` }}
+                  style={{
+                    position: "absolute",
+                    insetInlineStart: 0,
+                    insetInlineEnd: 0,
+                    top: 0,
+                    height: item.size,
+                    transform: `translateY(${item.start}px)`,
+                  }}
                 >
                   <ChainRow
                     row={row}

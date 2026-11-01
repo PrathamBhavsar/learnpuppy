@@ -60,7 +60,9 @@ describe("fitCam", () => {
   })
 
   it("never zooms past maxK for tiny content", () => {
-    expect(fitCam({ minX: 0, minY: 0, maxX: 1, maxY: 1 }, size, 50, 4).k).toBe(4)
+    expect(fitCam({ minX: 0, minY: 0, maxX: 1, maxY: 1 }, size, 50, 4).k).toBe(
+      4
+    )
   })
 })
 
@@ -100,7 +102,12 @@ describe("centering", () => {
 
 describe("smoothing", () => {
   it("covers one 60 Hz step of lerp in one frame", () => {
-    const next = smoothToward({ x: 0, y: 0, k: 1 }, { x: 100, y: 0, k: 1 }, 0.2, 1000 / 60)
+    const next = smoothToward(
+      { x: 0, y: 0, k: 1 },
+      { x: 100, y: 0, k: 1 },
+      0.2,
+      1000 / 60
+    )
     expect(next.x).toBeCloseTo(20)
   })
 
@@ -114,7 +121,12 @@ describe("smoothing", () => {
   })
 
   it("scales in log space so zooming feels uniform", () => {
-    const mid = smoothToward({ x: 0, y: 0, k: 1 }, { x: 0, y: 0, k: 16 }, 0.5, 1000 / 60)
+    const mid = smoothToward(
+      { x: 0, y: 0, k: 1 },
+      { x: 0, y: 0, k: 16 },
+      0.5,
+      1000 / 60
+    )
     expect(mid.k).toBeCloseTo(4)
   })
 
@@ -126,7 +138,11 @@ describe("smoothing", () => {
   })
 
   it("lerpCam interpolates scale geometrically", () => {
-    expect(lerpCam({ x: 0, y: 0, k: 1 }, { x: 10, y: 0, k: 4 }, 0.5)).toEqual({ x: 5, y: 0, k: 2 })
+    expect(lerpCam({ x: 0, y: 0, k: 1 }, { x: 10, y: 0, k: 4 }, 0.5)).toEqual({
+      x: 5,
+      y: 0,
+      k: 2,
+    })
   })
 })
 

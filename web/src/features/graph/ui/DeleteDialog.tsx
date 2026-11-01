@@ -32,7 +32,13 @@ type Props = {
   onClose: () => void
 }
 
-export function DeleteDialog({ ws, nodeIds, onAnimateOut, onDeleted, onClose }: Props) {
+export function DeleteDialog({
+  ws,
+  nodeIds,
+  onAnimateOut,
+  onDeleted,
+  onClose,
+}: Props) {
   const preview = useDeletePreview(ws)
   const remove = useDeleteNodes(ws)
   const [understood, setUnderstood] = useState(false)
@@ -66,7 +72,10 @@ export function DeleteDialog({ ws, nodeIds, onAnimateOut, onDeleted, onClose }: 
     setBusy(true)
     try {
       await onAnimateOut(nodeIds)
-      await remove.mutateAsync({ nodeIds: [...nodeIds], previewToken: data.previewToken })
+      await remove.mutateAsync({
+        nodeIds: [...nodeIds],
+        previewToken: data.previewToken,
+      })
       toastSuccess(copy.del.done(nodeIds.length))
       onDeleted()
     } catch (error) {
@@ -82,14 +91,27 @@ export function DeleteDialog({ ws, nodeIds, onAnimateOut, onDeleted, onClose }: 
   }
 
   return (
-    <AlertDialog open={nodeIds !== null && nodeIds.length > 0} onOpenChange={(open) => !open && !busy && onClose()}>
-      <AlertDialogContent data-testid="graph-delete-dialog" className="data-[size=default]:sm:max-w-md">
+    <AlertDialog
+      open={nodeIds !== null && nodeIds.length > 0}
+      onOpenChange={(open) => !open && !busy && onClose()}
+    >
+      <AlertDialogContent
+        data-testid="graph-delete-dialog"
+        className="data-[size=default]:sm:max-w-md"
+      >
         <AlertDialogHeader>
-          <AlertDialogTitle>{copy.del.title(nodeIds?.length ?? 0)}</AlertDialogTitle>
-          <AlertDialogDescription>{copy.del.description}</AlertDialogDescription>
+          <AlertDialogTitle>
+            {copy.del.title(nodeIds?.length ?? 0)}
+          </AlertDialogTitle>
+          <AlertDialogDescription>
+            {copy.del.description}
+          </AlertDialogDescription>
         </AlertDialogHeader>
 
-        <div aria-live="polite" className="flex min-h-16 flex-col gap-3 text-[12px]">
+        <div
+          aria-live="polite"
+          className="flex min-h-16 flex-col gap-3 text-[12px]"
+        >
           {preview.isPending && !data ? (
             <p className="flex items-center gap-2 text-muted-foreground">
               <Spinner /> {copy.del.loading}
@@ -100,20 +122,40 @@ export function DeleteDialog({ ws, nodeIds, onAnimateOut, onDeleted, onClose }: 
             </p>
           ) : data ? (
             <>
-              {stale ? <p role="status" className="text-warning">{copy.del.stale}</p> : null}
-              <p data-testid="graph-delete-summary" className={needsAck ? "font-medium text-destructive" : "text-muted-foreground"}>
+              {stale ? (
+                <p role="status" className="text-warning">
+                  {copy.del.stale}
+                </p>
+              ) : null}
+              <p
+                data-testid="graph-delete-summary"
+                className={
+                  needsAck
+                    ? "font-medium text-destructive"
+                    : "text-muted-foreground"
+                }
+              >
                 {needsAck ? copy.del.orphaned(orphaned) : copy.del.none}
               </p>
               {data.blastRadius.length > 0 ? (
-                <ul data-testid="graph-delete-blast" className="flex max-h-44 flex-col gap-1 overflow-y-auto border border-border p-2">
+                <ul
+                  data-testid="graph-delete-blast"
+                  className="flex max-h-44 flex-col gap-1 overflow-y-auto border border-border p-2"
+                >
                   {data.blastRadius.slice(0, LIST_LIMIT).map((item) => (
                     <li key={item.id} className="flex flex-col">
-                      <span dir="auto" className="truncate">{item.text}</span>
-                      <span className="text-[11px] text-muted-foreground">{item.reason}</span>
+                      <span dir="auto" className="truncate">
+                        {item.text}
+                      </span>
+                      <span className="text-[11px] text-muted-foreground">
+                        {item.reason}
+                      </span>
                     </li>
                   ))}
                   {data.blastRadius.length > LIST_LIMIT ? (
-                    <li className="text-muted-foreground">{copy.del.more(data.blastRadius.length - LIST_LIMIT)}</li>
+                    <li className="text-muted-foreground">
+                      {copy.del.more(data.blastRadius.length - LIST_LIMIT)}
+                    </li>
                   ) : null}
                 </ul>
               ) : null}
@@ -132,7 +174,9 @@ export function DeleteDialog({ ws, nodeIds, onAnimateOut, onDeleted, onClose }: 
         </div>
 
         <AlertDialogFooter>
-          <AlertDialogCancel disabled={busy} data-testid="graph-delete-cancel">{copy.del.cancel}</AlertDialogCancel>
+          <AlertDialogCancel disabled={busy} data-testid="graph-delete-cancel">
+            {copy.del.cancel}
+          </AlertDialogCancel>
           <Button
             variant="destructive"
             disabled={!ready}

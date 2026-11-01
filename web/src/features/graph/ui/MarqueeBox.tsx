@@ -19,7 +19,7 @@ export function MarqueeBox({ engine }: { engine: GraphEngine | null }) {
         height: rect.h,
         transform: `translate(${rect.x}px, ${rect.y}px)`,
       }}
-      className="pointer-events-none absolute z-10 animate-in border border-primary bg-primary/10 fade-in-0 duration-150"
+      className="pointer-events-none absolute z-10 animate-in border border-primary bg-primary/10 duration-150 fade-in-0"
     />
   )
 }
