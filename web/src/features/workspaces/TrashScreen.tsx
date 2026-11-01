@@ -51,7 +51,7 @@ function TrashRow({
           >
             {relativeTime(item.deletedAt)}
           </time>{" "}
-          · {formatBytes(item.sizeBytes)}
+          · {formatBytes(item.bytes)}
         </span>
       </div>
       <Button
@@ -111,7 +111,7 @@ function PurgeDialog({
           <AlertDialogTitle>Purge {item?.name}?</AlertDialogTitle>
           <AlertDialogDescription>
             This permanently deletes the workspace
-            {item ? ` and its ${formatBytes(item.sizeBytes)} of data` : ""}. It
+            {item ? ` and its ${formatBytes(item.bytes)} of data` : ""}. It
             cannot be restored afterwards.
           </AlertDialogDescription>
         </AlertDialogHeader>

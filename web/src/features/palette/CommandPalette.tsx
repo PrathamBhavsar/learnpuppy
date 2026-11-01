@@ -116,7 +116,10 @@ export function CommandPalette() {
   const hitsByWorkspace = [...new Set(hits.map((h) => h.workspaceId))].map(
     (id) => ({
       id,
-      name: workspaces.find((w) => w.id === id)?.name ?? id,
+      name:
+        workspaces.find((w) => w.id === id)?.name ??
+        hits.find((h) => h.workspaceId === id)?.workspaceName ??
+        id,
       hits: hits.filter((h) => h.workspaceId === id),
     })
   )
