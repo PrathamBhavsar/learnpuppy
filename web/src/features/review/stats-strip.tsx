@@ -1,10 +1,12 @@
 import { motion } from "motion/react"
 
+import { type InfoContent, InfoTip } from "@/components/app/info/info"
 import { CountUp } from "@/components/app/count-up"
 import { useReducedMotion } from "@/hooks/use-reduced-motion"
 import { cn } from "@/lib/utils"
 
 import type { components } from "@/api/schema"
+import { reviewInfo } from "./info"
 type ReviewStats = components["schemas"]["StatsDto"]
 
 type StatsStripProps = {
@@ -19,6 +21,7 @@ type StatDef = {
   decimals?: number
   suffix?: string
   testId: string
+  info: InfoContent
 }
 
 function statDefs(stats: ReviewStats): StatDef[] {
@@ -28,18 +31,21 @@ function statDefs(stats: ReviewStats): StatDef[] {
       label: "Due now",
       value: stats.dueNow,
       testId: "review-stat-due",
+      info: reviewInfo.due,
     },
     {
       key: "new",
       label: "New today",
       value: stats.newToday,
       testId: "review-stat-new",
+      info: reviewInfo.newToday,
     },
     {
       key: "reviewed",
       label: "Reviewed today",
       value: stats.reviewedToday,
       testId: "review-stat-reviewed",
+      info: reviewInfo.reviewed,
     },
     {
       key: "streak",
@@ -47,6 +53,7 @@ function statDefs(stats: ReviewStats): StatDef[] {
       value: stats.streak,
       suffix: "d",
       testId: "review-stat-streak",
+      info: reviewInfo.streak,
     },
     {
       key: "retention",
@@ -57,6 +64,7 @@ function statDefs(stats: ReviewStats): StatDef[] {
           : Math.round(stats.retention30d * 100),
       suffix: stats.retention30d == null ? undefined : "%",
       testId: "review-stat-retention",
+      info: reviewInfo.retention,
     },
   ]
 }
@@ -82,7 +90,10 @@ export function StatsStrip({ stats, className }: StatsStripProps) {
           transition={{ duration: 0.22, delay: Math.min(index, 7) * 0.024 }}
           className="flex flex-col gap-0.5 bg-card p-3"
         >
-          <dt className="text-[11px] text-muted-foreground">{stat.label}</dt>
+          <dt className="flex items-center gap-1 text-[11px] text-muted-foreground">
+            {stat.label}
+            <InfoTip info={stat.info} />
+          </dt>
           <dd
             dir="ltr"
             className="flex items-baseline gap-0.5 font-heading text-[20px] font-medium tabular-nums rtl:justify-end"

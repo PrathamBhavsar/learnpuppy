@@ -8,7 +8,10 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip"
 import { useReducedMotion } from "@/hooks/use-reduced-motion"
+import { InfoTip } from "@/components/app/info/info"
 import { cn } from "@/lib/utils"
+
+import { reviewInfo } from "./info"
 
 type ForecastProps = {
   /** 14 values, cards due per day. */
@@ -25,22 +28,25 @@ export function Forecast({ data, now, className }: ForecastProps) {
 
   return (
     <section data-testid="review-forecast" className={cn("border", className)}>
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        data-testid="review-forecast-toggle"
-        aria-expanded={open}
-        className="flex w-full items-center justify-between gap-2 px-3 py-2 text-[13px] font-medium outline-none focus-visible:ring-1 focus-visible:ring-ring"
-      >
-        <span dir="auto">14-day forecast</span>
-        <ChevronDownIcon
-          aria-hidden
-          className={cn(
-            "size-4 transition-transform",
-            open ? "" : "-rotate-90 rtl:rotate-90"
-          )}
-        />
-      </button>
+      <div className="flex items-center pe-3">
+        <button
+          type="button"
+          onClick={() => setOpen((v) => !v)}
+          data-testid="review-forecast-toggle"
+          aria-expanded={open}
+          className="flex flex-1 items-center justify-between gap-2 px-3 py-2 text-[13px] font-medium outline-none focus-visible:ring-1 focus-visible:ring-ring"
+        >
+          <span dir="auto">14-day forecast</span>
+          <ChevronDownIcon
+            aria-hidden
+            className={cn(
+              "size-4 transition-transform",
+              open ? "" : "-rotate-90 rtl:rotate-90"
+            )}
+          />
+        </button>
+        <InfoTip info={reviewInfo.forecast} />
+      </div>
       <AnimatePresence initial={false}>
         {open ? (
           <motion.div

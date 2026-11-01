@@ -1,7 +1,9 @@
 import { XIcon } from "lucide-react"
 
+import { InfoTip } from "@/components/app/info/info"
 import { cn } from "@/lib/utils"
 
+import { classroomInfo } from "./info"
 import { LazyMarkdown } from "./markdown/LazyMarkdown"
 
 type AnswerVerdictProps = {
@@ -47,6 +49,10 @@ export function AnswerVerdict({
           <XIcon aria-hidden className="size-4 text-destructive" />
         )}
         <span>{correct ? "Correct" : "Not quite"}</span>
+        <InfoTip
+          info={classroomInfo.verdict}
+          testId={`info-verdict-${callId}`}
+        />
       </div>
       {explanation ? (
         <LazyMarkdown className="text-[13px] text-muted-foreground">

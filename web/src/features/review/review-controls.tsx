@@ -10,7 +10,10 @@ import {
 } from "@/components/ui/select"
 import { Switch } from "@/components/ui/switch"
 
+import { InfoTip } from "@/components/app/info/info"
+
 import { REVIEW_COPY } from "./copy"
+import { reviewInfo } from "./info"
 
 export type ReviewControlsValue = {
   limit: number
@@ -28,12 +31,15 @@ export function ReviewControls({ value, onChange }: ReviewControlsProps) {
   return (
     <div className="flex flex-col gap-4 sm:flex-row sm:items-end">
       <div className="flex flex-col gap-1.5">
-        <Label
-          htmlFor="review-limit"
-          className="text-[12px] text-muted-foreground"
-        >
-          {REVIEW_COPY.limitLabel}
-        </Label>
+        <span className="flex items-center gap-1.5">
+          <Label
+            htmlFor="review-limit"
+            className="text-[12px] text-muted-foreground"
+          >
+            {REVIEW_COPY.limitLabel}
+          </Label>
+          <InfoTip info={reviewInfo.controls} />
+        </span>
         <Select
           value={String(value.limit)}
           onValueChange={(v) => onChange({ ...value, limit: Number(v) })}

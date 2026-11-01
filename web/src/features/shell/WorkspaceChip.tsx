@@ -10,6 +10,8 @@ import { useState } from "react"
 
 import type { WorkspaceListItem } from "@/api/pending-types"
 
+import { InfoTip } from "@/components/app/info/info"
+import { SHELL_INFO } from "@/components/app/info/shell-content"
 import { Kbd } from "@/components/app/kbd"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -84,6 +86,7 @@ export function WorkspaceChip({ workspace, collapsed }: WorkspaceChipProps) {
     <Button
       variant="ghost"
       data-testid="workspace-chip"
+      data-tour="workspace-chip"
       aria-label={`Workspace: ${name}`}
       className={cn(
         "h-10 w-full justify-start gap-2 px-1.5",
@@ -132,6 +135,10 @@ export function WorkspaceChip({ workspace, collapsed }: WorkspaceChipProps) {
         className="w-72 gap-2 p-2"
         data-testid="workspace-popover"
       >
+        <p className="flex items-center gap-1.5 px-1.5 pt-0.5 text-[12px] font-medium">
+          Workspaces
+          <InfoTip info={SHELL_INFO.workspaceChip} />
+        </p>
         <div className="relative">
           <SearchIcon
             aria-hidden

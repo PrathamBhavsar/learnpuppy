@@ -6,11 +6,13 @@ import { useCallback, useMemo, useRef, useState } from "react"
 
 import { toApiError } from "@/api/errors"
 import { useChainTable } from "@/api/queries/graph"
+import { InfoTip } from "@/components/app/info/info"
 import { SkeletonRows } from "@/components/app/skeleton-block"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 
 import { copy, formatCount } from "../copy"
+import { graphInfo } from "../info"
 import {
   type ChainSort,
   DEFAULT_SORT,
@@ -185,6 +187,7 @@ export function ChainTable({
       <ResizeHandle height={height} onResize={onResize} />
       <header className="flex flex-wrap items-center gap-2 border-b border-border px-3 py-1.5">
         <h2 className="text-[12px] font-medium">{copy.table_.label}</h2>
+        <InfoTip info={graphInfo.table} />
         <span
           className="text-[11px] text-muted-foreground tabular-nums"
           data-testid="graph-table-scope"

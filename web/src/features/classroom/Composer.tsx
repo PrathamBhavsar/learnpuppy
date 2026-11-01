@@ -1,12 +1,14 @@
 import { PaperclipIcon, SendIcon, SquareIcon } from "lucide-react"
 import { useEffect, useRef, useState } from "react"
 
+import { InfoTip } from "@/components/app/info/info"
 import { Button } from "@/components/ui/button"
 import { Spinner } from "@/components/ui/spinner"
 import { Textarea } from "@/components/ui/textarea"
 import { Toggle } from "@/components/ui/toggle"
 
 import { COPY } from "./copy"
+import { classroomInfo } from "./info"
 
 type ComposerProps = {
   running: boolean
@@ -93,7 +95,7 @@ export function Composer({
         placeholder={
           running
             ? steer
-              ? "Steer the lesson, e.g. “go slower on pinning”"
+              ? "Steer the lesson, e.g. “go slower on verb tenses”"
               : "The tutor is replying…"
             : "Ask a question or reply"
         }
@@ -130,6 +132,7 @@ export function Composer({
             )}
             PDF
           </Button>
+          <InfoTip info={classroomInfo.pdf} />
           {running ? (
             <Toggle
               size="sm"
@@ -141,6 +144,9 @@ export function Composer({
               {COPY.steerOn}
             </Toggle>
           ) : null}
+          {running ? <InfoTip info={classroomInfo.steer} /> : null}
+          {running ? <InfoTip info={classroomInfo.stop} /> : null}
+          {!running ? <InfoTip info={classroomInfo.composer} /> : null}
         </div>
         <div className="flex items-center gap-2">
           {running ? (

@@ -3,7 +3,13 @@ import { useEffect, useState } from "react"
 
 import { useAccounts } from "@/api/queries/accounts"
 import { Button } from "@/components/ui/button"
+import { SHELL_INFO } from "@/components/app/info/shell-content"
 import { Skeleton } from "@/components/ui/skeleton"
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip"
 
 function formatCountdown(ms: number): string {
   const total = Math.max(0, Math.ceil(ms / 1000))
@@ -30,7 +36,13 @@ export function AccountsPill() {
   const now = useNow(cooling)
 
   if (isPending || !data)
-    return <Skeleton className="h-7 w-24" data-testid="accounts-pill-loading" />
+    return (
+      <Skeleton
+        className="h-7 w-24"
+        data-testid="accounts-pill-loading"
+        data-tour="accounts"
+      />
+    )
 
   const total = data.length
   const ready = data.filter((a) => a.status === "ready").length
@@ -43,34 +55,44 @@ export function AccountsPill() {
     next !== undefined && next > now ? formatCountdown(next - now) : null
 
   return (
-    <Button
-      asChild
-      variant="outline"
-      size="sm"
-      className="gap-1.5 tabular-nums"
-    >
-      <Link to="/accounts" data-testid="accounts-pill" data-state={state}>
-        <span
-          aria-hidden
-          className={
-            state === "none"
-              ? "size-1.5 bg-destructive"
-              : state === "partial"
-                ? "size-1.5 bg-warning"
-                : "size-1.5 bg-success"
-          }
-        />
-        <span className="sr-only">Accounts </span>
-        {ready}/{total} ready
-        {countdown ? (
-          <span
-            className="text-muted-foreground"
-            data-testid="accounts-countdown"
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <Button
+          asChild
+          variant="outline"
+          size="sm"
+          className="gap-1.5 tabular-nums"
+        >
+          <Link
+            to="/accounts"
+            data-testid="accounts-pill"
+            data-tour="accounts"
+            data-state={state}
           >
-            · {countdown}
-          </span>
-        ) : null}
-      </Link>
-    </Button>
+            <span
+              aria-hidden
+              className={
+                state === "none"
+                  ? "size-1.5 bg-destructive"
+                  : state === "partial"
+                    ? "size-1.5 bg-warning"
+                    : "size-1.5 bg-success"
+              }
+            />
+            <span className="sr-only">Accounts </span>
+            {ready}/{total} ready
+            {countdown ? (
+              <span
+                className="text-muted-foreground"
+                data-testid="accounts-countdown"
+              >
+                · {countdown}
+              </span>
+            ) : null}
+          </Link>
+        </Button>
+      </TooltipTrigger>
+      <TooltipContent>{SHELL_INFO.accounts.short}</TooltipContent>
+    </Tooltip>
   )
 }

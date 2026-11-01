@@ -1,12 +1,14 @@
 import { GraduationCapIcon, Trash2Icon, XIcon } from "lucide-react"
 import { motion } from "motion/react"
 
+import { InfoTip } from "@/components/app/info/info"
 import { Button } from "@/components/ui/button"
 import { Spinner } from "@/components/ui/spinner"
 import { useReducedMotion } from "@/hooks/use-reduced-motion"
 import { spring } from "@/lib/motion"
 
 import { copy } from "../copy"
+import { graphInfo } from "../info"
 
 type Props = {
   count: number
@@ -55,6 +57,7 @@ export function SelectionBar({
       >
         {copy.selection.count(count)}
       </span>
+      <InfoTip info={graphInfo.selection} />
       <Button
         size="sm"
         onClick={onPractice}

@@ -1,4 +1,6 @@
-import { CopyIcon, Trash2Icon } from "lucide-react"
+import { ScreenGuide } from "@/components/app/info/info"
+import { useTour } from "@/components/app/tour/tour-store"
+import { CopyIcon, PlayIcon, Trash2Icon } from "lucide-react"
 
 import { toApiError } from "@/api/errors"
 import { ErrorState } from "@/components/app/error-state"
@@ -15,6 +17,7 @@ import { DiagnosticsCard } from "./DiagnosticsCard"
 import { Section } from "./Section"
 import { SettingRow } from "./SettingRow"
 import { ShortcutsTable } from "./ShortcutsTable"
+import { SETTINGS_GUIDE_PARTS, SETTINGS_INFO } from "./help"
 import { useHealth } from "./health"
 import { useSettingsPatch } from "./preferences"
 
@@ -71,6 +74,26 @@ function DataSection() {
   )
 }
 
+function HelpSection() {
+  const replay = useTour((s) => s.replay)
+  return (
+    <SettingRow
+      label="Welcome tour"
+      description="A short guided walk through the app, pointing at the real buttons."
+    >
+      <Button
+        variant="outline"
+        size="sm"
+        onClick={replay}
+        data-testid="replay-tour"
+      >
+        <PlayIcon data-icon="inline-start" />
+        Replay the tour
+      </Button>
+    </SettingRow>
+  )
+}
+
 function AboutSection() {
   const health = useHealth()
   return (
@@ -112,6 +135,13 @@ export function SettingsScreen() {
       <PageHeader
         title="Settings"
         description="Appearance, behavior, shortcuts and data for this machine."
+        actions={
+          <ScreenGuide
+            title="Settings"
+            summary="Settings for this computer. They apply to every workspace."
+            parts={SETTINGS_GUIDE_PARTS}
+          />
+        }
       />
 
       {settings.isPending ? (
@@ -130,24 +160,32 @@ export function SettingsScreen() {
         />
       ) : (
         <>
-          <Section id="appearance" title="Appearance">
+          <Section
+            id="appearance"
+            title="Appearance"
+            info={SETTINGS_INFO.appearance}
+          >
             <AppearanceCard />
           </Section>
-          <Section id="behavior" title="Behavior">
+          <Section id="behavior" title="Behavior" info={SETTINGS_INFO.behavior}>
             <BehaviorCard doc={doc} />
           </Section>
           <Section
             id="shortcuts"
             title="Keyboard shortcuts"
             description="Press ? anywhere to open this list as a sheet."
+            info={SETTINGS_INFO.shortcuts}
           >
             <ShortcutsTable />
           </Section>
-          <Section id="data" title="Data">
+          <Section id="data" title="Data" info={SETTINGS_INFO.data}>
             <DataSection />
             <DiagnosticsCard />
           </Section>
-          <Section id="about" title="About">
+          <Section id="help" title="Help" info={SETTINGS_INFO.help}>
+            <HelpSection />
+          </Section>
+          <Section id="about" title="About" info={SETTINGS_INFO.about}>
             <AboutSection />
           </Section>
         </>

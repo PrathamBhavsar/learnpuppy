@@ -1,3 +1,4 @@
+import { ScreenGuide } from "@/components/app/info/info"
 import { RotateCcwIcon, Trash2Icon, XIcon } from "lucide-react"
 import { useState } from "react"
 
@@ -27,6 +28,8 @@ import { usePageTitle } from "@/hooks/use-page-title"
 import { toastError, toastSuccess } from "@/lib/toast"
 
 import { formatBytes, relativeTime } from "./model"
+
+import { TRASH_GUIDE_PARTS } from "./help"
 
 function TrashRow({
   item,
@@ -151,6 +154,13 @@ export function TrashScreen() {
       <PageHeader
         title="Trash"
         description="Deleted workspaces you can still restore."
+        actions={
+          <ScreenGuide
+            title="Trash"
+            summary="Deleted workspaces wait here until you purge them, so a mistake is easy to undo."
+            parts={TRASH_GUIDE_PARTS}
+          />
+        }
       />
       {trash.isPending ? (
         <div

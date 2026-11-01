@@ -22,6 +22,15 @@ export default defineConfig({
   use: {
     baseURL: `http://127.0.0.1:${PORT}`,
     trace: "retain-on-failure",
+    storageState: {
+      cookies: [],
+      origins: [
+        {
+          origin: `http://127.0.0.1:${PORT}`,
+          localStorage: [{ name: "lp-tour", value: "done" }],
+        },
+      ],
+    },
   },
   projects: [
     {

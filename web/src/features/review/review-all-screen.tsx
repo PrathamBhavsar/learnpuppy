@@ -12,6 +12,7 @@ import { toApiError } from "@/api/errors"
 import { useWorkspaces } from "@/api/queries/workspaces"
 import { EmptyState } from "@/components/app/empty-state"
 import { ErrorState } from "@/components/app/error-state"
+import { InfoTip, ScreenGuide } from "@/components/app/info/info"
 import { PageHeader } from "@/components/app/page-header"
 import { SkeletonRows } from "@/components/app/skeleton-block"
 import { Button } from "@/components/ui/button"
@@ -20,6 +21,7 @@ import { usePageTitle } from "@/hooks/use-page-title"
 import { useReducedMotion } from "@/hooks/use-reduced-motion"
 
 import { REVIEW_COPY } from "./copy"
+import { reviewAllGuide, reviewInfo } from "./info"
 import { useReviewQueue } from "./api"
 import { buildQueue } from "./queue"
 import { ReviewSession } from "./review-session"
@@ -75,7 +77,11 @@ export function ReviewAllScreen() {
   }
 
   const header = (
-    <PageHeader title={COPY.title} description={COPY.description} />
+    <PageHeader
+      title={COPY.title}
+      description={COPY.description}
+      actions={<ScreenGuide {...reviewAllGuide} />}
+    />
   )
   const loading = workspaces.isPending
 
@@ -163,6 +169,10 @@ function Overview({
           <span className="text-[13px] text-muted-foreground">
             Due across {targets.length} workspace
             {targets.length === 1 ? "" : "s"}
+            <InfoTip
+              info={reviewInfo.reviewAll}
+              className="ms-1.5 align-middle"
+            />
           </span>
           <span
             data-testid="review-all-total"

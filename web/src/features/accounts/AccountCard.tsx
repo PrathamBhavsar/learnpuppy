@@ -1,3 +1,4 @@
+import { InfoTip } from "@/components/app/info/info"
 import { CheckIcon, CopyIcon } from "lucide-react"
 import { useEffect, useRef, useState } from "react"
 
@@ -15,6 +16,8 @@ import {
   providerTitle,
   reauthCommand,
 } from "./model"
+
+import { ACCOUNTS_INFO } from "./help"
 
 import "./accounts.css"
 
@@ -91,6 +94,14 @@ export function AccountCard({ account, now }: AccountCardProps) {
               <span data-testid={`account-status-${id}`}>
                 {STATUS_LABEL[account.status]}
               </span>
+              <InfoTip
+                info={
+                  account.status === "cooldown"
+                    ? ACCOUNTS_INFO.cooldown
+                    : ACCOUNTS_INFO.status
+                }
+                testId={`info-status-${id}`}
+              />
             </span>
           </div>
         </div>
@@ -126,7 +137,10 @@ export function AccountCard({ account, now }: AccountCardProps) {
 
       <dl className="grid grid-cols-3 gap-2 text-[12px]">
         <div className="flex flex-col">
-          <dt className="text-muted-foreground">Requests</dt>
+          <dt className="flex items-center gap-1 text-muted-foreground">
+            Requests
+            <InfoTip info={ACCOUNTS_INFO.usage} testId={`info-usage-${id}`} />
+          </dt>
           <dd className="font-medium">
             <CountUp value={account.requests} />
           </dd>

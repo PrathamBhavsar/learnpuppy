@@ -1,3 +1,4 @@
+import { type InfoContent, InfoTip } from "@/components/app/info/info"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { useEffect, useMemo } from "react"
 import { useForm, useWatch } from "react-hook-form"
@@ -40,17 +41,23 @@ import {
   workspaceSchema,
 } from "./model"
 
+import { WORKSPACE_FIELD_INFO } from "./help"
+
 type FieldProps = {
   id: string
   label: string
+  info?: InfoContent
   error?: string | undefined
   children: React.ReactNode
 }
 
-function Field({ id, label, error, children }: FieldProps) {
+function Field({ id, label, info, error, children }: FieldProps) {
   return (
     <div className="flex flex-col gap-1.5">
-      <Label htmlFor={id}>{label}</Label>
+      <div className="flex items-center gap-1.5">
+        <Label htmlFor={id}>{label}</Label>
+        {info ? <InfoTip info={info} /> : null}
+      </div>
       {children}
       {error ? (
         <p
@@ -69,6 +76,7 @@ function Field({ id, label, error, children }: FieldProps) {
 type PickerProps<K extends string> = {
   name: string
   label: string
+  info?: InfoContent
   value: K
   options: readonly K[]
   onChange: (value: K) => void
@@ -81,6 +89,7 @@ type PickerProps<K extends string> = {
 function Picker<K extends string>({
   name,
   label,
+  info,
   value,
   options,
   onChange,
@@ -90,7 +99,10 @@ function Picker<K extends string>({
 }: PickerProps<K>) {
   return (
     <fieldset className="flex flex-col gap-1.5">
-      <legend className="mb-1.5 text-[12px] font-medium">{label}</legend>
+      <legend className="mb-1.5 flex items-center gap-1.5 text-[12px] font-medium">
+        {label}
+        {info ? <InfoTip info={info} /> : null}
+      </legend>
       <div role="radiogroup" aria-label={label} className={className}>
         {options.map((key) => (
           <label
@@ -216,7 +228,12 @@ export function WorkspaceForm({
       className="flex flex-col gap-4"
       data-testid="workspace-form"
     >
-      <Field id="ws-name" label="Name" error={errors.name?.message}>
+      <Field
+        id="ws-name"
+        label="Name"
+        info={WORKSPACE_FIELD_INFO.name}
+        error={errors.name?.message}
+      >
         <Input
           id="ws-name"
           data-testid="ws-name-input"
@@ -230,6 +247,7 @@ export function WorkspaceForm({
       <Picker
         name="ws-icon"
         label="Icon"
+        info={WORKSPACE_FIELD_INFO.icon}
         value={icon}
         options={ICON_KEYS}
         onChange={(v) => setValue("icon", v, { shouldDirty: true })}
@@ -248,6 +266,7 @@ export function WorkspaceForm({
       <Picker
         name="ws-hue"
         label="Color"
+        info={WORKSPACE_FIELD_INFO.color}
         value={hue}
         options={HUES}
         onChange={(v) => setValue("hue", v, { shouldDirty: true })}
@@ -264,6 +283,7 @@ export function WorkspaceForm({
       <Field
         id="ws-description"
         label="Description"
+        info={WORKSPACE_FIELD_INFO.description}
         error={errors.description?.message}
       >
         <Textarea

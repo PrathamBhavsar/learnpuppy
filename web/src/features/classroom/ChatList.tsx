@@ -6,6 +6,7 @@ import { toApiError } from "@/api/errors"
 import type { ChatSummary } from "@/api/pending-types"
 import { useChats } from "@/api/queries/chats"
 import { ErrorState } from "@/components/app/error-state"
+import { ScreenGuide } from "@/components/app/info/info"
 import { PageHeader } from "@/components/app/page-header"
 import { SkeletonBlock } from "@/components/app/skeleton-block"
 import { Button } from "@/components/ui/button"
@@ -13,6 +14,7 @@ import { Button } from "@/components/ui/button"
 import { DeleteChatDialog, RenameChatDialog } from "./ChatDialogs"
 import { ChatListItem } from "./ChatListItem"
 import { COPY } from "./copy"
+import { classroomGuide } from "./info"
 import { NewChatDialog } from "./NewChatDialog"
 
 type ChatListProps = { ws: string; activeChatId?: string }
@@ -43,6 +45,9 @@ export function ChatList({ ws, activeChatId }: ChatListProps) {
             </Button>
           }
         />
+        <div className="self-start">
+          <ScreenGuide {...classroomGuide} />
+        </div>
         <nav aria-label={COPY.chats} data-testid="chat-list">
           {chats.isPending ? (
             <div

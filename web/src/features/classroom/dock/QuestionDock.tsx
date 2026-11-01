@@ -1,7 +1,9 @@
 import type { AnswerInput, PendingQuestion } from "@/api/pending-types"
+import { InfoTip } from "@/components/app/info/info"
 import { Badge } from "@/components/ui/badge"
 
 import { LazyMarkdown } from "../markdown/LazyMarkdown"
+import { questionInfo } from "../info"
 import { ChoiceQuestion } from "./ChoiceQuestion"
 import { ProblemQuestion } from "./ProblemQuestion"
 import { ProbeProgress } from "./ProbeProgress"
@@ -40,9 +42,12 @@ export function QuestionDock({
       className="lp-dock-in mx-auto flex max-h-[55%] w-full max-w-3xl shrink-0 flex-col gap-3 overflow-y-auto border-t bg-card px-4 py-3"
     >
       <div className="flex items-center justify-between gap-3">
-        <Badge variant="secondary">
-          {TOOL_NAME[pending.tool] ?? pending.tool}
-        </Badge>
+        <div className="flex items-center gap-1.5">
+          <Badge variant="secondary">
+            {TOOL_NAME[pending.tool] ?? pending.tool}
+          </Badge>
+          <InfoTip info={questionInfo(pending.tool)} />
+        </div>
         {pending.tool === "probe" ? (
           <div className="flex flex-1 items-center justify-end gap-3">
             <ProbeProgress
