@@ -54,8 +54,9 @@ export const workspaceHandlers = [
     await latency()
     const archived =
       new URL(request.url).searchParams.get("archived") === "true"
+    // Like the server: `archived=true` includes archived next to the live ones.
     const all = [...state.db.workspaces.values()].filter(
-      (w) => w.archived === archived
+      (w) => archived || !w.archived
     )
     const body: Schemas["WorkspaceListDto"] = {
       items: all.filter((w) => !w.damaged).map(listItem),

@@ -1,5 +1,6 @@
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -76,6 +77,8 @@ pub struct SubprocessEngine {
     pub account: String,
     /// Where `LEARNPUPPY_DEBUG_RAW=1` dumps each turn's redacted raw stdout; `None` = off.
     pub raw_dir: Option<PathBuf>,
+    /// Input and output tokens the CLI reported for the calls made through this engine (and its clones).
+    pub usage: Arc<[AtomicU64; 2]>,
     /// Private (0700, random name) working directory, removed when the last clone drops.
     sandbox: Arc<tempfile::TempDir>,
 }
@@ -97,8 +100,16 @@ impl SubprocessEngine {
             role: String::new(),
             account: String::new(),
             raw_dir: raw_dir_from_env(),
+            usage: Arc::new([AtomicU64::new(0), AtomicU64::new(0)]),
             sandbox: Arc::new(tempfile::Builder::new().prefix("lp-sandbox-").tempdir()?),
         })
+    }
+
+    fn note_usage(&self, line: &str) {
+        if let Some((i, o)) = usage_of(self.kind, line) {
+            self.usage[0].fetch_add(i, Ordering::Relaxed);
+            self.usage[1].fetch_add(o, Ordering::Relaxed);
+        }
     }
 
     fn sandbox(&self) -> &Path {
@@ -472,6 +483,24 @@ fn agy_text(v: &Value) -> Result<Option<String>, DriverError> {
         .map(String::from))
 }
 
+/// `(input, output)` tokens from a CLI's final stats line: claude `{"type":"result","usage":{..}}` (cache
+/// reads and writes count as input) or codex `{"type":"turn.completed","usage":{..}}`; agy reports none.
+fn usage_of(kind: CliKind, line: &str) -> Option<(u64, u64)> {
+    let v: Value = serde_json::from_str(line).ok()?;
+    let want = match kind {
+        CliKind::Claude => "result",
+        CliKind::Codex => "turn.completed",
+        CliKind::Agy => return None,
+    };
+    if v.get("type")?.as_str()? != want {
+        return None;
+    }
+    let u = v.get("usage")?;
+    let n = |k: &str| u.get(k).and_then(Value::as_u64).unwrap_or(0);
+    let input = n("input_tokens") + n("cache_creation_input_tokens") + n("cache_read_input_tokens");
+    Some((input, n("output_tokens")))
+}
+
 fn raw_deltas(kind: CliKind, line: &str) -> Result<Vec<StreamDelta>, DriverError> {
     let Ok(v) = serde_json::from_str::<Value>(line) else {
         return Ok(match kind {
@@ -570,6 +599,7 @@ impl SubprocessEngine {
         let ran: Result<(), DriverError> = async {
             while let Some(line) = proc.next().await? {
                 self.keep_raw(&mut raw, &line);
+                self.note_usage(&line);
                 for d in deltas(self.kind, &line)? {
                     match &d {
                         StreamDelta::Text(t) => resp.text.push_str(t),
@@ -712,6 +742,7 @@ impl LlmEngine for SubprocessEngine {
             let mut stdout = String::new();
             let read = async {
                 while let Some(line) = proc.next().await? {
+                    self.note_usage(&line);
                     stdout.push_str(&line);
                     stdout.push('\n');
                 }
@@ -776,6 +807,17 @@ echo '{"type":"system"}'
 echo '{"type":"assistant","message":{"content":[{"type":"thinking","thinking":"hm"},{"type":"text","text":"hi "},{"type":"tool_use","id":"t1","name":"probe","input":{"q":1}}]}}'
 echo '{"type":"assistant","message":{"content":[{"type":"text","text":"there"}]}}'
 echo '{"type":"result","result":"hi there"}'"#;
+
+    #[test]
+    fn usage_is_read_from_claude_result_and_codex_turn_completed() {
+        let claude = r#"{"type":"result","usage":{"input_tokens":5,"cache_creation_input_tokens":10,"cache_read_input_tokens":100,"output_tokens":7}}"#;
+        assert_eq!(usage_of(CliKind::Claude, claude), Some((115, 7)));
+        let codex = r#"{"type":"turn.completed","usage":{"input_tokens":24573,"cached_input_tokens":12416,"output_tokens":5}}"#;
+        assert_eq!(usage_of(CliKind::Codex, codex), Some((24573, 5)));
+        assert_eq!(usage_of(CliKind::Claude, codex), None);
+        assert_eq!(usage_of(CliKind::Agy, claude), None);
+        assert_eq!(usage_of(CliKind::Claude, "not json"), None);
+    }
 
     #[tokio::test]
     async fn claude_stream_json_becomes_deltas() {

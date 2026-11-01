@@ -38,7 +38,8 @@ export function toListItems(
   wire: WorkspaceListWire,
   archived = false
 ): WorkspaceListItem[] {
-  const live = wire.items.map(toListItem)
+  // `?archived=true` means "include archived" on the wire, so the archived listing filters to them.
+  const live = wire.items.filter((w) => w.archived === archived).map(toListItem)
   // The server repeats `damaged` on the archived listing; show those once, with the live ones.
   const broken = (archived ? [] : wire.damaged).map((d): WorkspaceListItem => ({
     id: d.id,

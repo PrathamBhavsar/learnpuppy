@@ -127,6 +127,7 @@ impl CliPoolEngine {
             engine.config_dir = acct.config_dir.clone();
             engine.role = self.role.clone();
             engine.account = acct.id.0.clone();
+            let usage = engine.usage.clone();
             // A fallback provider cannot run another provider's model slug.
             if let Some(p) = self
                 .profile
@@ -140,7 +141,11 @@ impl CliPoolEngine {
             seen.emitted.store(false, Ordering::Relaxed);
             match call(engine).await {
                 Ok(v) => {
-                    self.pool.report_success(&acct.id, 0, 0);
+                    let (i, o) = (
+                        usage[0].load(Ordering::Relaxed),
+                        usage[1].load(Ordering::Relaxed),
+                    );
+                    self.pool.report_success(&acct.id, i, o);
                     return Ok(v);
                 }
                 Err(DriverError::Exit { code, stderr }) => {
