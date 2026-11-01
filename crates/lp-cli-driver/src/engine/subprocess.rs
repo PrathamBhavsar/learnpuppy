@@ -24,7 +24,7 @@ const STDERR_CAP: usize = 64 * 1024;
 const CALL_OPEN: &str = "<tool_call>";
 const CALL_CLOSE: &str = "</tool_call>";
 /// Env that real setups need (proxies, TLS roots, locale, temp dir); everything else is stripped.
-const ENV_ALLOW: [&str; 11] = [
+const ENV_ALLOW: [&str; 19] = [
     "HOME",
     // The Claude CLI looks up per-profile Keychain credentials by user name.
     "USER",
@@ -33,6 +33,15 @@ const ENV_ALLOW: [&str; 11] = [
     "HTTPS_PROXY",
     "HTTP_PROXY",
     "NO_PROXY",
+    "ALL_PROXY",
+    "https_proxy",
+    "http_proxy",
+    "no_proxy",
+    // Where opencode (and other XDG tools) keep config, data and cache; replaced for the sandboxed CLIs.
+    "XDG_CONFIG_HOME",
+    "XDG_DATA_HOME",
+    "XDG_CACHE_HOME",
+    "XDG_STATE_HOME",
     "SSL_CERT_FILE",
     "SSL_CERT_DIR",
     "TMPDIR",
@@ -44,7 +53,20 @@ pub enum CliKind {
     Claude,
     Codex,
     Agy,
+    /// `opencode run --format json` (free `opencode/*` models need no login).
+    Opencode,
+    /// `kiro-cli chat --no-interactive --output-format stream-json`.
+    Kiro,
 }
+
+/// Tutor config for opencode: every tool permission denied, nothing that talks to the outside.
+/// Needs `--standalone`, otherwise the already-running background service (with the user's config) answers.
+const OPENCODE_LOCKDOWN: &str = r#"{"permission":{"*":"deny"},"autoupdate":false,"share":"disabled","mcp":{},"lsp":false,"formatter":false,"plugin":[]}"#;
+/// Kiro agent with no tools, no MCP servers and no resources; selected with `--agent lp-tutor`.
+const KIRO_AGENT: &str = r#"{"name":"lp-tutor","description":"LearnPuppy tutor: no tools","prompt":null,"mcpServers":{},"tools":[],"allowedTools":[],"toolsSettings":{},"resources":[],"includeMcpJson":false}"#;
+const KIRO_AGENT_NAME: &str = "lp-tutor";
+/// Model used when opencode is asked to run without one.
+const OPENCODE_DEFAULT_MODEL: &str = "opencode/big-pickle";
 
 /// Short stable log label for an account id like `claude:me@example.com`: provider plus 6 hex chars
 /// of an FNV-1a hash, so the id itself never reaches the log.
@@ -77,10 +99,14 @@ pub struct SubprocessEngine {
     pub account: String,
     /// Where `LEARNPUPPY_DEBUG_RAW=1` dumps each turn's redacted raw stdout; `None` = off.
     pub raw_dir: Option<PathBuf>,
-    /// Input and output tokens the CLI reported for the calls made through this engine (and its clones).
-    pub usage: Arc<[AtomicU64; 2]>,
+    /// Input tokens, output tokens, and micro-credits (credits x 1e6, kiro only) the CLI reported for the
+    /// calls made through this engine (and its clones).
+    pub usage: Arc<[AtomicU64; 3]>,
     /// Private (0700, random name) working directory, removed when the last clone drops.
     sandbox: Arc<tempfile::TempDir>,
+    /// Private HOME (kiro, opencode): the CLI sees no user skills, MCP servers, instructions or history,
+    /// only symlinks to its own auth store. Removed with the last clone.
+    home: Option<Arc<tempfile::TempDir>>,
 }
 
 impl SubprocessEngine {
@@ -89,6 +115,23 @@ impl SubprocessEngine {
             CliKind::Claude => "claude",
             CliKind::Codex => "codex",
             CliKind::Agy => "agy",
+            CliKind::Opencode => "opencode",
+            CliKind::Kiro => "kiro-cli",
+        };
+        let home = match kind {
+            CliKind::Kiro | CliKind::Opencode => {
+                let dir = tempfile::Builder::new().prefix("lp-home-").tempdir()?;
+                let real = std::env::var_os("HOME").map(PathBuf::from);
+                if let Some(real) = &real {
+                    if kind == CliKind::Kiro {
+                        prepare_kiro_home(real, dir.path())?;
+                    } else {
+                        prepare_opencode_home(dir.path())?;
+                    }
+                }
+                Some(Arc::new(dir))
+            }
+            _ => None,
         };
         Ok(Self {
             kind,
@@ -100,8 +143,9 @@ impl SubprocessEngine {
             role: String::new(),
             account: String::new(),
             raw_dir: raw_dir_from_env(),
-            usage: Arc::new([AtomicU64::new(0), AtomicU64::new(0)]),
+            usage: Arc::new([AtomicU64::new(0), AtomicU64::new(0), AtomicU64::new(0)]),
             sandbox: Arc::new(tempfile::Builder::new().prefix("lp-sandbox-").tempdir()?),
+            home,
         })
     }
 
@@ -110,6 +154,23 @@ impl SubprocessEngine {
             self.usage[0].fetch_add(i, Ordering::Relaxed);
             self.usage[1].fetch_add(o, Ordering::Relaxed);
         }
+        if let Some(c) = credits_of(self.kind, line) {
+            self.usage[2].fetch_add(c, Ordering::Relaxed);
+        }
+    }
+
+    /// Opencode with a paid provider: expose the user's `auth.json` (symlink; a token the CLI rotates is
+    /// then written through to the real file only if opencode rewrites in place). No-op for other CLIs.
+    pub fn link_opencode_login(&self) -> std::io::Result<()> {
+        let (Some(home), Some(real)) = (&self.home, std::env::var_os("HOME")) else {
+            return Ok(());
+        };
+        let src = Path::new(&real).join(".local/share/opencode/auth.json");
+        let link = home.path().join("data/opencode/auth.json");
+        if self.kind == CliKind::Opencode && src.exists() && !link.exists() {
+            std::os::unix::fs::symlink(src, link)?;
+        }
+        Ok(())
     }
 
     fn sandbox(&self) -> &Path {
@@ -171,9 +232,25 @@ impl SubprocessEngine {
             .env_clear()
             .current_dir(self.sandbox())
             .process_group(0);
+        let private_home = self.home.as_ref().map(|h| h.path());
         for key in ENV_ALLOW {
+            // A private HOME replaces the user's; their XDG dirs would point back at the real config.
+            if private_home.is_some() && (key == "HOME" || key.starts_with("XDG_")) {
+                continue;
+            }
             if let Some(v) = std::env::var_os(key) {
                 cmd.env(key, v);
+            }
+        }
+        if let Some(h) = private_home {
+            cmd.env("HOME", h);
+            if self.kind == CliKind::Opencode {
+                cmd.env("XDG_CONFIG_HOME", h.join("config"))
+                    .env("XDG_DATA_HOME", h.join("data"))
+                    .env("XDG_CACHE_HOME", h.join("cache"))
+                    .env("XDG_STATE_HOME", h.join("state"))
+                    .env("OPENCODE_DISABLE_CLAUDE_CODE", "1")
+                    .env("OPENCODE_CONFIG_CONTENT", OPENCODE_LOCKDOWN);
             }
         }
         // The default account lives in `~/.claude.json` + Keychain; exporting the default dir breaks it.
@@ -242,22 +319,12 @@ impl SubprocessEngine {
                     ]
                     .map(String::from),
                 );
+                a.extend(CLAUDE_ISOLATION.map(String::from));
             }
-            CliKind::Codex => {
-                a.extend(
-                    [
-                        "exec",
-                        "--json",
-                        "--skip-git-repo-check",
-                        "-s",
-                        "read-only",
-                        "-C",
-                    ]
-                    .map(String::from),
-                );
-                a.push(self.sandbox().display().to_string());
-            }
+            CliKind::Codex => a.extend(self.codex_base()),
             CliKind::Agy => a.extend(AGY_STREAM.map(String::from)),
+            CliKind::Opencode => a.extend(OPENCODE_BASE.map(String::from)),
+            CliKind::Kiro => a.extend(KIRO_BASE.map(String::from)),
         }
         self.finish_args(
             a,
@@ -265,6 +332,12 @@ impl SubprocessEngine {
             req.model.as_deref(),
             req.effort.as_deref(),
         )
+    }
+
+    fn codex_base(&self) -> Vec<String> {
+        let mut a: Vec<String> = CODEX_BASE.map(String::from).to_vec();
+        a.push(self.sandbox().display().to_string());
+        a
     }
 
     /// Adds model and prompt delivery: stdin for every CLI (agy: one stream-json message), so large
@@ -278,9 +351,13 @@ impl SubprocessEngine {
     ) -> (Vec<String>, Option<String>) {
         let model = model.or(self.model.as_deref());
         let effort = effort.or(self.effort.as_deref());
+        let model = match (self.kind, model) {
+            (CliKind::Opencode, None) => Some(OPENCODE_DEFAULT_MODEL),
+            (_, m) => m,
+        };
         if let Some(m) = model {
             a.push(
-                if self.kind == CliKind::Codex {
+                if matches!(self.kind, CliKind::Codex | CliKind::Opencode) {
                     "-m"
                 } else {
                     "--model"
@@ -300,9 +377,12 @@ impl SubprocessEngine {
                     a.extend(["--effort".into(), e.into()]);
                 }
                 CliKind::Agy => {}
+                // Neither exposes a portable effort knob (kiro rejects it on models without reasoning).
+                CliKind::Opencode | CliKind::Kiro => {}
             }
         }
         match self.kind {
+            CliKind::Opencode | CliKind::Kiro => (a, Some(prompt.into())),
             CliKind::Codex => {
                 a.push("-".into());
                 (a, Some(prompt.into()))
@@ -332,6 +412,73 @@ const AGY_STREAM: [&str; 5] = [
     "stream-json",
     "--sandbox",
 ];
+
+/// Claude: ignore the user's `~/.claude` instructions, output style and settings (issue #413); only
+/// project and local scope (the empty sandbox) load. Auth lives outside the settings sources.
+const CLAUDE_ISOLATION: [&str; 2] = ["--setting-sources", "project,local"];
+
+/// Codex: no user config (MCP servers, notify hooks, project trust), no session files.
+///
+/// Issue #414, what remains: `-s read-only` still lets the model *read* any file the user can (a real
+/// turn ran `ls ~/.ssh`). Codex has no flag to narrow reads and a private `HOME` hangs its auth, so
+/// this is a documented residual (docs/web/12-cli-isolation-and-failures.md); agy has the same class
+/// of exposure behind `--sandbox`. kiro and opencode are tool-less, so they read nothing.
+const CODEX_BASE: [&str; 8] = [
+    "exec",
+    "--json",
+    "--skip-git-repo-check",
+    "--ignore-user-config",
+    "--ephemeral",
+    "-s",
+    "read-only",
+    "-C",
+];
+
+const OPENCODE_BASE: [&str; 4] = ["run", "--standalone", "--format", "json"];
+
+const KIRO_BASE: [&str; 7] = [
+    "chat",
+    "--no-interactive",
+    "--agent",
+    KIRO_AGENT_NAME,
+    "--trust-tools=",
+    "--output-format",
+    "stream-json",
+];
+
+/// Kiro: a HOME with the tool-less agent, and symlinks to the CLI's own binaries and login store (a
+/// directory symlink, so refreshed tokens are written to the real store). User skills, MCP config,
+/// steering and session history stay out of reach.
+fn prepare_kiro_home(real_home: &Path, dest: &Path) -> std::io::Result<()> {
+    let agents = dest.join(".kiro/agents");
+    std::fs::create_dir_all(&agents)?;
+    std::fs::write(agents.join(format!("{KIRO_AGENT_NAME}.json")), KIRO_AGENT)?;
+    for rel in [
+        "Library/Application Support/kiro-cli",
+        ".local/bin",
+        ".local/share/kiro-cli",
+        ".config/kiro-cli",
+    ] {
+        let src = real_home.join(rel);
+        if src.exists() {
+            let link = dest.join(rel);
+            if let Some(parent) = link.parent() {
+                std::fs::create_dir_all(parent)?;
+            }
+            std::os::unix::fs::symlink(&src, &link)?;
+        }
+    }
+    Ok(())
+}
+
+/// Opencode: empty config/data/cache/state dirs. Free `opencode/*` models need no login; a provider
+/// login is linked in on request by `SubprocessEngine::link_opencode_login`.
+fn prepare_opencode_home(dest: &Path) -> std::io::Result<()> {
+    for d in ["config", "data/opencode", "cache", "state"] {
+        std::fs::create_dir_all(dest.join(d))?;
+    }
+    Ok(())
+}
 
 /// The one stdin line that makes agy run a turn on `prompt`.
 fn agy_message(prompt: &str) -> String {
@@ -540,11 +687,100 @@ fn usage_of(kind: CliKind, line: &str) -> Option<(u64, u64)> {
         CliKind::Codex if v.get("type")?.as_str()? == "turn.completed" => v.get("usage")?,
         // agy: `{"event":"result","result":{..,"usage":{..}}}`
         CliKind::Agy if v.get("event")?.as_str()? == "result" => v.get("result")?.get("usage")?,
+        // opencode: `{"type":"step_finish","part":{"tokens":{input,output,reasoning,cache:{read,write}}}}`
+        CliKind::Opencode if v.get("type")?.as_str()? == "step_finish" => {
+            let t = v.get("part")?.get("tokens")?;
+            let n = |o: &Value, k: &str| o.get(k).and_then(Value::as_u64).unwrap_or(0);
+            let cache = t.get("cache").cloned().unwrap_or(Value::Null);
+            return Some((
+                n(t, "input") + n(&cache, "read") + n(&cache, "write"),
+                n(t, "output") + n(t, "reasoning"),
+            ));
+        }
         _ => return None,
     };
     let n = |k: &str| u.get(k).and_then(Value::as_u64).unwrap_or(0);
     let input = n("input_tokens") + n("cache_creation_input_tokens") + n("cache_read_input_tokens");
     Some((input, n("output_tokens")))
+}
+
+/// Kiro reports credits, not tokens: micro-credits (credits x 1e6) from the `metadata` event
+/// (`meteringUsage`, what the tool-less agent run emits) or the turn-completion summary
+/// (`promptTurnSummaries`). A run emits one of them, never both.
+fn credits_of(kind: CliKind, line: &str) -> Option<u64> {
+    if kind != CliKind::Kiro
+        || !(line.contains("meteringUsage") || line.contains("promptTurnSummaries"))
+    {
+        return None;
+    }
+    let v: Value = serde_json::from_str(line).ok()?;
+    let sum = |a: Option<&Value>, key: &str| -> f64 {
+        a.and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            .filter_map(|m| m.get(key)?.as_f64())
+            .sum()
+    };
+    let credits = sum(v["data"].get("meteringUsage"), "value")
+        + sum(
+            v["data"]["update"]["_meta"]["kiro"].get("promptTurnSummaries"),
+            "usage",
+        );
+    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+    (credits > 0.0).then(|| (credits * 1e6).round() as u64)
+}
+
+/// The failure a CLI reported on stdout (error event or `is_error` result), as text for `classify`.
+fn error_of(kind: CliKind, line: &str) -> Option<String> {
+    let v: Value = serde_json::from_str(line).ok()?;
+    let ty = v.get("type").and_then(Value::as_str);
+    let s = |p: &Value| p.as_str().map(String::from);
+    match (kind, ty) {
+        (CliKind::Claude, Some("result")) if v.get("is_error") == Some(&Value::Bool(true)) => {
+            let status = v
+                .get("api_error_status")
+                .and_then(Value::as_u64)
+                .map_or(String::new(), |c| format!(" (status {c})"));
+            Some(format!("{}{status}", s(&v["result"]).unwrap_or_default()))
+        }
+        (CliKind::Codex, Some("turn.failed")) => s(&v["error"]["message"]),
+        (CliKind::Codex, Some("error")) => s(&v["message"]),
+        (CliKind::Opencode, Some("error")) => {
+            let e = &v["error"];
+            let mut m = format!(
+                "{}: {}",
+                s(&e["type"]).unwrap_or_default(),
+                s(&e["message"]).unwrap_or_default()
+            );
+            if let Some(st) = e.get("status").and_then(Value::as_u64) {
+                m.push_str(&format!(" (status {st})"));
+            }
+            if let Some(ms) = e.get("retryAfterMs").and_then(Value::as_u64) {
+                m.push_str(&format!(" retryAfterMs: {ms}"));
+            }
+            Some(m)
+        }
+        (CliKind::Kiro, Some("runError")) => s(&v["data"]["message"]),
+        (CliKind::Kiro, Some("runFinished"))
+            if v["data"]["status"]
+                .as_str()
+                .is_some_and(|st| st != "success") =>
+        {
+            Some(format!("kiro run {}", v["data"]["status"]))
+        }
+        _ => None,
+    }
+}
+
+/// Final answer text some CLIs repeat at the end of the stream (used only if no chunk carried text).
+fn final_text_of(kind: CliKind, line: &str) -> Option<String> {
+    if kind != CliKind::Kiro || !line.contains("finalText") {
+        return None;
+    }
+    let v: Value = serde_json::from_str(line).ok()?;
+    (v.get("type")?.as_str()? == "runFinished")
+        .then(|| v["data"]["finalText"].as_str().map(String::from))
+        .flatten()
 }
 
 fn raw_deltas(kind: CliKind, line: &str) -> Result<Vec<StreamDelta>, DriverError> {
@@ -556,6 +792,8 @@ fn raw_deltas(kind: CliKind, line: &str) -> Result<Vec<StreamDelta>, DriverError
     };
     let str_of = |v: &Value, k: &str| v.get(k).and_then(Value::as_str).map(String::from);
     Ok(match (kind, v.get("type").and_then(Value::as_str)) {
+        // A synthetic assistant message is the CLI's own error notice, not the model; `error_of` reports it.
+        (CliKind::Claude, Some("assistant")) if v["message"]["model"] == "<synthetic>" => vec![],
         (CliKind::Claude, Some("assistant")) => v["message"]["content"]
             .as_array()
             .into_iter()
@@ -582,6 +820,25 @@ fn raw_deltas(kind: CliKind, line: &str) -> Result<Vec<StreamDelta>, DriverError
                 _ => vec![],
             }
         }
+        (CliKind::Opencode, Some("text")) => str_of(&v["part"], "text")
+            .map(StreamDelta::Text)
+            .into_iter()
+            .collect(),
+        (CliKind::Opencode, Some("reasoning")) => str_of(&v["part"], "text")
+            .map(StreamDelta::Thinking)
+            .into_iter()
+            .collect(),
+        (CliKind::Kiro, Some("sessionUpdate")) => {
+            let u = &v["data"]["update"];
+            let text = || str_of(&u["content"], "text");
+            match u.get("sessionUpdate").and_then(Value::as_str) {
+                Some("agent_message_chunk") => text().map(StreamDelta::Text).into_iter().collect(),
+                Some("agent_thought_chunk") => {
+                    text().map(StreamDelta::Thinking).into_iter().collect()
+                }
+                _ => vec![],
+            }
+        }
         (CliKind::Agy, _) => agy_text(&v)?
             .filter(|t| !t.is_empty())
             .map(StreamDelta::Text)
@@ -589,6 +846,25 @@ fn raw_deltas(kind: CliKind, line: &str) -> Result<Vec<StreamDelta>, DriverError
             .collect(),
         _ => vec![],
     })
+}
+
+/// The JSON value in a model reply that may wrap it in prose or a code fence, repairing a cut-off tail.
+fn json_in_text(text: &str) -> Option<Value> {
+    let start = text.find(['{', '['])?;
+    let body = &text[start..];
+    let end = body.rfind(['}', ']']).map_or(body.len(), |i| i + 1);
+    serde_json::from_str(&body[..end])
+        .ok()
+        .or_else(|| repair_json(body.trim_end_matches('`')))
+}
+
+/// Claude's final `result` line carried a stop reason.
+fn claude_stop_reason(line: &str) -> bool {
+    line.contains("\"result\"")
+        && serde_json::from_str::<Value>(line).is_ok_and(|v| {
+            v.get("type").and_then(Value::as_str) == Some("result")
+                && v.get("stop_reason").is_some_and(|s| !s.is_null())
+        })
 }
 
 /// The structured JSON payload out of a finished run's stdout.
@@ -618,6 +894,29 @@ fn structured_json(kind: CliKind, stdout: &str) -> Result<Value, DriverError> {
             let r = last.ok_or_else(|| DriverError::Parse("no agy response".into()))?;
             serde_json::from_str(&r).map_err(bad)
         }
+        CliKind::Opencode | CliKind::Kiro => {
+            let text: String = stdout
+                .lines()
+                .map(|l| raw_deltas(kind, l))
+                .collect::<Result<Vec<_>, _>>()?
+                .into_iter()
+                .flatten()
+                .filter_map(|d| match d {
+                    StreamDelta::Text(t) => Some(t),
+                    _ => None,
+                })
+                .collect();
+            let text = if text.trim().is_empty() {
+                stdout
+                    .lines()
+                    .rev()
+                    .find_map(|l| final_text_of(kind, l))
+                    .unwrap_or_default()
+            } else {
+                text
+            };
+            json_in_text(&text).ok_or_else(|| DriverError::Parse("no JSON in reply".into()))
+        }
         CliKind::Claude => {
             let v: Value = serde_json::from_str(stdout.trim()).map_err(bad)?;
             if let Some(s) = v.get("structured_output") {
@@ -632,6 +931,22 @@ fn structured_json(kind: CliKind, stdout: &str) -> Result<Value, DriverError> {
     }
 }
 
+/// What a run printed that the learner must not see: the CLI's own reason for failing.
+fn adopt_cli_error(err: DriverError, cli_error: &Option<String>) -> DriverError {
+    match (err, cli_error) {
+        (DriverError::Exit { stderr, .. }, Some(m)) => DriverError::Cli {
+            message: format!("{m}\n{stderr}"),
+        },
+        // A hung offline CLI (codex "waiting for network") ends as a timeout; report the cause.
+        (DriverError::Timeout(_), Some(m))
+            if matches!(super::failure::classify(m, 0), super::FailureKind::Offline) =>
+        {
+            DriverError::Cli { message: m.clone() }
+        }
+        (e, _) => e,
+    }
+}
+
 impl SubprocessEngine {
     async fn run_turn(
         &self,
@@ -639,31 +954,107 @@ impl SubprocessEngine {
         stdin: Option<String>,
         event_tx: mpsc::Sender<StreamDelta>,
         cancel: CancellationToken,
+        // Kiro streams text in small chunks; with tools in play they are joined before the
+        // `<tool_call>` scan so a call split across chunks is not lost.
+        join_chunks: bool,
     ) -> Result<TurnResponse, DriverError> {
         let mut proc = self.spawn(args, stdin, cancel)?;
         let (mut resp, mut raw) = (TurnResponse::default(), String::new());
+        let (mut cli_error, mut final_text, mut pending) = (None, None, String::new());
+        let mut claude_stopped = false;
         let ran: Result<(), DriverError> = async {
             while let Some(line) = proc.next().await? {
                 self.keep_raw(&mut raw, &line);
                 self.note_usage(&line);
-                for d in deltas(self.kind, &line)? {
-                    match &d {
-                        StreamDelta::Text(t) => resp.text.push_str(t),
-                        StreamDelta::ToolCall(c) => resp.tool_calls.push(c.clone()),
-                        StreamDelta::Thinking(_) => {}
+                if let Some(e) = error_of(self.kind, &line) {
+                    cli_error = Some(e);
+                }
+                if let Some(t) = final_text_of(self.kind, &line) {
+                    final_text = Some(t);
+                }
+                if self.kind == CliKind::Claude && claude_stop_reason(&line) {
+                    claude_stopped = true;
+                }
+                let ds = if join_chunks && self.kind == CliKind::Kiro {
+                    let mut rest = Vec::new();
+                    for d in raw_deltas(self.kind, &line)? {
+                        match d {
+                            StreamDelta::Text(t) => pending.push_str(&t),
+                            d => rest.push(d),
+                        }
                     }
+                    rest
+                } else {
+                    deltas(self.kind, &line)?
+                };
+                for d in ds {
+                    Self::keep(&mut resp, &d);
                     event_tx.send(d).await.map_err(|_| DriverError::Cancelled)?;
                 }
+            }
+            let mut tail = split_calls(std::mem::take(&mut pending));
+            if resp.text.trim().is_empty() && resp.tool_calls.is_empty() && tail.is_empty() {
+                tail = final_text.take().map(split_calls).unwrap_or_default();
+            }
+            for d in tail {
+                Self::keep(&mut resp, &d);
+                event_tx.send(d).await.map_err(|_| DriverError::Cancelled)?;
             }
             Ok(())
         }
         .await;
         self.dump_raw(&raw);
-        ran?;
-        if resp.text.trim().is_empty() && resp.tool_calls.is_empty() {
-            return Err(DriverError::EmptyResponse);
+        ran.map_err(|e| adopt_cli_error(e, &cli_error))?;
+        let empty = resp.text.trim().is_empty() && resp.tool_calls.is_empty();
+        if let (true, Some(message)) = (empty, cli_error) {
+            return Err(DriverError::Cli { message });
+        }
+        if empty {
+            // Claude cut off before it said why it stopped: transient, worth one more try.
+            return Err(if self.kind == CliKind::Claude && !claude_stopped {
+                DriverError::NoStopReason
+            } else {
+                DriverError::EmptyResponse
+            });
         }
         Ok(resp)
+    }
+
+    fn keep(resp: &mut TurnResponse, d: &StreamDelta) {
+        match d {
+            StreamDelta::Text(t) => resp.text.push_str(t),
+            StreamDelta::ToolCall(c) => resp.tool_calls.push(c.clone()),
+            StreamDelta::Thinking(_) => {}
+        }
+    }
+
+    /// One structured run: stdout lines joined, plus the CLI's own error event if it printed one.
+    async fn run_structured(
+        &self,
+        args: Vec<String>,
+        stdin: Option<String>,
+        cancel: CancellationToken,
+    ) -> Result<(String, Option<String>), DriverError> {
+        let mut proc = self.spawn(args, stdin, cancel)?;
+        let (mut stdout, mut cli_error) = (String::new(), None);
+        let read = async {
+            while let Some(line) = proc.next().await? {
+                self.note_usage(&line);
+                if let Some(e) = error_of(self.kind, &line) {
+                    cli_error = Some(e);
+                }
+                stdout.push_str(&line);
+                stdout.push('\n');
+            }
+            Ok(())
+        }
+        .await;
+        self.dump_raw(&stdout);
+        read.map_err(|e| adopt_cli_error(e, &cli_error))?;
+        if stdout.trim().is_empty() {
+            return Err(DriverError::EmptyResponse);
+        }
+        Ok((stdout, cli_error))
     }
 
     fn keep_raw(&self, raw: &mut String, line: &str) {
@@ -713,18 +1104,23 @@ impl LlmEngine for SubprocessEngine {
     ) -> Result<TurnResponse, DriverError> {
         let (args, stdin) = self.turn_args(&req);
         let started = self.log_start(&args);
+        let join = !req.tools.is_empty();
         let mut r = self
             .run_turn(
                 args.clone(),
                 stdin.clone(),
                 event_tx.clone(),
                 cancel.clone(),
+                join,
             )
             .await;
-        // An empty turn streamed nothing, so one retry cannot repeat text the learner saw.
-        if matches!(r, Err(DriverError::EmptyResponse)) {
+        // An empty turn streamed nothing, so one retry cannot repeat text the learner saw (#416).
+        if matches!(
+            r,
+            Err(DriverError::EmptyResponse | DriverError::NoStopReason)
+        ) {
             tracing::warn!(role = %self.role, "empty cli turn, retrying once");
-            r = self.run_turn(args, stdin, event_tx, cancel).await;
+            r = self.run_turn(args, stdin, event_tx, cancel, join).await;
         }
         self.log_end(started, &r);
         r
@@ -740,6 +1136,7 @@ impl LlmEngine for SubprocessEngine {
         // Held until the child exits so codex can read `--output-schema <file>`.
         let mut schema_file = None;
         let mut a: Vec<String> = Vec::new();
+        let mut prompt = req.prompt.clone();
         match self.kind {
             CliKind::Claude => {
                 a.extend(
@@ -755,24 +1152,14 @@ impl LlmEngine for SubprocessEngine {
                     .map(String::from),
                 );
                 a.push(schema);
+                a.extend(CLAUDE_ISOLATION.map(String::from));
             }
             CliKind::Codex => {
                 let mut f = tempfile::Builder::new()
                     .suffix(".json")
                     .tempfile_in(self.sandbox())?;
                 std::io::Write::write_all(&mut f, schema.as_bytes())?;
-                a.extend(
-                    [
-                        "exec",
-                        "--json",
-                        "--skip-git-repo-check",
-                        "-s",
-                        "read-only",
-                        "-C",
-                    ]
-                    .map(String::from),
-                );
-                a.push(self.sandbox().display().to_string());
+                a.extend(self.codex_base());
                 a.extend(["--output-schema".into(), f.path().display().to_string()]);
                 schema_file = Some(f);
             }
@@ -780,29 +1167,44 @@ impl LlmEngine for SubprocessEngine {
                 a.extend(AGY_STREAM.map(String::from));
                 a.extend(["--json-schema".into(), schema]);
             }
-        }
-        let (args, stdin) = self.finish_args(a, &req.prompt, req.model.as_deref(), None);
-        let started = self.log_start(&args);
-        let ran = async {
-            let mut proc = self.spawn(args, stdin, cancel)?;
-            let mut stdout = String::new();
-            let read = async {
-                while let Some(line) = proc.next().await? {
-                    self.note_usage(&line);
-                    stdout.push_str(&line);
-                    stdout.push('\n');
-                }
-                Ok(())
+            // No native schema flag: the schema rides in the prompt and the reply is parsed leniently.
+            CliKind::Opencode | CliKind::Kiro => {
+                a.extend(
+                    if self.kind == CliKind::Kiro {
+                        KIRO_BASE.to_vec()
+                    } else {
+                        OPENCODE_BASE.to_vec()
+                    }
+                    .into_iter()
+                    .map(String::from),
+                );
+                prompt = format!(
+                    "{prompt}\n\nReply with ONLY one JSON value that validates against this JSON Schema. \
+                     No prose, no code fences.\nSchema: {schema}"
+                );
             }
-            .await;
-            self.dump_raw(&stdout);
-            read.map(|()| stdout)
         }
-        .await;
+        let (args, stdin) = self.finish_args(a, &prompt, req.model.as_deref(), None);
+        let started = self.log_start(&args);
+        let mut ran = self
+            .run_structured(args.clone(), stdin.clone(), cancel.clone())
+            .await;
+        if matches!(ran, Err(DriverError::EmptyResponse)) {
+            tracing::warn!(role = %self.role, "empty structured cli turn, retrying once");
+            ran = self.run_structured(args, stdin, cancel).await;
+        }
         self.log_end(started, &ran);
         drop(schema_file);
-        let stdout = ran?;
-        let raw = structured_json(self.kind, &stdout)?;
+        let (stdout, cli_error) = ran?;
+        let raw = match structured_json(self.kind, &stdout) {
+            Ok(v) => v,
+            Err(_) if cli_error.is_some() => {
+                return Err(DriverError::Cli {
+                    message: cli_error.unwrap_or_default(),
+                })
+            }
+            Err(e) => return Err(e),
+        };
         let value =
             serde_json::from_value(raw.clone()).map_err(|e| DriverError::Parse(e.to_string()))?;
         Ok(StructuredOutput { value, raw })
@@ -1116,7 +1518,8 @@ echo '{"event":"result","result":{"status":"SUCCESS","response":"{\"n\":7}"}}'"#
             .stream_turn(TurnRequest::default(), tx, CancellationToken::new())
             .await
             .unwrap_err();
-        assert!(matches!(err, DriverError::EmptyResponse), "{err}");
+        // Claude printed a result with no stop reason and no text: #416, retried once then reported.
+        assert!(matches!(err, DriverError::NoStopReason), "{err}");
         assert_eq!(
             std::fs::read_to_string(counter.path())
                 .unwrap()
@@ -1457,5 +1860,515 @@ case "$p" in *'<tool_call>'*quiz*) echo '{"type":"assistant","message":{"content
         )
         .await;
         assert!(r.expect("child blocked on stderr").is_ok());
+    }
+
+    // ---- kiro, opencode, failure taxonomy, isolation ------------------------------------------
+
+    fn fixture_path(name: &str) -> String {
+        format!("{}/src/engine/fixtures/{name}", env!("CARGO_MANIFEST_DIR"))
+    }
+
+    /// A mock CLI that replays a recorded stdout fixture and exits with `code`.
+    fn replay(kind: CliKind, fixture: &str, code: i32) -> (tempfile::TempDir, SubprocessEngine) {
+        mock(
+            kind,
+            &format!(
+                "cat >/dev/null; cat '{}'; exit {code}",
+                fixture_path(fixture)
+            ),
+        )
+    }
+
+    async fn turn_err(e: &SubprocessEngine) -> DriverError {
+        let (tx, _rx) = mpsc::channel(64);
+        e.stream_turn(
+            TurnRequest {
+                prompt: "p".into(),
+                ..TurnRequest::default()
+            },
+            tx,
+            CancellationToken::new(),
+        )
+        .await
+        .unwrap_err()
+    }
+
+    const NOW: u64 = 1_800_000_000_000;
+
+    #[tokio::test]
+    async fn every_cli_failure_maps_to_the_taxonomy_from_real_fixtures() {
+        use super::super::FailureKind::{NoModel, NotLoggedIn, Offline, RateLimited};
+        let cases = [
+            (CliKind::Opencode, "opencode_no_model.jsonl", 1, NoModel),
+            (CliKind::Opencode, "opencode_offline.jsonl", 1, Offline),
+            (
+                CliKind::Opencode,
+                "opencode_free_limit.jsonl",
+                1,
+                RateLimited { resets_at: None },
+            ),
+            (CliKind::Kiro, "kiro_bad_model.jsonl", 1, NoModel),
+            (CliKind::Claude, "claude_bad_model.jsonl", 0, NoModel),
+            (
+                CliKind::Claude,
+                "claude_not_logged_in.jsonl",
+                1,
+                NotLoggedIn,
+            ),
+            (CliKind::Codex, "codex_bad_model.jsonl", 1, NoModel),
+            (
+                CliKind::Agy,
+                "agy_rate_limited.jsonl",
+                3,
+                RateLimited { resets_at: None },
+            ),
+        ];
+        for (kind, fixture, code, want) in cases {
+            let (_d, e) = replay(kind, fixture, code);
+            let err = turn_err(&e).await;
+            let got = err.failure(NOW);
+            // Rate limits carry a parsed reset time; compare the class and check the time below.
+            assert_eq!(
+                std::mem::discriminant(&got),
+                std::mem::discriminant(&want),
+                "{kind:?} {fixture}: {err} -> {got:?}"
+            );
+            if let RateLimited { resets_at } = got {
+                assert!(resets_at.is_some_and(|r| r > NOW), "{fixture}: {got:?}");
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn claude_error_notice_is_not_shown_as_model_text() {
+        let (_d, e) = replay(CliKind::Claude, "claude_bad_model.jsonl", 0);
+        let (tx, mut rx) = mpsc::channel(64);
+        let err = e
+            .stream_turn(TurnRequest::default(), tx, CancellationToken::new())
+            .await
+            .unwrap_err();
+        assert!(matches!(err, DriverError::Cli { .. }), "{err}");
+        assert!(
+            rx.try_recv().is_err(),
+            "the synthetic notice leaked to the learner"
+        );
+    }
+
+    #[tokio::test]
+    async fn missing_binary_is_not_installed_and_hang_is_timed_out() {
+        let mut e = SubprocessEngine::new(CliKind::Kiro).unwrap();
+        e.program = "/nonexistent/lp-no-such-cli".into();
+        assert_eq!(
+            turn_err(&e).await.failure(NOW),
+            super::super::FailureKind::NotInstalled
+        );
+        let (_d, mut e) = mock(CliKind::Opencode, "cat >/dev/null; sleep 30");
+        e.timeout = Duration::from_millis(300);
+        assert_eq!(
+            turn_err(&e).await.failure(NOW),
+            super::super::FailureKind::TimedOut
+        );
+    }
+
+    #[tokio::test]
+    async fn codex_waiting_for_network_that_times_out_is_offline() {
+        let (_d, mut e) = mock(
+            CliKind::Codex,
+            r#"cat >/dev/null
+echo '{"type":"error","message":"Reconnecting... waiting for network (Connection failed: error sending request)"}'
+sleep 30"#,
+        );
+        e.timeout = Duration::from_millis(4000);
+        assert_eq!(
+            turn_err(&e).await.failure(NOW),
+            super::super::FailureKind::Offline
+        );
+    }
+
+    const OPENCODE_OK: &str = r#"cat >/dev/null
+echo '{"type":"step_start","part":{"type":"step-start"}}'
+echo '{"type":"reasoning","part":{"text":"hm"}}'
+echo '{"type":"text","part":{"text":"Hi there"}}'
+echo '{"type":"tool_use","part":{"tool":"read","state":{"status":"completed"}}}'
+echo '{"type":"step_finish","part":{"reason":"stop","cost":0,"tokens":{"input":17,"output":6,"reasoning":2,"cache":{"read":100,"write":3}}}}'"#;
+
+    #[tokio::test]
+    async fn opencode_events_become_deltas_and_usage() {
+        let (_d, e) = mock(CliKind::Opencode, OPENCODE_OK);
+        let (tx, mut rx) = mpsc::channel(16);
+        let resp = e
+            .stream_turn(TurnRequest::default(), tx, CancellationToken::new())
+            .await
+            .unwrap();
+        assert_eq!(resp.text, "Hi there");
+        assert_eq!(rx.recv().await, Some(StreamDelta::Thinking("hm".into())));
+        // input = input + cache read + cache write; output = output + reasoning
+        assert_eq!(e.usage[0].load(Ordering::Relaxed), 120);
+        assert_eq!(e.usage[1].load(Ordering::Relaxed), 8);
+    }
+
+    #[tokio::test]
+    async fn opencode_tool_call_protocol_and_structured_reply() {
+        let (_d, e) = mock(
+            CliKind::Opencode,
+            r#"cat >/dev/null
+echo '{"type":"text","part":{"text":"ok <tool_call>{\"name\":\"probe\",\"input\":{\"q\":1}}</tool_call>"}}'"#,
+        );
+        let (tx, _rx) = mpsc::channel(16);
+        let resp = e
+            .stream_turn(TurnRequest::default(), tx, CancellationToken::new())
+            .await
+            .unwrap();
+        assert_eq!(resp.tool_calls[0].name, "probe");
+        assert_eq!(resp.text, "ok ");
+
+        // Structured: no native schema flag; the schema rides in the prompt, fenced JSON is accepted.
+        let (_d, e) = mock(
+            CliKind::Opencode,
+            r#"in=$(cat)
+case "$in" in *'"properties"'*) ;; *) exit 9;; esac
+printf '%s\n' '{"type":"text","part":{"text":"Sure:\n```json\n{\"n\": 5}\n```"}}'"#,
+        );
+        let out: StructuredOutput<Out> = e
+            .complete_structured(StructuredRequest::default(), CancellationToken::new())
+            .await
+            .unwrap();
+        assert_eq!(out.value, Out { n: 5 });
+    }
+
+    const KIRO_OK: &str = r#"cat >/dev/null
+echo '{"type":"runStarted","data":{}}'
+echo '{"type":"sessionUpdate","data":{"update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"Hi <tool_"}}}}'
+echo '{"type":"sessionUpdate","data":{"update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"call>{\"name\":\"probe\",\"input\":{}}</tool_call>"}}}}'
+echo '{"type":"sessionUpdate","data":{"update":{"sessionUpdate":"session_info_update","_meta":{"kiro":{"promptTurnSummaries":[{"unit":"credit","usage":0.0125}]}}}}}'
+echo '{"type":"runFinished","data":{"status":"success","finalText":"ignored"}}'"#;
+
+    #[tokio::test]
+    async fn kiro_chunks_are_joined_for_tool_calls_and_credits_reported() {
+        let (_d, e) = mock(CliKind::Kiro, KIRO_OK);
+        let (tx, _rx) = mpsc::channel(16);
+        let resp = e
+            .stream_turn(
+                TurnRequest {
+                    tools: vec![super::super::ToolDecl {
+                        name: "probe".into(),
+                        usage: "x".into(),
+                    }],
+                    ..TurnRequest::default()
+                },
+                tx,
+                CancellationToken::new(),
+            )
+            .await
+            .unwrap();
+        // The call was split across two chunks and still parsed; finalText is only a fallback.
+        assert_eq!(resp.tool_calls[0].name, "probe");
+        assert_eq!(resp.text, "Hi ");
+        assert_eq!(e.usage[2].load(Ordering::Relaxed), 12_500);
+        assert_eq!(e.usage[0].load(Ordering::Relaxed), 0);
+    }
+
+    #[tokio::test]
+    async fn kiro_plain_turn_streams_chunks_and_falls_back_to_final_text() {
+        let (_d, e) = mock(CliKind::Kiro, KIRO_OK);
+        let (tx, mut rx) = mpsc::channel(16);
+        // Without tools each chunk streams as it arrives.
+        e.stream_turn(TurnRequest::default(), tx, CancellationToken::new())
+            .await
+            .unwrap();
+        assert_eq!(rx.recv().await, Some(StreamDelta::Text("Hi <tool_".into())));
+        let (_d, e) = mock(
+            CliKind::Kiro,
+            r#"cat >/dev/null; echo '{"type":"runFinished","data":{"status":"success","finalText":"only final"}}'"#,
+        );
+        let (tx, _rx) = mpsc::channel(4);
+        let resp = e
+            .stream_turn(TurnRequest::default(), tx, CancellationToken::new())
+            .await
+            .unwrap();
+        assert_eq!(resp.text, "only final");
+    }
+
+    #[tokio::test]
+    async fn kiro_structured_parses_json_from_reply() {
+        let (_d, e) = mock(
+            CliKind::Kiro,
+            r#"cat >/dev/null
+echo '{"type":"sessionUpdate","data":{"update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"{\"n\":"}}}}'
+echo '{"type":"sessionUpdate","data":{"update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":" 8}"}}}}'"#,
+        );
+        let out: StructuredOutput<Out> = e
+            .complete_structured(StructuredRequest::default(), CancellationToken::new())
+            .await
+            .unwrap();
+        assert_eq!(out.value, Out { n: 8 });
+    }
+
+    #[test]
+    fn real_kiro_and_opencode_fixtures_parse() {
+        let ok = include_str!("fixtures/kiro_ok.jsonl");
+        let text: String = ok
+            .lines()
+            .flat_map(|l| raw_deltas(CliKind::Kiro, l).unwrap())
+            .filter_map(|d| match d {
+                StreamDelta::Text(t) => Some(t),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(text, "Hi! How can I help you today?");
+        let credits: u64 = ok
+            .lines()
+            .filter_map(|l| credits_of(CliKind::Kiro, l))
+            .sum();
+        assert_eq!(credits, 28_862);
+        let meter =
+            r#"{"type":"metadata","data":{"meteringUsage":[{"value":0.016117,"unit":"credit"}]}}"#;
+        assert_eq!(credits_of(CliKind::Kiro, meter), Some(16_117));
+        assert_eq!(credits_of(CliKind::Claude, meter), None);
+        assert_eq!(
+            ok.lines()
+                .filter_map(|l| error_of(CliKind::Kiro, l))
+                .count(),
+            0
+        );
+        let bad = include_str!("fixtures/kiro_bad_model.jsonl");
+        assert!(bad
+            .lines()
+            .filter_map(|l| error_of(CliKind::Kiro, l))
+            .any(|m| m.contains("not available")));
+    }
+
+    #[test]
+    fn isolation_args_for_every_cli() {
+        let args = |k| {
+            SubprocessEngine::new(k)
+                .unwrap()
+                .turn_args(&TurnRequest::default())
+                .0
+                .join(" ")
+        };
+        // #413: the user's ~/.claude CLAUDE.md, output style and settings must not reach the tutor.
+        assert!(args(CliKind::Claude).contains("--setting-sources project,local"));
+        assert!(args(CliKind::Claude).contains("--tools "));
+        // #414: codex ignores user config (MCP servers, hooks) and keeps no session files.
+        let codex = args(CliKind::Codex);
+        assert!(codex.contains("--ignore-user-config") && codex.contains("--ephemeral"));
+        assert!(codex.contains("-s read-only"));
+        // opencode: private server (the shared background service ignores our config), JSON events.
+        assert!(args(CliKind::Opencode)
+            .starts_with("run --standalone --format json -m opencode/big-pickle"));
+        let kiro = args(CliKind::Kiro);
+        assert!(
+            kiro.contains("--agent lp-tutor") && kiro.contains("--trust-tools= "),
+            "{kiro}"
+        );
+        assert!(kiro.contains("--output-format stream-json"));
+        // never auto-approve anything
+        for k in [
+            CliKind::Opencode,
+            CliKind::Kiro,
+            CliKind::Codex,
+            CliKind::Claude,
+        ] {
+            let a = args(k);
+            assert!(
+                !a.contains("--auto") && !a.contains("trust-all") && !a.contains("-a "),
+                "{a}"
+            );
+        }
+    }
+
+    #[test]
+    fn claude_structured_args_carry_the_isolation_flags_too() {
+        let (_d, e) = mock(
+            CliKind::Claude,
+            r#"cat >/dev/null
+case "$*" in *"--setting-sources project,local"*) echo '{"type":"result","structured_output":{"n":1}}';; *) exit 9;; esac"#,
+        );
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        let out: StructuredOutput<Out> = rt
+            .block_on(e.complete_structured(StructuredRequest::default(), CancellationToken::new()))
+            .unwrap();
+        assert_eq!(out.value, Out { n: 1 });
+    }
+
+    #[tokio::test]
+    async fn opencode_runs_in_a_private_locked_down_home() {
+        let (_d, e) = mock(
+            CliKind::Opencode,
+            r#"cat >/dev/null
+case "$OPENCODE_CONFIG_CONTENT" in *'"*":"deny"'*) lock=yes;; *) lock=no;; esac
+printf '{"type":"text","part":{"text":"home=%s cfg=%s data=%s cwd=%s dis=%s lock=%s cc=%s"}}\n' "$HOME" "$XDG_CONFIG_HOME" "$XDG_DATA_HOME" "$(pwd -P)" "$OPENCODE_DISABLE_CLAUDE_CODE" "$lock" ${CLAUDECODE:-unset}"#,
+        );
+        std::env::set_var("CLAUDECODE", "1");
+        let (tx, _rx) = mpsc::channel(4);
+        let r = e
+            .stream_turn(TurnRequest::default(), tx, CancellationToken::new())
+            .await
+            .unwrap()
+            .text;
+        let real = std::env::var("HOME").unwrap();
+        assert!(!r.contains(&format!("home={real} ")), "{r}");
+        assert!(r.contains("home=") && r.contains("lp-home-"), "{r}");
+        assert!(r.contains("/config ") && r.contains("/data "), "{r}");
+        assert!(
+            r.contains("lp-sandbox-") && r.contains("dis=1") && r.contains("cc=unset"),
+            "{r}"
+        );
+        assert!(r.contains("lock=yes"), "{r}");
+    }
+
+    #[test]
+    fn kiro_home_has_the_tool_less_agent_and_only_links_its_own_store() {
+        let real = tempfile::tempdir().unwrap();
+        for d in [
+            "Library/Application Support/kiro-cli",
+            ".local/bin",
+            ".kiro/skills/secret",
+            ".ssh",
+        ] {
+            std::fs::create_dir_all(real.path().join(d)).unwrap();
+        }
+        let dest = tempfile::tempdir().unwrap();
+        prepare_kiro_home(real.path(), dest.path()).unwrap();
+        let agent: Value = serde_json::from_slice(
+            &std::fs::read(dest.path().join(".kiro/agents/lp-tutor.json")).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(agent["tools"], serde_json::json!([]));
+        assert_eq!(agent["mcpServers"], serde_json::json!({}));
+        assert_eq!(agent["includeMcpJson"], false);
+        let linked = |rel: &str| std::fs::symlink_metadata(dest.path().join(rel)).is_ok();
+        assert!(linked("Library/Application Support/kiro-cli") && linked(".local/bin"));
+        assert!(!linked(".kiro/skills") && !linked(".ssh"));
+    }
+
+    #[tokio::test]
+    async fn empty_output_exit_zero_is_retried_once_for_every_cli_and_structured() {
+        for kind in [CliKind::Opencode, CliKind::Kiro, CliKind::Codex] {
+            let counter = tempfile::NamedTempFile::new().unwrap();
+            let (_d, e) = mock(
+                kind,
+                &format!("cat >/dev/null; echo x >> {}", counter.path().display()),
+            );
+            let err = turn_err(&e).await;
+            assert!(matches!(err, DriverError::EmptyResponse), "{kind:?}: {err}");
+            let n = std::fs::read_to_string(counter.path())
+                .unwrap()
+                .lines()
+                .count();
+            assert_eq!(n, 2, "{kind:?}");
+        }
+        let counter = tempfile::NamedTempFile::new().unwrap();
+        let (_d, e) = mock(
+            CliKind::Kiro,
+            &format!("cat >/dev/null; echo x >> {}", counter.path().display()),
+        );
+        let r: Result<StructuredOutput<Out>, _> = e
+            .complete_structured(StructuredRequest::default(), CancellationToken::new())
+            .await;
+        assert!(matches!(r, Err(DriverError::EmptyResponse)));
+        assert_eq!(
+            std::fs::read_to_string(counter.path())
+                .unwrap()
+                .lines()
+                .count(),
+            2
+        );
+    }
+
+    #[tokio::test]
+    async fn claude_cut_off_without_result_is_retried_but_partial_text_is_kept() {
+        let flag = tempfile::tempdir().unwrap().keep().join("seen");
+        let (_d, e) = mock(
+            CliKind::Claude,
+            &format!(
+                "cat >/dev/null; if [ -e {f} ]; then echo '{{\"type\":\"assistant\",\"message\":{{\"content\":[{{\"type\":\"text\",\"text\":\"whole\"}}]}}}}'; echo '{{\"type\":\"result\",\"stop_reason\":\"end_turn\"}}'; else touch {f}; fi",
+                f = flag.display()
+            ),
+        );
+        let (tx, _rx) = mpsc::channel(4);
+        let resp = e
+            .stream_turn(TurnRequest::default(), tx, CancellationToken::new())
+            .await
+            .unwrap();
+        assert_eq!(resp.text, "whole");
+        // Text without a stop reason is returned as is: retrying would repeat what the learner saw.
+        let (_d, e) = mock(
+            CliKind::Claude,
+            r#"cat >/dev/null; echo '{"type":"assistant","message":{"content":[{"type":"text","text":"partial"}]}}'"#,
+        );
+        let (tx, _rx) = mpsc::channel(4);
+        assert_eq!(
+            e.stream_turn(TurnRequest::default(), tx, CancellationToken::new())
+                .await
+                .unwrap()
+                .text,
+            "partial"
+        );
+    }
+
+    /// Real CLIs, tiny spend: `cargo test -p lp-cli-driver real_smoke -- --ignored --nocapture`.
+    async fn smoke(kind: CliKind, model: &str) {
+        let mut e = SubprocessEngine::new(kind).unwrap();
+        e.model = Some(model.into());
+        e.timeout = Duration::from_secs(150);
+        let (tx, _rx) = mpsc::channel(256);
+        let plain = e
+            .stream_turn(
+                TurnRequest {
+                    prompt: "Reply with the single word: pong".into(),
+                    ..TurnRequest::default()
+                },
+                tx,
+                CancellationToken::new(),
+            )
+            .await;
+        eprintln!("[{kind:?}] text turn: {plain:?}");
+        let (tx, _rx) = mpsc::channel(256);
+        let tool = e
+            .stream_turn(
+                TurnRequest {
+                    prompt:
+                        "Call the tool probe with input {\"q\":1}. Reply with only the tool call."
+                            .into(),
+                    tools: vec![super::super::ToolDecl {
+                        name: "probe".into(),
+                        usage: "probe(q: number)".into(),
+                    }],
+                    ..TurnRequest::default()
+                },
+                tx,
+                CancellationToken::new(),
+            )
+            .await;
+        eprintln!("[{kind:?}] tool turn: {tool:?}");
+        eprintln!(
+            "[{kind:?}] usage in/out/microcredits: {:?}",
+            e.usage
+                .iter()
+                .map(|u| u.load(Ordering::Relaxed))
+                .collect::<Vec<_>>()
+        );
+        for r in [plain.map(|_| ()), tool.map(|_| ())] {
+            if let Err(err) = r {
+                eprintln!("[{kind:?}] failure class: {:?}", err.failure(0));
+            }
+        }
+    }
+
+    #[tokio::test]
+    #[ignore = "spends real (free) model calls"]
+    async fn real_smoke_opencode() {
+        smoke(CliKind::Opencode, "opencode/big-pickle").await;
+    }
+
+    #[tokio::test]
+    #[ignore = "spends real (tiny) kiro credits"]
+    async fn real_smoke_kiro() {
+        smoke(CliKind::Kiro, "qwen3-coder-next").await;
     }
 }
