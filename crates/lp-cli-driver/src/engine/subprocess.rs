@@ -415,6 +415,36 @@ pub(super) fn with_tools(prompt: &str, tools: &[super::ToolDecl]) -> String {
     out
 }
 
+/// Parses JSON that is only missing its closing quote, brackets or braces.
+fn repair_json(raw: &str) -> Option<Value> {
+    let raw = raw.trim();
+    if let Ok(v) = serde_json::from_str(raw) {
+        return Some(v);
+    }
+    let (mut stack, mut in_str, mut esc) = (Vec::new(), false, false);
+    for c in raw.chars() {
+        match (in_str, esc, c) {
+            (true, true, _) => esc = false,
+            (true, false, '\\') => esc = true,
+            (true, false, '"') => in_str = false,
+            (true, ..) => {}
+            (false, _, '"') => in_str = true,
+            (false, _, '{') => stack.push('}'),
+            (false, _, '[') => stack.push(']'),
+            (false, _, '}' | ']') => {
+                stack.pop();
+            }
+            _ => {}
+        }
+    }
+    let mut fixed = raw.to_owned();
+    if in_str {
+        fixed.push('"');
+    }
+    fixed.extend(stack.iter().rev());
+    serde_json::from_str(&fixed).ok()
+}
+
 /// Splits `<tool_call>{json}</tool_call>` blocks out of model text. Tags match case-insensitively,
 /// a missing closing tag is fine once the JSON object is complete; anything else stays text.
 pub(super) fn split_calls(text: String) -> Vec<StreamDelta> {
@@ -423,17 +453,35 @@ pub(super) fn split_calls(text: String) -> Vec<StreamDelta> {
     while let Some(start) = rest.to_ascii_lowercase().find(CALL_OPEN) {
         let body = rest[start + CALL_OPEN.len()..].trim_start();
         let mut objs = serde_json::Deserializer::from_str(body).into_iter::<Value>();
-        let Some(v) = objs
+        let parsed = objs
             .next()
             .and_then(Result::ok)
-            .filter(|v| v.get("name").and_then(Value::as_str).is_some())
-        else {
+            .filter(|v| v.get("name").and_then(Value::as_str).is_some());
+        let (v, after) = if let Some(v) = parsed {
+            let after = body[objs.byte_offset()..].trim_start();
+            let after = match after.get(..CALL_CLOSE.len()) {
+                Some(tag) if tag.eq_ignore_ascii_case(CALL_CLOSE) => &after[CALL_CLOSE.len()..],
+                _ => after,
+            };
+            (v, after)
+        } else if let Some(end) = body.to_ascii_lowercase().find(CALL_CLOSE) {
+            // A closed block with broken JSON (models drop a trailing brace): repair it, or drop it;
+            // the learner must never see raw tool-call text (it carries the answer key).
+            let after = &body[end + CALL_CLOSE.len()..];
+            match repair_json(&body[..end])
+                .filter(|v| v.get("name").and_then(Value::as_str).is_some())
+            {
+                Some(v) => (v, after),
+                None => {
+                    if start > 0 {
+                        out.push(StreamDelta::Text(rest[..start].into()));
+                    }
+                    rest = after;
+                    continue;
+                }
+            }
+        } else {
             break;
-        };
-        let after = body[objs.byte_offset()..].trim_start();
-        let after = match after.get(..CALL_CLOSE.len()) {
-            Some(tag) if tag.eq_ignore_ascii_case(CALL_CLOSE) => &after[CALL_CLOSE.len()..],
-            _ => after,
         };
         if start > 0 {
             out.push(StreamDelta::Text(rest[..start].into()));
@@ -809,6 +857,26 @@ echo '{"type":"assistant","message":{"content":[{"type":"text","text":"there"}]}
 echo '{"type":"result","result":"hi there"}'"#;
 
     #[test]
+    fn tool_call_with_a_missing_brace_is_repaired_and_unparseable_ones_are_dropped() {
+        let broken = r#"hi <tool_call>{"name":"probe","input":{"question":"q","correctAnswer":"heap"}</tool_call> bye"#;
+        let d = split_calls(broken.into());
+        assert!(
+            matches!(&d[1], StreamDelta::ToolCall(c) if c.name == "probe" && c.input["correctAnswer"] == "heap")
+        );
+        let garbage = "x <tool_call>{nope</tool_call> y";
+        let d = split_calls(garbage.into());
+        let text: String = d
+            .iter()
+            .filter_map(|d| match d {
+                StreamDelta::Text(t) => Some(t.as_str()),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(text, "x  y");
+        assert!(!d.iter().any(|d| matches!(d, StreamDelta::ToolCall(_))));
+    }
+
+    #[test]
     fn usage_is_read_from_claude_result_and_codex_turn_completed() {
         let claude = r#"{"type":"result","usage":{"input_tokens":5,"cache_creation_input_tokens":10,"cache_read_input_tokens":100,"output_tokens":7}}"#;
         assert_eq!(usage_of(CliKind::Claude, claude), Some((115, 7)));
@@ -1156,19 +1224,21 @@ echo '{"event":"result","result":{"status":"SUCCESS","response":"{\"n\":7}"}}'"#
     }
 
     #[test]
-    fn truly_malformed_tool_calls_stay_text() {
-        for text in [
-            r#"<tool_call>{"name":"q","input":{"a":1}"#,
-            r#"<tool_call>{"name":"q"</tool_call>"#,
-            r#"<tool_call>not json</tool_call>"#,
-            r#"<tool_call>{"input":{}}</tool_call>"#,
-            "<tool_call>",
-        ] {
+    fn unclosed_tool_calls_stay_text_but_closed_unrecoverable_ones_are_dropped() {
+        // Unclosed: may still be streaming, so it stays text.
+        for text in [r#"<tool_call>{"name":"q","input":{"a":1}"#, "<tool_call>"] {
             assert_eq!(
                 split_calls(text.into()),
                 vec![StreamDelta::Text(text.into())],
                 "{text}"
             );
+        }
+        // Closed but not recoverable (not json / no name): never shown to the learner.
+        for text in [
+            r#"<tool_call>not json</tool_call>"#,
+            r#"<tool_call>{"input":{}}</tool_call>"#,
+        ] {
+            assert_eq!(split_calls(text.into()), vec![], "{text}");
         }
     }
 

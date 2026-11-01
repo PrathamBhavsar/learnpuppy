@@ -86,3 +86,33 @@ test("connection banner appears after 2 s of SSE downtime and clears on recovery
     timeout: 5000,
   })
 })
+
+test("mod+1/mod+2 switch workspace and keep the section; two tabs stay independent", async ({
+  page,
+  context,
+}) => {
+  await page.goto("/w/ws_rustasync/review")
+  await expect(page.getByTestId("workspace-chip")).toHaveAccessibleName(
+    "Workspace: Rust async"
+  )
+  const other = await page.evaluate(async () => {
+    const list = (await (await fetch("/api/v1/workspaces")).json()) as {
+      items: { id: string }[]
+    }
+    return list.items.map((w) => w.id)
+  })
+  expect(other.length).toBeGreaterThan(1)
+  await page.keyboard.press("ControlOrMeta+2")
+  await expect(page).toHaveURL(new RegExp(`/w/${other[1]}/review$`))
+
+  // A second tab opened on the first workspace is unaffected by the first tab's switch.
+  const tab2 = await context.newPage()
+  await tab2.goto(`/w/${other[0]}/graph`)
+  await expect(tab2).toHaveURL(new RegExp(`/w/${other[0]}/graph$`))
+  await page.keyboard.press("ControlOrMeta+1")
+  await expect(page).toHaveURL(new RegExp(`/w/${other[0]}/review$`))
+  await expect(tab2).toHaveURL(new RegExp(`/w/${other[0]}/graph$`))
+  await tab2.keyboard.press("ControlOrMeta+2")
+  await expect(tab2).toHaveURL(new RegExp(`/w/${other[1]}/graph$`))
+  await expect(page).toHaveURL(new RegExp(`/w/${other[0]}/review$`))
+})
