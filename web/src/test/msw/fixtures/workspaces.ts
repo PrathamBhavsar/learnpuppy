@@ -1,4 +1,8 @@
-import type { WorkspaceDetail, WorkspaceSources } from "@/api/pending-types"
+import type {
+  WorkspaceDetail,
+  WorkspaceSources,
+  WorkspaceStats,
+} from "@/api/pending-types"
 
 import { DAY, HOUR } from "./rng"
 
@@ -6,6 +10,15 @@ export const WS_RUST = "ws_rustasync"
 export const WS_DIST = "ws_distsys"
 export const WS_DESIGN = "ws_designnotes"
 const WS_ARCHIVED = "ws_oldnotes"
+
+/**
+ * What the mock db stores: the wire `WorkspaceDto` plus the always-present stats and the `damaged` flag
+ * (the server reports damaged workspaces in a separate `damaged` array, built by the list handler).
+ */
+export type MockWorkspace = WorkspaceDetail & {
+  stats: WorkspaceStats
+  damaged: boolean
+}
 
 const sources = (allow: string[]): WorkspaceSources => ({
   claude: true,
@@ -16,7 +29,7 @@ const sources = (allow: string[]): WorkspaceSources => ({
   sinceDays: 30,
 })
 
-export function workspaceFixtures(now: number): WorkspaceDetail[] {
+export function workspaceFixtures(now: number): MockWorkspace[] {
   const base = {
     damaged: false,
     overrides: { profiles: {} },

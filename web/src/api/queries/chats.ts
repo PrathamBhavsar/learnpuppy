@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { API_PREFIX, newClientId, pendingApi, unwrap } from "../client"
 import { keys } from "../keys"
 import { ApiError, errorFromResponse } from "../errors"
+import type { components } from "../schema"
 import type {
   AnswerInput,
   ChatSummary,
@@ -75,6 +76,8 @@ function staleView(error: unknown): ClassroomView | undefined {
  * and the server returns the original result instead of running the turn twice. Only a typed user
  * message is echoed optimistically; answers wait for server truth.
  */
+type TurnRequestBody = components["schemas"]["TurnBody"]
+
 export function useSendTurn(ws: string, chatId: string) {
   const qc = useQueryClient()
   const key = keys.ws(ws).chat(chatId)
@@ -90,7 +93,9 @@ export function useSendTurn(ws: string, chatId: string) {
       return unwrap(
         await pendingApi.POST("/workspaces/{ws}/chats/{id}/turn", {
           params: { path: { ws, id: chatId } },
-          body,
+          // Server bug: the chat and review DTOs are both named `AnswerDto`, so the generated schema types
+          // `answer` as the review result. The real body is `AnswerInput` (docs/web/03), hence the cast.
+          body: body as unknown as TurnRequestBody,
         })
       )
     },

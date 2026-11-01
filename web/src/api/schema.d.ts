@@ -3,6 +3,74 @@
  */
 
 export interface paths {
+    "/accounts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The account pool: status, cooldowns and usage. Never secrets. */
+        get: operations["get_accounts"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/accounts/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Excludes an account from the pool, or puts it back. */
+        patch: operations["patch_accounts_id"];
+        trace?: never;
+    };
+    "/accounts/claude": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Adds another Claude profile directory (`CLAUDE_CONFIG_DIR`) after checking its login. */
+        post: operations["post_accounts_claude"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/accounts/rescan": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Re-runs account discovery into the live pool. */
+        post: operations["post_accounts_rescan"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/bootstrap": {
         parameters: {
             query?: never;
@@ -11,7 +79,23 @@ export interface paths {
             cookie?: never;
         };
         /** One call at app start: version, device, workspaces, accounts, banners. */
-        get: operations["bootstrap"];
+        get: operations["get_bootstrap"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/downloads/{token}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get_downloads_token"];
         put?: never;
         post?: never;
         delete?: never;
@@ -28,7 +112,7 @@ export interface paths {
             cookie?: never;
         };
         /** Server-sent events. */
-        get: operations["events"];
+        get: operations["get_events"];
         put?: never;
         post?: never;
         delete?: never;
@@ -45,9 +129,805 @@ export interface paths {
             cookie?: never;
         };
         /** Liveness; needs no session (still Host-checked). */
-        get: operations["health"];
+        get: operations["get_health"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/search": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Searches every live workspace's propositions. A workspace slower than 300 ms is skipped and
+         *     named in `timedOut`.
+         */
+        get: operations["get_search"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Global settings: role profiles, pins, concurrency and UI preferences. */
+        get: operations["get_settings"];
+        /** Replaces the editable settings after validating them against the catalog and the pool. */
+        put: operations["put_settings"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/settings/catalog": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Providers, model ids, effort levels and the other choices settings forms offer. */
+        get: operations["get_settings_catalog"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/settings/test": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * A tiny test turn through the profile a role would use. A bad model or a missing login comes
+         *     back as `ok: false` with the reason, not as an HTTP error.
+         */
+        post: operations["post_settings_test"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/trash": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Deleted workspaces waiting in the trash, newest first. */
+        get: operations["get_trash"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/trash/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Deletes a trashed workspace for good. */
+        delete: operations["delete_trash_id"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/trash/{id}/restore": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Restores a trashed workspace (renamed with a suffix if its name was taken). */
+        post: operations["post_trash_id_restore"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Workspaces with stats, most recently opened first; damaged directories are listed apart. */
+        get: operations["get_workspaces"];
+        put?: never;
+        /** Creates a workspace. */
+        post: operations["post_workspaces"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{ws}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** One workspace's metadata and stats. */
+        get: operations["get_workspaces_ws"];
+        put?: never;
+        post?: never;
+        /** Moves a workspace to the trash. The body must repeat its exact name. */
+        delete: operations["delete_workspaces_ws"];
+        options?: never;
+        head?: never;
+        /** Edits name, icon, hue, description, sources or overrides. */
+        patch: operations["patch_workspaces_ws"];
+        trace?: never;
+    };
+    "/workspaces/{ws}/archive": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Makes a workspace read-only and hides it from the default list. */
+        post: operations["post_workspaces_ws_archive"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{ws}/artifacts/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** One artifact. */
+        get: operations["get_workspaces_ws_artifacts_id"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{ws}/chats": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Chats, most recently updated first. */
+        get: operations["get_workspaces_ws_chats"];
+        put?: never;
+        /** Starts a Teach or Practice chat; its first turn runs at once. */
+        post: operations["post_workspaces_ws_chats"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{ws}/chats/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Everything the Classroom renders for one chat. A pending question never carries its answer. */
+        get: operations["get_workspaces_ws_chats_id"];
+        put?: never;
+        post?: never;
+        /** Moves a chat to the workspace's `chats/.trash`. */
+        delete: operations["delete_workspaces_ws_chats_id"];
+        options?: never;
+        head?: never;
+        /** Renames a chat. */
+        patch: operations["patch_workspaces_ws_chats_id"];
+        trace?: never;
+    };
+    "/workspaces/{ws}/chats/{id}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Stops the running or queued turn; text streamed so far is kept, marked interrupted. */
+        post: operations["post_workspaces_ws_chats_id_cancel"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{ws}/chats/{id}/export.md": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The chat as a Markdown transcript (download). */
+        get: operations["get_workspaces_ws_chats_id_export_md"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{ws}/chats/{id}/turn": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Sends the learner's message, answer, steer or resume; the turn runs in the background. */
+        post: operations["post_workspaces_ws_chats_id_turn"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{ws}/digest": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Decisions grouped by day, then coding session, newest first. */
+        get: operations["get_workspaces_ws_digest"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{ws}/digest/decisions/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** One decision with its session, linked cards and the git commits made while it ran. */
+        get: operations["get_workspaces_ws_digest_decisions_id"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{ws}/digest/decisions/{id}/cards": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Generates 4-choice cards for a decision. Drafts that fail the card-shape check come back in
+         *     `rejected`.
+         */
+        post: operations["post_workspaces_ws_digest_decisions_id_cards"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{ws}/export": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["post_workspaces_ws_export"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{ws}/graph": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The whole graph, clusters and cached layout. `positions` is `null` and `layoutPending` true
+         *     while the layout is computed; `graph.changed` follows when it is ready.
+         */
+        get: operations["get_workspaces_ws_graph"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{ws}/graph/chains": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Chains touching the selected nodes, grouped by the conclusion's birth session. */
+        get: operations["get_workspaces_ws_graph_chains"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{ws}/graph/delete-preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["post_workspaces_ws_graph_delete_preview"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{ws}/graph/nodes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete: operations["delete_workspaces_ws_graph_nodes"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{ws}/graph/nodes/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** One node with its provenance, chains, related nodes and linked cards. */
+        get: operations["get_workspaces_ws_graph_nodes_id"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{ws}/graph/practice": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["post_workspaces_ws_graph_practice"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{ws}/graph/relayout": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["post_workspaces_ws_graph_relayout"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{ws}/graph/search": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Full-text search over propositions, best match first. */
+        get: operations["get_workspaces_ws_graph_search"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{ws}/ingest/run": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["post_workspaces_ws_ingest_run"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{ws}/ingest/runs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get_workspaces_ws_ingest_runs"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{ws}/ingest/runs/{id}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["post_workspaces_ws_ingest_runs_id_cancel"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{ws}/ingest/sources": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get_workspaces_ws_ingest_sources"];
+        put: operations["put_workspaces_ws_ingest_sources"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{ws}/jobs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Every job of the workspace, newest first. Jobs a previous server left running read as
+         *     finished with an "interrupted by a restart" error.
+         */
+        get: operations["get_workspaces_ws_jobs"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{ws}/jobs/{id}/abort": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Stops a running job; its result is never delivered to the chat. */
+        post: operations["post_workspaces_ws_jobs_id_abort"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{ws}/repair": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Rewrites minimal metadata for a damaged workspace from its directory name. */
+        post: operations["post_workspaces_ws_repair"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{ws}/restore": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Brings an archived workspace back. */
+        post: operations["post_workspaces_ws_restore"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{ws}/review/{card}/answer": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Checks a choice without changing the schedule: correctness, the rationale, the suggested
+         *     grade and what each grade would schedule.
+         */
+        post: operations["post_workspaces_ws_review_card_answer"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{ws}/review/{card}/grade": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Grades a card (1 again .. 4 easy). A retry with the same `clientId` returns the first result. */
+        post: operations["post_workspaces_ws_review_card_grade"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{ws}/review/cards": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Browse every card, soonest due first. */
+        get: operations["get_workspaces_ws_review_cards"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{ws}/review/cards/{card}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** One card with its answer, rationale and review history (the browser's drawer). */
+        get: operations["get_workspaces_ws_review_cards_card"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{ws}/review/preview/{card}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** `[again, hard, good, easy]` intervals for a card. */
+        get: operations["get_workspaces_ws_review_preview_card"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{ws}/review/queue": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Due cards at the server's `now`, oldest due first. Answers are withheld. */
+        get: operations["get_workspaces_ws_review_queue"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{ws}/review/stats": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Review header numbers: due counts, streak, retention and a 14-day forecast. */
+        get: operations["get_workspaces_ws_review_stats"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{ws}/review/sync": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Merges other devices' review logs, then ships this device's cards. */
+        post: operations["post_workspaces_ws_review_sync"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{ws}/sources/pdf": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["post_workspaces_ws_sources_pdf"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/import": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["post_workspaces_import"];
         delete?: never;
         options?: never;
         head?: never;
@@ -58,6 +938,35 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** @description One CLI account as the accounts screen shows it. Never carries tokens or credentials. */
+        AccountDto: {
+            cooldownReason?: string | null;
+            /**
+             * Format: int64
+             * @description Epoch ms when a cooldown ends.
+             */
+            cooldownUntil?: number | null;
+            email?: string | null;
+            id: string;
+            /** @description `claude`, `codex` or `agy`. */
+            provider: string;
+            /** @description The command that renews an expired login. */
+            reauthHint?: string | null;
+            /**
+             * Format: int32
+             * @description Requests in the current rate-limit window.
+             */
+            requests: number;
+            status: components["schemas"]["AccountStatus"];
+            tier?: string | null;
+            /** Format: int64 */
+            tokensIn: number;
+            /** Format: int64 */
+            tokensOut: number;
+        };
+        AccountsDto: {
+            items: components["schemas"]["AccountDto"][];
+        };
         /** @enum {string} */
         AccountStatus: "ready" | "cooldown" | "auth_expired" | "disabled";
         /** @description An account without credentials: provider, identity, health. */
@@ -74,6 +983,42 @@ export interface components {
             status: components["schemas"]["AccountStatus"];
             tier?: string | null;
         };
+        AddClaudeProfile: {
+            /** @description A `CLAUDE_CONFIG_DIR` holding `.claude.json`. */
+            path: string;
+        };
+        AlternativeDto: {
+            option: string;
+            rejectedBecause: string;
+        };
+        AnswerDto: {
+            correct: boolean;
+            correctKey: string;
+            explanation: string;
+            /** @description What the suggested grade would schedule. */
+            next: components["schemas"]["NextDto"];
+            preview: components["schemas"]["PreviewDto"][];
+            /**
+             * Format: int32
+             * @description The grade the server suggests (1..=4).
+             */
+            rating: number;
+        };
+        AnswerRequest: {
+            /** @description `a`..`d`. */
+            choiceKey: string;
+            clientId: string;
+            /**
+             * Format: int32
+             * @description 1..=5.
+             */
+            confidence?: number | null;
+            /**
+             * Format: int64
+             * @description How long the learner took, measured by the client.
+             */
+            latencyMs?: number | null;
+        };
         BannerDto: {
             id: string;
             level: components["schemas"]["BannerLevelDto"];
@@ -81,6 +1026,8 @@ export interface components {
         };
         /** @enum {string} */
         BannerLevelDto: "info" | "warning";
+        /** @enum {string} */
+        BasisDto: "stated" | "inferred";
         /** @description Everything the app needs at start, in one call. */
         Bootstrap: {
             accounts: components["schemas"]["AccountSummaryDto"][];
@@ -94,6 +1041,99 @@ export interface components {
             serverTime: number;
             version: string;
             workspaces: components["schemas"]["WorkspaceSummaryDto"][];
+        };
+        CallDto: {
+            id: string;
+            name: string;
+        };
+        CancelDto: {
+            /** @description False when no turn was running. */
+            cancelled: boolean;
+            turnId?: string | null;
+        };
+        Candidate: {
+            /** Format: int64 */
+            lastSeen: number;
+            path: string;
+            sessions: number;
+            source: string;
+        };
+        /** @description A card as lists show it: scheduling, never the answer. */
+        CardBriefDto: {
+            /**
+             * Format: int64
+             * @description Epoch ms.
+             */
+            due: number;
+            front: string;
+            id: string;
+            /** @description Due at the server's `now`. */
+            isDue: boolean;
+            /** Format: int32 */
+            lapses: number;
+            /** Format: int64 */
+            lastReview?: number | null;
+            /**
+             * Format: double
+             * @description `0..=1`.
+             */
+            mastery: number;
+            /** Format: int32 */
+            reps: number;
+            sourceDecisionId?: string | null;
+            state: components["schemas"]["CardState"];
+        };
+        /** @description A card with everything, for the browser's detail drawer. Includes the answer. */
+        CardDetailDto: components["schemas"]["CardBriefDto"] & {
+            correctKey: string;
+            /** Format: double */
+            difficulty: number;
+            history: components["schemas"]["ReviewLogDto"][];
+            options: components["schemas"]["ChoiceDto"][];
+            preview: components["schemas"]["PreviewDto"][];
+            rationale: string;
+            /** Format: double */
+            stability: number;
+        };
+        CardPageDto: {
+            items: components["schemas"]["CardBriefDto"][];
+            nextCursor?: string | null;
+            total: number;
+        };
+        /** @enum {string} */
+        CardState: "new" | "learning" | "review" | "relearning";
+        /** @description What the settings forms may offer. */
+        CatalogDto: {
+            densities: string[];
+            directions: string[];
+            efforts: string[];
+            /** @description Slots that take a pin, in display order. */
+            pinRoles: string[];
+            providers: components["schemas"]["CatalogProviderDto"][];
+            /** @description Roles that take a profile. */
+            roles: string[];
+            themes: string[];
+        };
+        CatalogProviderDto: {
+            id: string;
+            models: string[];
+        };
+        /** @description Chains touching the selection, grouped for the 3-level chain table. */
+        ChainGroupDto: {
+            chains: components["schemas"]["ChainRowDto"][];
+            label: string;
+            /** @description Birth session of the chain's conclusion. */
+            sessionId: string;
+        };
+        ChainRowDto: {
+            chain: components["schemas"]["GraphChainDto"];
+            /** @description Premises then conclusion, as propositions. */
+            nodes: components["schemas"]["NodeBriefDto"][];
+        };
+        ChainTableDto: {
+            groups: components["schemas"]["ChainGroupDto"][];
+            selection: string[];
+            total: number;
         };
         ChatDeltaData: {
             chatId: string;
@@ -111,6 +1151,16 @@ export interface components {
             error: components["schemas"]["TurnError"];
             turnId: string;
         };
+        /** @enum {string} */
+        ChatKind: "teach" | "practice";
+        ChatPageDto: {
+            /** @description Most recently updated first. */
+            items: components["schemas"]["ChatSummaryDto"][];
+            nextCursor?: string | null;
+            total: number;
+        };
+        /** @enum {string} */
+        ChatPhase: "probe" | "plan" | "teach" | "practice" | "done";
         ChatRef: {
             chatId: string;
         };
@@ -119,13 +1169,154 @@ export interface components {
             /** Format: int64 */
             viewVersion: number;
         };
+        ChatSummaryDto: {
+            id: string;
+            /** @description Workbench jobs still running for this chat. */
+            jobs: number;
+            kind: components["schemas"]["ChatKind"];
+            messageCount: number;
+            /** @description A question waits for the learner. */
+            pending: boolean;
+            phase: components["schemas"]["ChatPhase"];
+            title: string;
+            /** Format: int64 */
+            updatedAt: number;
+        };
         ChatToolCallData: {
             call: components["schemas"]["ToolCall"];
             chatId: string;
             turnId: string;
         };
+        /** @description An answer choice. `key` is `a`..`d` and is what `answer` takes. */
+        ChoiceDto: {
+            key: string;
+            text: string;
+        };
+        /** @description Everything the Classroom renders, derived server-side from the stored session. */
+        ClassroomViewDto: {
+            id: string;
+            jobs: components["schemas"]["JobDto"][];
+            kind: components["schemas"]["ChatKind"];
+            messages: components["schemas"]["MessageDto"][];
+            pending?: null | components["schemas"]["PendingDto"];
+            phase: components["schemas"]["ChatPhase"];
+            plan?: null | components["schemas"]["PlanDto"];
+            probeProgress: components["schemas"]["ProbeProgressDto"];
+            problemResult?: null | components["schemas"]["ProblemResultDto"];
+            title: string;
+            turn: components["schemas"]["TurnDto"];
+            verdicts: components["schemas"]["VerdictDto"][];
+            /**
+             * Format: int64
+             * @description Changes with every saved turn; `chat.rest` carries the version to expect.
+             */
+            viewVersion: number;
+        };
+        ClusterDto: {
+            id: string;
+            label: string;
+            nodeIds: string[];
+        };
+        CommitDto: {
+            body: string;
+            /** @description Unified diff, capped at 6,000 characters. */
+            diff: string;
+            files: string[];
+            sha: string;
+            subject: string;
+        };
+        /** @description `POST …/chats`. */
+        CreateChat: {
+            kind: components["schemas"]["ChatKind"];
+            /** @description Graph propositions the chat starts from (practice needs a topic or at least one). */
+            seedNodeIds?: string[];
+            /** @description What to learn (teach; required) or an optional focus (practice). */
+            topic?: string;
+        };
+        CreatedChatDto: {
+            chatId: string;
+            /** @description The first turn, already running. */
+            turnId: string;
+        };
+        CreateWorkspace: {
+            description?: string | null;
+            hue?: string | null;
+            icon?: string | null;
+            name: string;
+            sources?: null | components["schemas"]["SourcesDto"];
+        };
+        /** @description A workspace directory whose `workspace.json` is missing or corrupt. */
+        DamagedWorkspaceDto: {
+            id: string;
+            /** @description Where the directory is, for "Reveal". */
+            path: string;
+            reason: string;
+        };
+        DecisionDetailDto: {
+            cards: components["schemas"]["CardBriefDto"][];
+            /** @description Commits made while the session ran (allow-listed repos only). */
+            commits: components["schemas"]["CommitDto"][];
+            /** @description Why `commits` could not be read, when it could not. */
+            commitsError?: string | null;
+            decision: components["schemas"]["DecisionDto"];
+            session?: null | components["schemas"]["SessionBriefDto"];
+        };
+        DecisionDto: {
+            alternatives: components["schemas"]["AlternativeDto"][];
+            basis: components["schemas"]["BasisDto"];
+            /** @description Cards generated from this decision. */
+            cardIds: string[];
+            /** @description What was chosen. */
+            chosen: string;
+            commitSha?: string | null;
+            files: string[];
+            /** @description Already folded into the knowledge graph. */
+            folded: boolean;
+            id: string;
+            risk: string;
+            title: string;
+            why: string;
+        };
+        DeleteNodes: {
+            nodeIds: string[];
+            previewToken: string;
+        };
+        DeletePreview: {
+            blastRadius: string[];
+            deleted: number;
+            orphanedChains: number;
+            previewToken: string;
+        };
+        DeleteWorkspace: {
+            /** @description The workspace's exact name (its id for a damaged one). */
+            confirmName: string;
+        };
         /** @enum {string} */
         DeltaKind: "text" | "thinking";
+        DigestDayDto: {
+            /** @description `YYYY-MM-DD` (UTC), or `undated`. */
+            day: string;
+            decisionCount: number;
+            sessions: components["schemas"]["DigestSessionDto"][];
+        };
+        DigestDto: {
+            /** @description Newest day first. */
+            days: components["schemas"]["DigestDayDto"][];
+            totalDecisions: number;
+            totalSessions: number;
+        };
+        DigestSessionDto: {
+            cardCount: number;
+            decisions: components["schemas"]["DecisionDto"][];
+            project: string;
+            sessionId: string;
+            /** @description `claude`, `codex` or `agy`. */
+            source: string;
+            /** Format: int64 */
+            startedAt?: number | null;
+            /** @description One line: the first decision, plus how many more. */
+            summary: string;
+        };
         /** @description Payload-less events carry `{}` so `EventSource` still dispatches them. */
         Empty: Record<string, never>;
         /**
@@ -154,14 +1345,92 @@ export interface components {
             jobId: string;
             token: string;
         };
+        ExportStarted: {
+            jobId: string;
+        };
         /** @description One invalid input field; `path` is dotted (`profiles.teacher.model`, `items[2].id`). */
         FieldError: {
             message: string;
             path: string;
         };
+        GradeDto: {
+            card: components["schemas"]["CardBriefDto"];
+            preview: components["schemas"]["PreviewDto"][];
+        };
+        GradeRequest: {
+            /** @description Retries with the same id return the first result instead of grading twice. */
+            clientId: string;
+            /**
+             * Format: int32
+             * @description 1 again, 2 hard, 3 good, 4 easy.
+             */
+            rating: number;
+        };
+        /** @description A reasoning chain: `premises` together imply `conclusion`. */
+        GraphChainDto: {
+            conclusion: string;
+            /** @description The first premise; with `to` this is the drawn edge. */
+            from: string;
+            id: string;
+            /** @description `implication` for one premise, `conjunction` for several. */
+            kind: string;
+            premises: string[];
+            /** @description `A ∧ B ⟹ C` with node names. */
+            text?: string | null;
+            /** @description The conclusion. */
+            to: string;
+        };
         GraphChangedData: {
             /** Format: int64 */
             version: number;
+        };
+        /** @description The whole graph, as one snapshot. */
+        GraphDto: {
+            chains: components["schemas"]["GraphChainDto"][];
+            clusters: components["schemas"]["ClusterDto"][];
+            /** @description The layout is being computed; a `graph.changed` event follows when it is ready. */
+            layoutPending: boolean;
+            /**
+             * Format: int64
+             * @description Cached layout revision; advances when graph mutations or explicit relayout replace positions.
+             */
+            layoutVersion?: number | null;
+            nodes: components["schemas"]["GraphNodeDto"][];
+            /** @description Node id → `[x, y]`; `null` while the layout is computed. */
+            positions?: {
+                [key: string]: number[];
+            } | null;
+            /**
+             * Format: int64
+             * @description Content hash; changes whenever a node or chain does. Same as `graph.changed.version`.
+             */
+            version: number;
+        };
+        GraphMutation: {
+            /** Format: int64 */
+            layoutVersion: number;
+            /** Format: int64 */
+            version: number;
+        };
+        GraphNodeDto: {
+            /** Format: int64 */
+            createdAt: number;
+            /** @description Chains touching the node. */
+            degree: number;
+            id: string;
+            /** @description Where it came from: `claude`, `codex`, `agy`, `git` or `chat`. */
+            kind: string;
+            /** @description Short name. */
+            name: string;
+            provenance: components["schemas"]["ProvenanceDto"][];
+            /** @description The session or chat that first produced it. */
+            sessionId?: string | null;
+            /** @description The full proposition. */
+            text: string;
+        };
+        GraphSearchDto: {
+            /** @description Best match first. */
+            items: components["schemas"]["NodeBriefDto"][];
         };
         Health: {
             dataDir: string;
@@ -174,9 +1443,20 @@ export interface components {
             serverTime: number;
             version: string;
         };
+        /** @description Multipart upload contract; the handler streams this file to disk. */
+        ImportArchive: {
+            /** Format: binary */
+            file: string;
+        };
+        ImportedWorkspace: {
+            workspaceId: string;
+        };
         IngestDoneData: {
             report: components["schemas"]["IngestReport"];
             runId: string;
+        };
+        IngestHistory: {
+            items: components["schemas"]["IngestRun"][];
         };
         IngestProgressData: {
             /** Format: int64 */
@@ -197,6 +1477,24 @@ export interface components {
             /** Format: int64 */
             skipped: number;
         };
+        IngestRun: {
+            /** Format: int64 */
+            finishedAt?: number | null;
+            id: string;
+            report: components["schemas"]["IngestReport"];
+            /** Format: int64 */
+            startedAt: number;
+        };
+        IngestSources: {
+            candidates: components["schemas"]["Candidate"][];
+            enabled: boolean;
+            runningId?: string | null;
+            sources: components["schemas"]["SourcesDto"];
+            warnings: components["schemas"]["OverlapWarning"][];
+        };
+        IngestStarted: {
+            runId: string;
+        };
         Job: {
             artifactId?: string | null;
             id: string;
@@ -204,8 +1502,306 @@ export interface components {
             status: string;
             title: string;
         };
+        JobDto: {
+            artifactId?: string | null;
+            id: string;
+            /** @description `research`, `pdf`, `visual` or `demo`. */
+            kind: string;
+            status: components["schemas"]["JobStatusDto"];
+            title: string;
+        };
+        /** @description One workbench job in the workspace's job list. */
+        JobItemDto: {
+            artifactId?: string | null;
+            chatId: string;
+            /** Format: int64 */
+            createdAt: number;
+            /** @description Why a finished job has no result. */
+            error?: string | null;
+            id: string;
+            /** @description `research`, `pdf`, `visual` or `demo`. */
+            kind: string;
+            status: components["schemas"]["JobStatusDto"];
+            title: string;
+        };
+        JobListDto: {
+            /** @description Newest first. */
+            items: components["schemas"]["JobItemDto"][];
+        };
+        /** @enum {string} */
+        JobStatusDto: "running" | "done" | "failed";
         JobUpdatedData: {
             job: components["schemas"]["Job"];
+        };
+        MessageDto: {
+            /** @description For an answer: the question call it answers. */
+            answersCallId?: string | null;
+            /** @description Tool calls the assistant made in this message (names only, never arguments). */
+            calls: components["schemas"]["CallDto"][];
+            /**
+             * Format: int64
+             * @description Epoch ms; null for messages the transcript did not time-stamp.
+             */
+            createdAt?: number | null;
+            /** @description `m<index>` in the stored transcript. */
+            id: string;
+            interrupted?: boolean | null;
+            role: components["schemas"]["MessageRole"];
+            /** @description Markdown. */
+            text: string;
+            thinking?: string | null;
+        };
+        /** @enum {string} */
+        MessageRole: "user" | "assistant" | "tool" | "steer" | "compaction";
+        NextDto: {
+            /** Format: int64 */
+            due: number;
+            /** Format: double */
+            intervalDays: number;
+        };
+        NodeBriefDto: {
+            id: string;
+            kind: string;
+            name: string;
+            text: string;
+        };
+        /** @description One node with everything the drawer shows. */
+        NodeDetailDto: components["schemas"]["GraphNodeDto"] & {
+            aliases: string[];
+            /** @description Cards generated from the decisions this node was distilled from. */
+            cards: components["schemas"]["CardBriefDto"][];
+            incoming: components["schemas"]["GraphChainDto"][];
+            /**
+             * Format: double
+             * @description Mean mastery of `cards`, `0..=1`.
+             */
+            mastery?: number | null;
+            outgoing: components["schemas"]["GraphChainDto"][];
+            provenanceDetail: components["schemas"]["ProvenanceDetailDto"][];
+            related: components["schemas"]["NodeBriefDto"][];
+        };
+        NodeSelection: {
+            nodeIds: string[];
+        };
+        OptionDto: {
+            /** @description What to send back as the answer. */
+            key: string;
+            text: string;
+        };
+        OverlapWarning: {
+            otherPath: string;
+            path: string;
+            workspaceId: string;
+        };
+        OverridesDto: {
+            /** @description Role → profile, replacing the global one in this workspace. */
+            profiles: {
+                [key: string]: components["schemas"]["ProfileDto"];
+            };
+        };
+        PatchAccount: {
+            /** @description Exclude the account from the pool (or put it back). */
+            disabled: boolean;
+        };
+        /** @description Fields left out stay as they are. */
+        PatchWorkspace: {
+            description?: string | null;
+            hue?: string | null;
+            icon?: string | null;
+            name?: string | null;
+            overrides?: null | components["schemas"]["OverridesDto"];
+            sources?: null | components["schemas"]["SourcesDto"];
+        };
+        PdfUploadDto: {
+            /** @description The stored PDF (`GET …/artifacts/{id}`). */
+            artifactId: string;
+            /** Format: int64 */
+            bytes: number;
+            chatId: string;
+            jobId: string;
+        };
+        /** @description `POST …/sources/pdf` form: the PDF and an optional question for the reading job. */
+        PdfUploadForm: {
+            /** Format: binary */
+            file: string;
+            question?: string | null;
+        };
+        /** @description The question waiting for the learner. Has no field for the correct answer. */
+        PendingDto: {
+            allowFreeText: boolean;
+            callId: string;
+            /**
+             * Format: int32
+             * @description Confidence slider `1..=n`; absent when the tool takes no confidence.
+             */
+            confidenceScale?: number | null;
+            /** @description The answer value that means "I don't know" (options only). */
+            idkKey?: string | null;
+            multiSelect: boolean;
+            /** @description Already shuffled for this call. */
+            options?: components["schemas"]["OptionDto"][] | null;
+            problem?: null | components["schemas"]["ProblemDto"];
+            prompt: string;
+            /** @description `probe`, `recall`, `quiz`, `explain`, `ask_user_question` or `problem`. */
+            tool: string;
+        };
+        PlanDto: {
+            currentId?: string | null;
+            edges: components["schemas"]["PlanEdgeDto"][];
+            nodes: components["schemas"]["PlanNodeDto"][];
+        };
+        PlanEdgeDto: {
+            from: string;
+            to: string;
+        };
+        PlanNodeDto: {
+            id: string;
+            status: components["schemas"]["PlanStatus"];
+            summary: string;
+            title: string;
+        };
+        /** @enum {string} */
+        PlanStatus: "current" | "visited" | "upcoming";
+        PracticeChat: {
+            chatId: string;
+        };
+        /** @description What grading with one rating would schedule. */
+        PreviewDto: {
+            /** Format: int64 */
+            due: number;
+            /** @description `1m`, `3h`, `5d`. */
+            intervalLabel: string;
+            /** Format: int64 */
+            intervalMs: number;
+            label: string;
+            /**
+             * Format: int32
+             * @description 1 again, 2 hard, 3 good, 4 easy.
+             */
+            rating: number;
+        };
+        PreviewListDto: {
+            /** @description `[again, hard, good, easy]`. */
+            items: components["schemas"]["PreviewDto"][];
+        };
+        ProbeProgressDto: {
+            asked: number;
+            max: number;
+        };
+        ProblemDto: {
+            /** @description `recall`, `discrimination` or `composition`. */
+            mode: string;
+            /** @description Hint rungs, when the mode has a ladder. */
+            rungs?: string[] | null;
+            statement: string;
+        };
+        /** @description Feedback committed by a successful Practice conclude call. */
+        ProblemResultDto: {
+            callId: string;
+            missClass?: string | null;
+            outcome: string;
+            retest: boolean;
+            rung?: string | null;
+            verdict: string;
+        };
+        /** @description Which CLI, model and reasoning effort a role runs on. */
+        ProfileDto: {
+            effort?: string | null;
+            /** @description Let the account pool fall back to other providers. */
+            fallback?: boolean;
+            model: string;
+            provider: string;
+        };
+        /** @description A profile to try: provider, model and optional effort. */
+        ProfilePingBody: {
+            effort?: string | null;
+            model: string;
+            provider: string;
+        };
+        /** @description What the test ping found. `ok: false` carries the reason; it is not an HTTP error. */
+        ProfilePingResult: {
+            /** Format: int64 */
+            latencyMs: number;
+            message: string;
+            ok: boolean;
+        };
+        ProvenanceDetailDto: {
+            chatId: string;
+            chatTitle?: string | null;
+            messageId: string;
+            /** @description Position in the chat transcript, when the message is still there. */
+            messageIndex?: number | null;
+            snippet: string;
+        };
+        ProvenanceDto: {
+            chatId: string;
+            messageId: string;
+        };
+        /** @description A due card to answer. The correct option and rationale are withheld until `answer`. */
+        QueueCardDto: {
+            /** Format: int64 */
+            due: number;
+            front: string;
+            id: string;
+            /** @description `decision` for cards made from an ingested decision, else `card`. */
+            kind: string;
+            options: components["schemas"]["ChoiceDto"][];
+            sourceDecisionId?: string | null;
+            state: components["schemas"]["CardState"];
+        };
+        QueueDto: {
+            /** @description Cards due now, beyond the page. */
+            dueNow: number;
+            items: components["schemas"]["QueueCardDto"][];
+            /**
+             * Format: int64
+             * @description The server clock the queue was computed at (epoch ms).
+             */
+            now: number;
+        };
+        RegenerateDto: {
+            cardIds: string[];
+            rejected: components["schemas"]["RejectedCardDto"][];
+            saved: number;
+        };
+        RejectedCardDto: {
+            front: string;
+            /** @description Why `validate_card_shape` refused it. */
+            reason: string;
+        };
+        RenameChat: {
+            title: string;
+        };
+        RescanDto: {
+            /** @description Ids of accounts that were not in the pool before. */
+            added: string[];
+            items: components["schemas"]["AccountDto"][];
+        };
+        ReviewLogDto: {
+            deviceId: string;
+            /**
+             * Format: int32
+             * @description 1..=4.
+             */
+            rating: number;
+            /** Format: int64 */
+            ts: number;
+        };
+        SearchDto: {
+            /** @description Best match first. */
+            items: components["schemas"]["SearchHitDto"][];
+            /** @description Workspaces that did not answer in time; their hits are missing. */
+            timedOut: string[];
+        };
+        SearchHitDto: {
+            node: components["schemas"]["NodeBriefDto"];
+            /**
+             * Format: double
+             * @description `0..=1`, higher is better; comparable across workspaces.
+             */
+            score: number;
+            workspaceId: string;
+            workspaceName: string;
         };
         /** @description One server-sent event. */
         ServerEvent: {
@@ -282,17 +1878,215 @@ export interface components {
             /** @enum {string} */
             type: "resync";
         };
+        SessionBriefDto: {
+            cwd: string;
+            gitBranch?: string | null;
+            id: string;
+            project: string;
+            source: string;
+            /** Format: int64 */
+            startedAt: number;
+        };
+        /** @description The global settings the UI edits. */
+        SettingsDto: {
+            /**
+             * Format: int32
+             * @description Parallel model calls, `1..=6`.
+             */
+            concurrencyCap: number;
+            /** @description `default` or `visual`. */
+            learningStyle: string;
+            /** @description Role → `<provider>:auto` or an account id. */
+            pins: {
+                [key: string]: string;
+            };
+            /** @description Role → profile; roles without one are absent. */
+            profiles: {
+                [key: string]: components["schemas"]["ProfileDto"];
+            };
+            ui: components["schemas"]["UiSettingsDto"];
+        };
+        SourcesDto: {
+            agy: boolean;
+            /** @description Project directories whose sessions belong to this workspace; empty disables ingest. */
+            allow: string[];
+            claude: boolean;
+            codex: boolean;
+            git: boolean;
+            /** Format: int32 */
+            sinceDays: number;
+        };
+        StartIngest: {
+            /** Format: int32 */
+            sinceDays?: number | null;
+        };
+        StatsDto: {
+            dueNow: number;
+            dueToday: number;
+            /** @description Cards due per UTC day, starting `forecast_start`; day 0 includes overdue cards. */
+            forecast: number[];
+            /** Format: int64 */
+            forecastStart: number;
+            newToday: number;
+            /**
+             * Format: int64
+             * @description The server clock the stats were computed at (epoch ms).
+             */
+            now: number;
+            /**
+             * Format: double
+             * @description Share of recent reviews that were not `Again`, `0..=1`; null with no data.
+             */
+            retention30d?: number | null;
+            reviewedToday: number;
+            /** Format: int32 */
+            streak: number;
+        };
+        SyncDto: {
+            cards: number;
+            reviews: number;
+        };
         ToolCall: {
             id: string;
             name: string;
+        };
+        TrashEntryDto: {
+            /**
+             * Format: int64
+             * @description Bytes the trashed workspace takes on disk.
+             */
+            bytes: number;
+            /** Format: int64 */
+            deletedAt: number;
+            /** @description Key for restore and purge. */
+            id: string;
+            name: string;
+            workspaceId: string;
+        };
+        TrashListDto: {
+            items: components["schemas"]["TrashEntryDto"][];
+        };
+        /** @enum {string} */
+        TurnAcceptance: "started" | "duplicate" | "steerQueued" | "recorded";
+        TurnAcceptedDto: {
+            status: components["schemas"]["TurnAcceptance"];
+            turnId: string;
+        };
+        /**
+         * @description `POST …/chats/{id}/turn`. `clientId` makes retries safe: a repeated id returns the original
+         *     turn, and after an `error` it re-runs the turn.
+         */
+        TurnBody: {
+            clientId: string;
+            text: string;
+            /** @enum {string} */
+            type: "user";
+        } | {
+            answer: components["schemas"]["AnswerDto"];
+            callId: string;
+            clientId: string;
+            /** @enum {string} */
+            type: "answer";
+        } | {
+            clientId: string;
+            text: string;
+            /** @enum {string} */
+            type: "steer";
+        } | {
+            clientId: string;
+            /** @enum {string} */
+            type: "resume";
+        };
+        TurnDto: {
+            /** @description The request that started the turn; post it again to retry after an error. */
+            clientId?: string | null;
+            error?: null | components["schemas"]["TurnErrorDto"];
+            /**
+             * Format: int64
+             * @description While `queued` on a rate limit: when the next attempt starts (epoch ms).
+             */
+            retryAt?: number | null;
+            /** Format: int64 */
+            startedAt?: number | null;
+            state: components["schemas"]["TurnState"];
+            turnId?: string | null;
         };
         TurnError: {
             code: string;
             message: string;
             retryable: boolean;
         };
+        /** @description Why the last turn stopped short. */
+        TurnErrorDto: {
+            /**
+             * @description `engine_unavailable`, `rate_limited`, `internal`, `storage_full`, or `interrupted` when a
+             *     server restart cut the turn off.
+             */
+            code: string;
+            /** @description The server stopped mid-turn; offer Resume. */
+            interrupted: boolean;
+            message: string;
+            retryable: boolean;
+            /**
+             * Format: int64
+             * @description For `rate_limited`: how long until an account is free again.
+             */
+            retryAfterMs?: number | null;
+        };
+        /** @enum {string} */
+        TurnState: "idle" | "running" | "queued" | "error";
+        UiSettingsDto: {
+            autoOpenBrowser: boolean;
+            confirmDestructive: boolean;
+            /** @description `comfortable` or `compact`. */
+            density: string;
+            /** @description `ltr`, `rtl` or `auto`. */
+            direction: string;
+            reduceMotion: boolean;
+            /** @description `dark`, `light` or `system`. */
+            theme: string;
+        };
+        /** @description The grade of an answered quiz or probe. Exists only after the answer. */
+        VerdictDto: {
+            callId: string;
+            correct: boolean;
+            explanation?: string | null;
+        };
+        WorkspaceDto: {
+            /** @description Archived workspaces are read-only: mutations answer `409 workspace_archived`. */
+            archived: boolean;
+            /** Format: int64 */
+            createdAt: number;
+            description: string;
+            /** @description One of the 8 palette accents. */
+            hue: string;
+            /** @description A lucide icon name from the fixed allow-list. */
+            icon: string;
+            /** @description `ws_` + 8 hex digits; routing always uses this. */
+            id: string;
+            /** Format: int64 */
+            lastOpenedAt: number;
+            name: string;
+            overrides: components["schemas"]["OverridesDto"];
+            slug: string;
+            sources: components["schemas"]["SourcesDto"];
+            stats?: null | components["schemas"]["WorkspaceStatsDto"];
+        };
+        WorkspaceListDto: {
+            damaged: components["schemas"]["DamagedWorkspaceDto"][];
+            /** @description Most recently opened first. */
+            items: components["schemas"]["WorkspaceDto"][];
+        };
         WorkspaceRef: {
             workspaceId: string;
+        };
+        WorkspaceStatsDto: {
+            chains: number;
+            chats: number;
+            dueCards: number;
+            /** Format: int64 */
+            lastActivityAt?: number | null;
+            nodes: number;
         };
         WorkspaceSummaryDto: {
             archived: boolean;
@@ -313,7 +2107,128 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
-    bootstrap: {
+    get_accounts: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    /** @description Changes with the pool */
+                    ETag?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AccountsDto"];
+                };
+            };
+            /** @description Unchanged since `If-None-Match` */
+            304: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    patch_accounts_id: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Account id, e.g. `claude:me@example.com` */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PatchAccount"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AccountDto"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    post_accounts_claude: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AddClaudeProfile"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AccountDto"];
+                };
+            };
+            /** @description No Claude login in that directory */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    post_accounts_rescan: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RescanDto"];
+                };
+            };
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    get_bootstrap: {
         parameters: {
             query?: never;
             header?: never;
@@ -349,7 +2264,37 @@ export interface operations {
             };
         };
     };
-    events: {
+    get_downloads_token: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                token: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description One-shot streamed workspace zip */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/zip": string;
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    get_events: {
         parameters: {
             query?: {
                 /** @description Also receive this workspace's events; without it only global events arrive. */
@@ -393,7 +2338,7 @@ export interface operations {
             };
         };
     };
-    health: {
+    get_health: {
         parameters: {
             query?: never;
             header?: never;
@@ -412,6 +2357,1979 @@ export interface operations {
             };
             /** @description Wrong Host */
             421: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    get_search: {
+        parameters: {
+            query: {
+                /** @description Hits to return in total; default 30, at most 100. */
+                limit?: number;
+                q: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SearchDto"];
+                };
+            };
+            /** @description Empty query */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    get_settings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SettingsDto"];
+                };
+            };
+        };
+    };
+    put_settings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SettingsDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SettingsDto"];
+                };
+            };
+            /** @description Fields outside the catalog */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    get_settings_catalog: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CatalogDto"];
+                };
+            };
+        };
+    };
+    post_settings_test: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProfilePingBody"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProfilePingResult"];
+                };
+            };
+            /** @description Unknown provider or effort */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    get_trash: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TrashListDto"];
+                };
+            };
+        };
+    };
+    delete_trash_id: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Trash entry id */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    post_trash_id_restore: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Trash entry id */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceDto"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    get_workspaces: {
+        parameters: {
+            query?: {
+                /** @description Include archived workspaces. */
+                archived?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceListDto"];
+                };
+            };
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    post_workspaces: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateWorkspace"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceDto"];
+                };
+            };
+            /** @description Name already in use */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Invalid field */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    get_workspaces_ws: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Workspace id */
+                ws: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceDto"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    delete_workspaces_ws: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Workspace id */
+                ws: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DeleteWorkspace"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TrashEntryDto"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Name does not match */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    patch_workspaces_ws: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Workspace id */
+                ws: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PatchWorkspace"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceDto"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Archived, or name in use */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Invalid field */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    post_workspaces_ws_archive: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Workspace id */
+                ws: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceDto"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    get_workspaces_ws_artifacts_id: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Artifact id (`JobDto.artifactId`) */
+                id: string;
+                /** @description Workspace id */
+                ws: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The file; `text/html` and `image/svg+xml` carry `Content-Security-Policy: sandbox` */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/octet-stream": number[];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    get_workspaces_ws_chats: {
+        parameters: {
+            query?: {
+                cursor?: string;
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                /** @description Workspace id */
+                ws: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChatPageDto"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    post_workspaces_ws_chats: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Workspace id */
+                ws: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateChat"];
+            };
+        };
+        responses: {
+            /** @description Created; the first turn is running */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreatedChatDto"];
+                };
+            };
+            /** @description Invalid topic or unknown seed nodes */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Workspace archived */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    get_workspaces_ws_chats_id: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Chat id */
+                id: string;
+                /** @description Workspace id */
+                ws: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ClassroomViewDto"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    delete_workspaces_ws_chats_id: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Chat id */
+                id: string;
+                /** @description Workspace id */
+                ws: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Workspace archived */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    patch_workspaces_ws_chats_id: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Chat id */
+                id: string;
+                /** @description Workspace id */
+                ws: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RenameChat"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChatSummaryDto"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Workspace archived */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Invalid title */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    post_workspaces_ws_chats_id_cancel: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Chat id */
+                id: string;
+                /** @description Workspace id */
+                ws: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CancelDto"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    get_workspaces_ws_chats_id_export_md: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Chat id */
+                id: string;
+                /** @description Workspace id */
+                ws: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/markdown": string;
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    post_workspaces_ws_chats_id_turn: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Chat id */
+                id: string;
+                /** @description Workspace id */
+                ws: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TurnBody"];
+            };
+        };
+        responses: {
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TurnAcceptedDto"];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description `turn_in_progress`; `stale_question` with the fresh view in `details.view`; `conflict` while a question is pending or nothing to resume; `workspace_archived` */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    get_workspaces_ws_digest: {
+        parameters: {
+            query?: {
+                /** @description Sessions started at or after this: epoch ms or `YYYY-MM-DD` (UTC). */
+                from?: string;
+                /** @description Comma-separated: `claude`, `codex`, `agy`. */
+                source?: string;
+                /** @description Sessions started before this: epoch ms or `YYYY-MM-DD` (UTC, start of that day). */
+                to?: string;
+            };
+            header?: never;
+            path: {
+                /** @description Workspace id */
+                ws: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DigestDto"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Bad date or source */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    get_workspaces_ws_digest_decisions_id: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Decision id */
+                id: string;
+                /** @description Workspace id */
+                ws: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DecisionDetailDto"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    post_workspaces_ws_digest_decisions_id_cards: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Decision id */
+                id: string;
+                /** @description Workspace id */
+                ws: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RegenerateDto"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Workspace archived */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Engine unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    post_workspaces_ws_export: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                ws: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExportStarted"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    get_workspaces_ws_graph: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Workspace id */
+                ws: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    /** @description Changes with the graph or its layout */
+                    ETag?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GraphDto"];
+                };
+            };
+            /** @description Unchanged since `If-None-Match` */
+            304: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    get_workspaces_ws_graph_chains: {
+        parameters: {
+            query?: {
+                /** @description Comma-separated node ids. */
+                selection?: string;
+            };
+            header?: never;
+            path: {
+                /** @description Workspace id */
+                ws: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChainTableDto"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    post_workspaces_ws_graph_delete_preview: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                ws: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NodeSelection"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeletePreview"];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    delete_workspaces_ws_graph_nodes: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                ws: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DeleteNodes"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GraphMutation"];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    get_workspaces_ws_graph_nodes_id: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Node id */
+                id: string;
+                /** @description Workspace id */
+                ws: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NodeDetailDto"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    post_workspaces_ws_graph_practice: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                ws: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NodeSelection"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PracticeChat"];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            501: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    post_workspaces_ws_graph_relayout: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                ws: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GraphMutation"];
+                };
+            };
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    get_workspaces_ws_graph_search: {
+        parameters: {
+            query: {
+                limit?: number;
+                q: string;
+            };
+            header?: never;
+            path: {
+                /** @description Workspace id */
+                ws: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GraphSearchDto"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Empty query */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    post_workspaces_ws_ingest_run: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                ws: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StartIngest"];
+            };
+        };
+        responses: {
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IngestStarted"];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    get_workspaces_ws_ingest_runs: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                ws: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IngestHistory"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    post_workspaces_ws_ingest_runs_id_cancel: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+                ws: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    get_workspaces_ws_ingest_sources: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                ws: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IngestSources"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    put_workspaces_ws_ingest_sources: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                ws: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SourcesDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IngestSources"];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    get_workspaces_ws_jobs: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Workspace id */
+                ws: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobListDto"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    post_workspaces_ws_jobs_id_abort: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Job id */
+                id: string;
+                /** @description Workspace id */
+                ws: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Abort requested; `job.updated` follows */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobItemDto"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description The job is not running */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    post_workspaces_ws_repair: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Workspace id */
+                ws: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceDto"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Not damaged */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    post_workspaces_ws_restore: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Workspace id */
+                ws: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceDto"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    post_workspaces_ws_review_card_answer: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Card id */
+                card: string;
+                /** @description Workspace id */
+                ws: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AnswerRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AnswerDto"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Unknown choice or confidence */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    post_workspaces_ws_review_card_grade: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Card id */
+                card: string;
+                /** @description Workspace id */
+                ws: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GradeRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GradeDto"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Workspace archived */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Rating out of range */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    get_workspaces_ws_review_cards: {
+        parameters: {
+            query?: {
+                cursor?: string;
+                limit?: number;
+                q?: string;
+                /** @description `new`, `learning`, `review` or `relearning`. */
+                state?: string;
+            };
+            header?: never;
+            path: {
+                /** @description Workspace id */
+                ws: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CardPageDto"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Unknown state */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    get_workspaces_ws_review_cards_card: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Card id */
+                card: string;
+                /** @description Workspace id */
+                ws: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CardDetailDto"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    get_workspaces_ws_review_preview_card: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Card id */
+                card: string;
+                /** @description Workspace id */
+                ws: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PreviewListDto"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    get_workspaces_ws_review_queue: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                /** @description Workspace id */
+                ws: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["QueueDto"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    get_workspaces_ws_review_stats: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Workspace id */
+                ws: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    /** @description Changes with the stats, not with the clock */
+                    ETag?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StatsDto"];
+                };
+            };
+            /** @description Unchanged since `If-None-Match` */
+            304: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    post_workspaces_ws_review_sync: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Workspace id */
+                ws: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SyncDto"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Workspace archived */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    post_workspaces_ws_sources_pdf: {
+        parameters: {
+            query: {
+                /** @description The chat the reading job reports to. */
+                chat: string;
+            };
+            header?: never;
+            path: {
+                ws: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["PdfUploadForm"];
+            };
+        };
+        responses: {
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PdfUploadDto"];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description PDF exceeds 50 MB */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    post_workspaces_import: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description A single `file` zip field, maximum 2 GiB; streamed to disk */
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["ImportArchive"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ImportedWorkspace"];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            413: {
                 headers: {
                     [name: string]: unknown;
                 };

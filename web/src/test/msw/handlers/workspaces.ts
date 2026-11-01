@@ -1,16 +1,16 @@
 import { HttpResponse, http } from "msw"
 
-import type {
-  CreateWorkspaceBody,
-  PatchWorkspaceBody,
-  WorkspaceDetail,
-} from "@/api/pending-types"
+import type { components } from "@/api/schema"
 
+import type { MockWorkspace } from "../fixtures/workspaces"
 import { bus } from "../../mock/bus"
 import { listItem, nextId, state } from "../db"
 import { apiError, latency, notFound } from "../respond"
 
 const API = "*/api/v1"
+
+type Schemas = components["schemas"]
+type WorkspaceDto = Schemas["WorkspaceDto"]
 
 function nameTaken(name: string, exceptId?: string): boolean {
   return [...state.db.workspaces.values()].some(
@@ -54,24 +54,34 @@ export const workspaceHandlers = [
     await latency()
     const archived =
       new URL(request.url).searchParams.get("archived") === "true"
-    const items = [...state.db.workspaces.values()]
-      .filter((w) => w.archived === archived)
-      .map(listItem)
-    return HttpResponse.json(items)
+    const all = [...state.db.workspaces.values()].filter(
+      (w) => w.archived === archived
+    )
+    const body: Schemas["WorkspaceListDto"] = {
+      items: all.filter((w) => !w.damaged).map(listItem),
+      damaged: all
+        .filter((w) => w.damaged)
+        .map((w) => ({
+          id: w.id,
+          path: `/mock/.learnpuppy/workspaces/${w.id}`,
+          reason: "workspace.json is unreadable",
+        })),
+    }
+    return HttpResponse.json(body)
   }),
 
   http.post(`${API}/workspaces`, async ({ request }) => {
     await latency()
-    const body = (await request.json()) as CreateWorkspaceBody
+    const body = (await request.json()) as Schemas["CreateWorkspace"]
     const invalid = validateName(body.name)
     if (invalid) return invalid
     const id = nextId("ws")
-    const workspace: WorkspaceDetail = {
+    const workspace: MockWorkspace = {
       id,
       name: body.name.trim(),
       slug: slugify(body.name),
-      icon: body.icon,
-      hue: body.hue,
+      icon: body.icon ?? "book-open",
+      hue: body.hue ?? "violet",
       description: body.description ?? "",
       archived: false,
       damaged: false,
@@ -84,7 +94,7 @@ export const workspaceHandlers = [
         git: true,
         allow: [],
         sinceDays: 30,
-        ...body.sources,
+        ...(body.sources ?? {}),
       },
       overrides: { profiles: {} },
       stats: {
@@ -99,7 +109,8 @@ export const workspaceHandlers = [
     state.db.chats.set(id, [])
     state.db.cards.set(id, [])
     bus.emit("workspace.created", { workspaceId: id })
-    return HttpResponse.json(workspace)
+    const created: WorkspaceDto = listItem(workspace)
+    return HttpResponse.json(created, { status: 201 })
   }),
 
   http.post(`${API}/workspaces/:ws/repair`, async ({ params }) => {
@@ -115,7 +126,7 @@ export const workspaceHandlers = [
     ws.slug = slugify(ws.name)
     ws.damaged = false
     bus.emit("workspace.updated", { workspaceId: ws.id })
-    return HttpResponse.json({ ...ws, ...listItem(ws) })
+    return HttpResponse.json(listItem(ws) satisfies WorkspaceDto)
   }),
 
   http.post(`${API}/workspaces/import`, async () => {
@@ -131,7 +142,7 @@ export const workspaceHandlers = [
     await latency()
     const ws = state.db.workspaces.get(String(params["ws"]))
     if (!ws) return notFound("Workspace")
-    return HttpResponse.json({ ...ws, ...listItem(ws) })
+    return HttpResponse.json(listItem(ws) satisfies WorkspaceDto)
   }),
 
   http.patch(`${API}/workspaces/:ws`, async ({ params, request }) => {
@@ -140,20 +151,20 @@ export const workspaceHandlers = [
     if (!ws) return notFound("Workspace")
     if (ws.archived)
       return apiError("workspace_archived", "Archived workspaces are read-only")
-    const body = (await request.json()) as PatchWorkspaceBody
-    if (body.name !== undefined) {
+    const body = (await request.json()) as Schemas["PatchWorkspace"]
+    if (body.name != null) {
       const invalid = validateName(body.name, ws.id)
       if (invalid) return invalid
       ws.name = body.name.trim()
       ws.slug = slugify(ws.name)
     }
-    if (body.icon !== undefined) ws.icon = body.icon
-    if (body.hue !== undefined) ws.hue = body.hue
-    if (body.description !== undefined) ws.description = body.description
+    if (body.icon != null) ws.icon = body.icon
+    if (body.hue != null) ws.hue = body.hue
+    if (body.description != null) ws.description = body.description
     if (body.sources) ws.sources = { ...ws.sources, ...body.sources }
     if (body.overrides) ws.overrides = body.overrides
     bus.emit("workspace.updated", { workspaceId: ws.id })
-    return HttpResponse.json({ ...ws, ...listItem(ws) })
+    return HttpResponse.json(listItem(ws) satisfies WorkspaceDto)
   }),
 
   http.post(`${API}/workspaces/:ws/archive`, ({ params }) => {
@@ -161,14 +172,14 @@ export const workspaceHandlers = [
     if (!ws) return notFound("Workspace")
     ws.archived = true
     bus.emit("workspace.updated", { workspaceId: ws.id })
-    return HttpResponse.json({ ...ws, ...listItem(ws) })
+    return HttpResponse.json(listItem(ws) satisfies WorkspaceDto)
   }),
   http.post(`${API}/workspaces/:ws/restore`, ({ params }) => {
     const ws = state.db.workspaces.get(String(params["ws"]))
     if (!ws) return notFound("Workspace")
     ws.archived = false
     bus.emit("workspace.updated", { workspaceId: ws.id })
-    return HttpResponse.json({ ...ws, ...listItem(ws) })
+    return HttpResponse.json(listItem(ws) satisfies WorkspaceDto)
   }),
 
   http.delete(`${API}/workspaces/:ws`, async ({ params, request }) => {
@@ -177,7 +188,7 @@ export const workspaceHandlers = [
     const ws = state.db.workspaces.get(id)
     if (!ws) return notFound("Workspace")
     const { confirmName } = (await request.json()) as { confirmName: string }
-    if (confirmName !== ws.name)
+    if (confirmName !== (ws.damaged ? ws.id : ws.name))
       return apiError("validation", "Confirmation does not match", {
         details: {
           fields: [
@@ -186,15 +197,16 @@ export const workspaceHandlers = [
         },
       })
     state.db.workspaces.delete(id)
-    state.db.trash.push({
+    const entry: Schemas["TrashEntryDto"] = {
       id: `trash_${id}`,
       workspaceId: id,
       name: ws.name,
       deletedAt: state.db.now,
-      sizeBytes: 3_400_000,
-    })
+      bytes: 3_400_000,
+    }
+    state.db.trash.push(entry)
     bus.emit("workspace.deleted", { workspaceId: id })
-    return new HttpResponse(null, { status: 204 })
+    return HttpResponse.json(entry)
   }),
 
   http.post(`${API}/workspaces/:ws/export`, ({ params }) => {
@@ -205,10 +217,16 @@ export const workspaceHandlers = [
       () => bus.emit("export.ready", { jobId, token: `tok_${jobId}` }, id),
       300
     )
-    return HttpResponse.json({ jobId })
+    return HttpResponse.json({ jobId } satisfies Schemas["ExportStarted"], {
+      status: 202,
+    })
   }),
 
-  http.get(`${API}/trash`, () => HttpResponse.json(state.db.trash)),
+  http.get(`${API}/trash`, () =>
+    HttpResponse.json({
+      items: state.db.trash,
+    } satisfies Schemas["TrashListDto"])
+  ),
   http.post(`${API}/trash/:id/restore`, async ({ params }) => {
     await latency()
     const index = state.db.trash.findIndex((t) => t.id === params["id"])
@@ -216,7 +234,7 @@ export const workspaceHandlers = [
     if (!item) return notFound("Trash item")
     if (state.db.workspaces.has(item.workspaceId))
       return apiError("conflict", "A workspace with this id already exists")
-    const ws: WorkspaceDetail = {
+    const ws: MockWorkspace = {
       id: item.workspaceId,
       name: item.name,
       slug: slugify(item.name),
@@ -249,7 +267,7 @@ export const workspaceHandlers = [
     state.db.cards.set(ws.id, [])
     state.db.trash.splice(index, 1)
     bus.emit("workspace.updated", { workspaceId: ws.id })
-    return HttpResponse.json(ws)
+    return HttpResponse.json(listItem(ws) satisfies WorkspaceDto)
   }),
   http.delete(`${API}/trash/:id`, ({ params }) => {
     const index = state.db.trash.findIndex((t) => t.id === params["id"])

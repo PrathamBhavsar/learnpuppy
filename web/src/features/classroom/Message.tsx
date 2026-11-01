@@ -79,7 +79,7 @@ export function Message({ message, verdict, animate }: MessageProps) {
   const rise = animate ? "lp-rise" : undefined
   const { role } = message
   const when =
-    message.createdAt === null ? undefined : formatTime(message.createdAt)
+    message.createdAt == null ? undefined : formatTime(message.createdAt)
 
   if (role === "compaction") {
     return (

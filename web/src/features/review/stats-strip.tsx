@@ -4,7 +4,7 @@ import { CountUp } from "@/components/app/count-up"
 import { useReducedMotion } from "@/hooks/use-reduced-motion"
 import { cn } from "@/lib/utils"
 
-import type { components } from "./schema"
+import type { components } from "@/api/schema"
 type ReviewStats = components["schemas"]["StatsDto"]
 
 type StatsStripProps = {

@@ -15,184 +15,58 @@ export type IngestReport = Schemas["IngestReport"]
 
 // ───────────────────────────── Workspaces ─────────────────────────────
 
-export type WorkspaceSources = {
-  claude: boolean
-  codex: boolean
-  agy: boolean
-  git: boolean
-  allow: string[]
-  sinceDays: number | null
-}
+export type WorkspaceSources = Schemas["SourcesDto"]
+export type WorkspaceStats = Schemas["WorkspaceStatsDto"]
+export type RoleProfile = Schemas["ProfileDto"]
+/** `GET /workspaces/{ws}` and every list entry (`stats` only in listings). */
+export type WorkspaceDetail = Schemas["WorkspaceDto"]
 
-export type WorkspaceStats = {
-  nodes: number
-  chains: number
-  chats: number
-  dueCards: number
-  lastActivityAt: number | null
-}
-
-/** `WorkspaceSummaryDto` plus what the list endpoint adds. */
-export type WorkspaceListItem = Schemas["WorkspaceSummaryDto"] & {
-  description: string
+/**
+ * What the Home grid shows: a listed workspace with stats filled in, or a `damaged` entry from the
+ * server's separate `damaged` array mapped into the same shape (`useWorkspaces` does the mapping).
+ */
+export type WorkspaceListItem = Omit<WorkspaceDetail, "stats"> & {
   stats: WorkspaceStats
   /** `workspace.json` is unreadable; only repair/reveal are offered. */
   damaged: boolean
+  /** Directory on disk, only for damaged entries (for "Reveal"). */
+  path?: string
+  damagedReason?: string
 }
 
-export type RoleProfile = {
-  provider: string
-  model: string
-  effort?: string | null
-  /** Let the account pool fall back to other providers. */
-  fallback?: boolean
-}
-
-export type WorkspaceDetail = WorkspaceListItem & {
-  createdAt: number
-  sources: WorkspaceSources
-  overrides: { profiles: Record<string, RoleProfile> }
-}
-
-export type CreateWorkspaceBody = {
-  name: string
-  icon: string
-  hue: string
-  description?: string
-  sources?: Partial<WorkspaceSources>
-}
-
-export type PatchWorkspaceBody = Partial<
-  Pick<WorkspaceDetail, "name" | "icon" | "hue" | "description">
-> & {
-  sources?: Partial<WorkspaceSources>
-  overrides?: { profiles: Record<string, RoleProfile> }
-}
-
-export type SearchHit = {
-  workspaceId: string
-  node: { id: string; text: string; kind: NodeKind }
-  score: number
-}
-
-export type TrashItem = {
-  id: string
-  workspaceId: string
-  name: string
-  deletedAt: number
-  sizeBytes: number
-}
+export type CreateWorkspaceBody = Schemas["CreateWorkspace"]
+export type PatchWorkspaceBody = Schemas["PatchWorkspace"]
+export type SearchHit = Schemas["SearchHitDto"]
+export type TrashItem = Schemas["TrashEntryDto"]
 
 // ───────────────────────────── Accounts / settings ─────────────────────────────
 
-export type AccountStatus = AccountSummary["status"]
+export type AccountStatus = Schemas["AccountStatus"]
 /** `AccountDto`: never carries tokens or credentials. */
-export type AccountDetail = AccountSummary & {
-  requests: number
-  tokensIn: number
-  tokensOut: number
-  /** The command that renews an expired login. */
-  reauthHint?: string | null
-}
-
-export type UiSettings = {
-  theme: "light" | "dark" | "system"
-  direction: "ltr" | "rtl" | "auto"
-  density: "comfortable" | "compact"
-  reduceMotion: boolean
-  confirmDestructive: boolean
-  autoOpenBrowser: boolean
-}
-
-export type SettingsDoc = {
-  /** Role → profile; roles without one are absent. */
-  profiles: Record<string, RoleProfile>
-  /** Role → `<provider>:auto` or an account id. */
-  pins: Record<string, string>
-  learningStyle: string
-  /** Parallel model calls, 1..=6. */
-  concurrencyCap: number
-  ui: UiSettings
-}
-
+export type AccountDetail = Schemas["AccountDto"]
+export type UiSettings = Schemas["UiSettingsDto"]
+export type SettingsDoc = Schemas["SettingsDto"]
 /** What the settings forms may offer. */
-export type SettingsCatalog = {
-  providers: { id: string; models: string[] }[]
-  efforts: string[]
-  roles: string[]
-  pinRoles: string[]
-  themes: string[]
-  directions: string[]
-  densities: string[]
-}
-
-/** `POST /settings/test`: a 1-token ping through the profile a role would use (docs/web/06 §Accounts). */
-export type ProfilePingBody = {
-  provider: string
-  model: string
-  effort?: string | null
-}
-export type ProfilePingResult = {
-  ok: boolean
-  latencyMs: number
-  message: string
-}
+export type SettingsCatalog = Schemas["CatalogDto"]
+export type ProfilePingBody = Schemas["ProfilePingBody"]
+export type ProfilePingResult = Schemas["ProfilePingResult"]
 
 // ───────────────────────────── Graph ─────────────────────────────
 
+/** Presentation-only node shapes; the wire carries no such kind, so every node renders as a claim. */
 export type NodeKind = "claim" | "concept" | "procedure" | "decision"
 export type NodeSource = "claude" | "codex" | "agy" | "git" | "chat"
-export type ChainKind = "supports" | "implies" | "contrasts" | "part_of"
+/** `implication` (one premise) or `conjunction` (several). */
+export type ChainKind = string
 
-export type GraphNode = {
-  id: string
-  text: string
-  kind: NodeKind
-  sessionId: string
-  provenance: NodeSource
-  createdAt: number
-  degree: number
-}
+export type GraphNode = Schemas["GraphNodeDto"]
+export type GraphChain = Schemas["GraphChainDto"]
+export type GraphCluster = Schemas["ClusterDto"]
+export type GraphSnapshot = Schemas["GraphDto"]
+export type NodeDetail = Schemas["NodeDetailDto"]
+export type DeletePreview = Schemas["DeletePreview"]
 
-export type GraphChain = {
-  id: string
-  from: string
-  to: string
-  kind: ChainKind
-  text?: string
-}
-
-export type GraphCluster = { id: string; label: string; nodeIds: string[] }
-
-export type GraphSnapshot = {
-  version: number
-  nodes: GraphNode[]
-  chains: GraphChain[]
-  clusters: GraphCluster[]
-  positions: Record<string, [number, number]> | null
-  layoutVersion: number
-  layoutPending?: boolean
-}
-
-export type NodeDetail = GraphNode & {
-  provenanceDetail: {
-    chatId: string | null
-    messageIndex: number | null
-    snippet: string
-  }
-  incoming: GraphChain[]
-  outgoing: GraphChain[]
-  related: { id: string; text: string; kind: NodeKind }[]
-  cards: { id: string; front: string; state: CardState }[]
-}
-
-export type DeletePreview = {
-  deleted: number
-  orphanedChains: number
-  blastRadius: { id: string; text: string; reason: string }[]
-  previewToken: string
-}
-
+/** One chain flattened for the table: its group (birth session of the conclusion) plus the edge. */
 export type ChainTableRow = {
   groupId: string
   groupLabel: string
@@ -238,12 +112,13 @@ export type ClassroomMessage = {
   calls: { id: string; name: string }[]
   /** For an answer: the question call it answers. */
   answersCallId?: string | null
-  createdAt: number | null
+  createdAt?: number | null
 }
 
 export type PendingQuestion = {
   callId: string
-  tool: PendingTool
+  /** A `PendingTool`; the wire types it as a plain string. */
+  tool: string
   prompt: string
   options?: { key: string; text: string }[] | null
   allowFreeText: boolean
@@ -252,7 +127,7 @@ export type PendingQuestion = {
   /** The answer value that means "I don't know" (options only). */
   idkKey?: string | null
   problem?: {
-    mode: ProblemMode
+    mode: string
     statement: string
     rungs?: string[] | null
   } | null
@@ -471,12 +346,7 @@ export type DecisionDetail = DigestDecision & {
 
 // ───────────────────────────── Ingest ─────────────────────────────
 
-export type IngestCandidate = {
-  path: string
-  sessions: number
-  lastSeen: number
-  source: NodeSource
-}
+export type IngestCandidate = Schemas["Candidate"]
 
 export type IngestRun = {
   id: string
@@ -485,24 +355,10 @@ export type IngestRun = {
   report: IngestReport
 }
 
-export type IngestSourcesBody = {
-  claude: boolean
-  codex: boolean
-  agy: boolean
-  git: boolean
-  /** Project directories whose sessions belong to this workspace; empty disables ingest. */
-  allow: string[]
-  sinceDays: number
-}
+export type IngestSourcesBody = Schemas["SourcesDto"]
 
 /** `IngestSources` on the wire. */
-export type IngestSourcesWire = {
-  sources: IngestSourcesBody
-  enabled: boolean
-  runningId?: string | null
-  candidates: IngestCandidate[]
-  warnings: { path: string; otherPath: string; workspaceId: string }[]
-}
+export type IngestSourcesWire = Schemas["IngestSources"]
 
 /**
  * What the screens read: the wire `IngestSources` flattened (`sources.*` next to `candidates`) with the

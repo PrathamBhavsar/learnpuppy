@@ -1,3 +1,4 @@
+import type { components } from "@/api/schema"
 import type {
   AccountDetail,
   ClassroomView,
@@ -5,11 +6,7 @@ import type {
   DigestDay,
   IngestRun,
   IngestSourcesWire,
-  ReviewStats,
   SettingsDoc,
-  TrashItem,
-  WorkspaceDetail,
-  WorkspaceListItem,
 } from "@/api/pending-types"
 
 import { chatFixtures, chatsForOtherWorkspaces } from "./fixtures/chats"
@@ -20,6 +17,7 @@ import { ingestFixtures } from "./fixtures/ingest"
 import { type CardFixture, cardFixtures, statsFor } from "./fixtures/review"
 import { settingsFixture } from "./fixtures/settings"
 import {
+  type MockWorkspace,
   WS_DESIGN,
   WS_DIST,
   WS_RUST,
@@ -32,8 +30,8 @@ export type MockDb = {
   latencyMs: number
   /** Stream assistant replies as chat.delta events (mock mode only). */
   simulateTurns: boolean
-  workspaces: Map<string, WorkspaceDetail>
-  trash: TrashItem[]
+  workspaces: Map<string, MockWorkspace>
+  trash: components["schemas"]["TrashEntryDto"][]
   graphs: Map<string, GraphFixture>
   chats: Map<string, ClassroomView[]>
   cards: Map<string, CardFixture[]>
@@ -101,19 +99,17 @@ function dueCount(ws: string): number {
 }
 
 /** Live stats derived from the stored graph/chats/cards so mutations show up in the lists. */
-export function listItem(ws: WorkspaceDetail): WorkspaceListItem {
+export function listItem(
+  ws: MockWorkspace
+): components["schemas"]["WorkspaceDto"] {
   const graph = state.db.graphs.get(ws.id)
   const chats = state.db.chats.get(ws.id) ?? []
+  const wire: Omit<MockWorkspace, "damaged"> & { damaged?: boolean } = {
+    ...ws,
+  }
+  delete wire.damaged // the wire has no such field; damaged workspaces are listed separately
   return {
-    id: ws.id,
-    name: ws.name,
-    slug: ws.slug,
-    icon: ws.icon,
-    hue: ws.hue,
-    archived: ws.archived,
-    lastOpenedAt: ws.lastOpenedAt,
-    description: ws.description,
-    damaged: ws.damaged,
+    ...wire,
     stats: {
       nodes: graph?.snapshot.nodes.length ?? ws.stats.nodes,
       chains: graph?.snapshot.chains.length ?? ws.stats.chains,
@@ -124,6 +120,6 @@ export function listItem(ws: WorkspaceDetail): WorkspaceListItem {
   }
 }
 
-export function reviewStats(ws: string): ReviewStats {
+export function reviewStats(ws: string): ReturnType<typeof statsFor> {
   return statsFor(state.db.cards.get(ws) ?? [], state.db.now)
 }

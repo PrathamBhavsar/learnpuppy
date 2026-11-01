@@ -13,6 +13,59 @@ import type {
   WorkspaceDetail,
   WorkspaceListItem,
 } from "../pending-types"
+import type { components } from "../schema"
+
+type WorkspaceListWire = components["schemas"]["WorkspaceListDto"]
+
+const NO_STATS = {
+  nodes: 0,
+  chains: 0,
+  chats: 0,
+  dueCards: 0,
+  lastActivityAt: null,
+} as const
+
+/** A readable workspace as the grid shows it (`stats` only comes with listings). */
+export function toListItem(w: WorkspaceDetail): WorkspaceListItem {
+  return { ...w, stats: w.stats ?? { ...NO_STATS }, damaged: false }
+}
+
+/**
+ * `GET /workspaces` answers `{items, damaged}`; the Home grid shows both in one list, so each
+ * `damaged` entry becomes a list item flagged `damaged` (Repair/Reveal only).
+ */
+export function toListItems(
+  wire: WorkspaceListWire,
+  archived = false
+): WorkspaceListItem[] {
+  const live = wire.items.map(toListItem)
+  // The server repeats `damaged` on the archived listing; show those once, with the live ones.
+  const broken = (archived ? [] : wire.damaged).map((d): WorkspaceListItem => ({
+    id: d.id,
+    name: d.id,
+    slug: d.id,
+    icon: "folder",
+    hue: "rose",
+    description: d.reason,
+    archived: false,
+    createdAt: 0,
+    lastOpenedAt: 0,
+    sources: {
+      claude: false,
+      codex: false,
+      agy: false,
+      git: false,
+      allow: [],
+      sinceDays: 0,
+    },
+    overrides: { profiles: {} },
+    stats: { ...NO_STATS },
+    damaged: true,
+    path: d.path,
+    damagedReason: d.reason,
+  }))
+  return [...live, ...broken]
+}
 
 export function useWorkspaces(archived = false) {
   return useQuery({
@@ -24,6 +77,7 @@ export function useWorkspaces(archived = false) {
           signal,
         })
       ),
+    select: (wire) => toListItems(wire, archived),
   })
 }
 
@@ -69,7 +123,7 @@ export function useUpdateWorkspace(ws: string) {
       ),
     onMutate: async (body) => {
       await qc.cancelQueries({ queryKey: keys.workspacesAll() })
-      const lists = qc.getQueriesData<WorkspaceListItem[]>({
+      const lists = qc.getQueriesData<WorkspaceListWire>({
         queryKey: keys.workspacesAll(),
       })
       const detail = qc.getQueryData<WorkspaceDetail>(keys.ws(ws).detail())
@@ -81,10 +135,12 @@ export function useUpdateWorkspace(ws: string) {
       )
       for (const [key, list] of lists) {
         if (list)
-          qc.setQueryData<WorkspaceListItem[]>(
-            key,
-            list.map((w) => (w.id === ws ? { ...w, ...patch } : w))
-          )
+          qc.setQueryData<WorkspaceListWire>(key, {
+            ...list,
+            items: list.items.map((w) =>
+              w.id === ws ? { ...w, ...patch } : w
+            ),
+          })
       }
       if (detail)
         qc.setQueryData<WorkspaceDetail>(keys.ws(ws).detail(), {
@@ -134,6 +190,7 @@ export function useTrash() {
     queryKey: keys.trash(),
     queryFn: async ({ signal }) =>
       unwrap(await pendingApi.GET("/trash", { signal })),
+    select: (wire) => wire.items,
   })
 }
 
@@ -177,6 +234,7 @@ export function useGlobalSearch(q: string, limit = 30) {
           signal,
         })
       ),
+    select: (wire) => wire.items,
   })
 }
 

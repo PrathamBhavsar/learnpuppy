@@ -1,30 +1,10 @@
-import { type Page, expect, test } from "@playwright/test"
+import { expect, test } from "@playwright/test"
 
 // Real server, scripted (faux) engine, seeded "small" fixture: Rust async is `ws_5eed0001` with one chat
 // at each phase. The faux engine has no script, so any turn that reaches the model ends in
 // `engine_unavailable`, which is exactly the error path the Classroom must handle.
 const WS = "ws_5eed0001"
 const LEARN = `/w/${WS}/learn`
-
-/**
- * The shell's list queries still expect bare arrays where the server sends `{items}`; adapt just those
- * two so the Learn screens can be exercised against the real API. Drop this once the shell reads the wire shape.
- */
-async function adaptShell(page: Page) {
-  await page.route(
-    /\/api\/v1\/(workspaces|accounts)(\?.*)?$/,
-    async (route) => {
-      if (route.request().method() !== "GET") return route.continue()
-      const response = await route.fetch()
-      const json = (await response.json()) as { items?: unknown }
-      await route.fulfill({ response, json: json.items ?? json })
-    }
-  )
-}
-
-test.beforeEach(async ({ page }) => {
-  await adaptShell(page)
-})
 
 test("lists the seeded chats with the server's phase and pending flags", async ({
   page,

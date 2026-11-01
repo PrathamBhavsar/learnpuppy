@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest"
 
-import type { AnswerResult, Rating, ReviewCard } from "@/api/pending-types"
+import type { Rating, ReviewCard } from "@/api/pending-types"
 
+import type { AnswerResult } from "./api"
 import {
   type SessionState,
   gradedCount,
@@ -26,6 +27,7 @@ const result = (rating: Rating, correct = true): AnswerResult => ({
   rating,
   next: { due: 1000 * rating, intervalDays: rating },
   preview: { again: 0.001, hard: 1, good: 3, easy: 8 },
+  previewItems: [],
 })
 
 const started = (...ids: string[]): SessionState =>

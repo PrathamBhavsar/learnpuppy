@@ -103,9 +103,34 @@ pub struct ApiDoc;
 pub fn document_json() -> serde_json::Result<String> {
     let mut doc = ApiDoc::openapi();
     doc.info.version = crate::app::VERSION.to_owned();
-    let mut s = serde_json::to_string_pretty(&doc)?;
+    let mut value = serde_json::to_value(&doc)?;
+    unique_operation_ids(&mut value);
+    let mut s = serde_json::to_string_pretty(&value)?;
     s.push('\n');
     Ok(s)
+}
+
+/// utoipa names operations after their handler (`list`, `create`, ...), which collide across modules and
+/// break client generators; `get_workspaces_ws_chats` is unique by construction.
+fn unique_operation_ids(doc: &mut serde_json::Value) {
+    let Some(paths) = doc["paths"].as_object_mut() else {
+        return;
+    };
+    for (path, item) in paths {
+        let slug: String = path
+            .split(|c: char| !c.is_ascii_alphanumeric())
+            .filter(|s| !s.is_empty())
+            .collect::<Vec<_>>()
+            .join("_");
+        let Some(methods) = item.as_object_mut() else {
+            continue;
+        };
+        for (method, op) in methods {
+            if let Some(op) = op.as_object_mut() {
+                op.insert("operationId".into(), format!("{method}_{slug}").into());
+            }
+        }
+    }
 }
 
 #[cfg(test)]

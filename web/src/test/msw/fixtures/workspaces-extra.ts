@@ -1,12 +1,15 @@
-import type { TrashItem, WorkspaceDetail } from "@/api/pending-types"
+import type { components } from "@/api/schema"
 
 import { DAY } from "./rng"
+import type { MockWorkspace } from "./workspaces"
+
+type TrashEntry = components["schemas"]["TrashEntryDto"]
 
 /** A damaged workspace only exists when a test or the dev-sandbox keeps it in the db. */
 export const WS_DAMAGED = "ws_recovered"
 
 /** `workspace.json` is unreadable: the card offers Repair and Reveal path (docs/web/02). */
-export function damagedWorkspace(now: number): WorkspaceDetail {
+export function damagedWorkspace(now: number): MockWorkspace {
   return {
     id: WS_DAMAGED,
     name: "Recovered",
@@ -38,21 +41,21 @@ export function damagedWorkspace(now: number): WorkspaceDetail {
 }
 
 /** Deleted workspaces as the trash page lists them: one to restore, one to purge. */
-export function trashFixtures(now: number): TrashItem[] {
+export function trashFixtures(now: number): TrashEntry[] {
   return [
     {
       id: "trash_ws_old1",
       workspaceId: "ws_compilers",
       name: "Compilers course",
       deletedAt: now - 2 * DAY,
-      sizeBytes: Math.round(4.6 * 1_048_576),
+      bytes: Math.round(4.6 * 1_048_576),
     },
     {
       id: "trash_ws_old2",
       workspaceId: "ws_scratch",
       name: "Scratch pad",
       deletedAt: now - 6 * DAY,
-      sizeBytes: 1_800_000,
+      bytes: 1_800_000,
     },
   ]
 }

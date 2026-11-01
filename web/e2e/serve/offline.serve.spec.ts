@@ -6,14 +6,6 @@ const WS = "ws_5eed0001"
 test("aborting the SSE stream shows the banner, restoring it recovers", async ({
   page,
 }) => {
-  await page.route(
-    /\/api\/v1\/(workspaces|accounts)(\?.*)?$/,
-    async (route) => {
-      const response = await route.fetch()
-      const json = (await response.json()) as { items?: unknown }
-      await route.fulfill({ response, json: json.items ?? json })
-    }
-  )
   await page.goto(`/w/${WS}/learn`)
   await expect(page.getByTestId("chat-item-chat_teach")).toBeVisible()
   await page.route("**/api/v1/events*", (r) => r.abort())
