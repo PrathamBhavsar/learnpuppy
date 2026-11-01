@@ -34,9 +34,13 @@ export function toListItem(w: WorkspaceDetail): WorkspaceListItem {
  * `GET /workspaces` answers `{items, damaged}`; the Home grid shows both in one list, so each
  * `damaged` entry becomes a list item flagged `damaged` (Repair/Reveal only).
  */
-export function toListItems(wire: WorkspaceListWire): WorkspaceListItem[] {
+export function toListItems(
+  wire: WorkspaceListWire,
+  archived = false
+): WorkspaceListItem[] {
   const live = wire.items.map(toListItem)
-  const broken = wire.damaged.map((d): WorkspaceListItem => ({
+  // The server repeats `damaged` on the archived listing; show those once, with the live ones.
+  const broken = (archived ? [] : wire.damaged).map((d): WorkspaceListItem => ({
     id: d.id,
     name: d.id,
     slug: d.id,
@@ -73,7 +77,7 @@ export function useWorkspaces(archived = false) {
           signal,
         })
       ),
-    select: toListItems,
+    select: (wire) => toListItems(wire, archived),
   })
 }
 
