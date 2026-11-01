@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 
-import { pendingApi, unwrap } from "../client"
+import { diagnosticsApi, pendingApi, unwrap } from "../client"
 import { keys } from "../keys"
 import type { ProfilePingBody, SettingsDoc } from "../pending-types"
 
@@ -35,7 +35,7 @@ export function useSaveSettings() {
 
 export function useDiagnostics() {
   return useMutation({
-    mutationFn: async () => unwrap(await pendingApi.POST("/diagnostics")),
+    mutationFn: async () => unwrap(await diagnosticsApi.POST("/diagnostics")),
   })
 }
 

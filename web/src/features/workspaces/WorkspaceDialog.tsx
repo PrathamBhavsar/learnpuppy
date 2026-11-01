@@ -5,6 +5,7 @@ import { useForm, useWatch } from "react-hook-form"
 import { toApiError } from "@/api/errors"
 import type { WorkspaceListItem } from "@/api/pending-types"
 import {
+  toListItem,
   useCreateWorkspace,
   useUpdateWorkspace,
 } from "@/api/queries/workspaces"
@@ -191,7 +192,7 @@ export function WorkspaceForm({
       } else {
         const created = await create.mutateAsync(body)
         toastSuccess(`Created ${created.name}`)
-        onDone(created)
+        onDone(toListItem(created))
       }
     } catch (error) {
       const api = toApiError(error)

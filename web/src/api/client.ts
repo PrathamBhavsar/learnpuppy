@@ -1,6 +1,7 @@
 import createClient, { type Middleware } from "openapi-fetch"
 
 import { errorFromResponse, toApiError } from "./errors"
+import type { PendingPaths } from "./pending-types"
 import type { paths } from "./schema"
 
 export const API_PREFIX = "/api/v1"
@@ -43,6 +44,9 @@ export const api = make<paths>()
 
 /** Endpoints from docs/web/03 that `openapi.json` does not contain yet (see pending-types.ts). */
 export const pendingApi = make<paths>()
+
+/** `POST /diagnostics` is in docs/web/03 but the server does not implement it yet; callers fall back locally. */
+export const diagnosticsApi = make<Pick<PendingPaths, "/diagnostics">>()
 
 /** Result of a call that either has a body or rejected with `ApiError`. */
 export function unwrap<T>(result: { data?: T | undefined }): T {

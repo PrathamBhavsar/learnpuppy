@@ -189,7 +189,9 @@ export function WorkspaceCard({
       )}
       <div className="mt-auto flex items-center justify-between gap-2 pt-1 text-[11px] text-muted-foreground">
         <bdi data-testid={`workspace-activity-${id}`}>
-          {damaged ? "Needs repair" : relativeTime(stats.lastActivityAt)}
+          {damaged
+            ? "Needs repair"
+            : relativeTime(stats.lastActivityAt ?? null)}
         </bdi>
         <span className="flex items-center gap-1.5">
           {archived ? <Badge variant="outline">Archived</Badge> : null}

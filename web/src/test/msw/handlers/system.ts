@@ -71,13 +71,22 @@ export const systemHandlers = [
         if (q && at >= 0) {
           hits.push({
             workspaceId,
-            node: { id: node.id, text: node.text, kind: node.kind },
+            node: {
+              id: node.id,
+              name: node.text.slice(0, 60),
+              text: node.text,
+              kind: node.kind,
+            },
             score: 1 / (1 + at),
+            workspaceName: ws.name,
           })
         }
       }
     }
     hits.sort((a, b) => b.score - a.score)
-    return HttpResponse.json(hits.slice(0, limit))
+    return HttpResponse.json({
+      items: hits.slice(0, limit),
+      timedOut: [],
+    } satisfies components["schemas"]["SearchDto"])
   }),
 ]

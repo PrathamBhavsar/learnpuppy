@@ -3,9 +3,9 @@ import userEvent from "@testing-library/user-event"
 import { HttpResponse, delay, http } from "msw"
 import { beforeEach, describe, expect, it } from "vitest"
 
-import type { WorkspaceDetail } from "@/api/pending-types"
 import { FakeEventSource } from "@/test/fake-event-source"
-import { state } from "@/test/msw/db"
+import { listItem, state } from "@/test/msw/db"
+import type { MockWorkspace } from "@/test/msw/fixtures/workspaces"
 import {
   WS_DAMAGED,
   damagedWorkspace,
@@ -43,7 +43,7 @@ describe("home: five states", () => {
     server.use(
       http.get(`${API}/workspaces`, async () => {
         await delay(150)
-        return HttpResponse.json([])
+        return HttpResponse.json({ items: [], damaged: [] })
       })
     )
     await openHome()
@@ -114,7 +114,7 @@ describe("home: five states", () => {
           new URL(request.url).searchParams.get("archived") !== "true"
         )
           return apiError("internal", "Disk exploded")
-        return HttpResponse.json([])
+        return HttpResponse.json({ items: [], damaged: [] })
       })
     )
     await openHome()
@@ -138,13 +138,13 @@ describe("home: five states", () => {
     server.use(
       http.post(`${API}/workspaces/${WS_DAMAGED}/repair`, () => {
         repaired = true
-        const ws: WorkspaceDetail = {
+        const ws: MockWorkspace = {
           ...damaged,
           damaged: false,
           name: "Recovered",
         }
         state.db.workspaces.set(ws.id, ws)
-        return HttpResponse.json(ws)
+        return HttpResponse.json(listItem(ws))
       })
     )
     const user = userEvent.setup()
@@ -460,11 +460,13 @@ describe("trash", () => {
       http.post(`${API}/trash/:id/restore`, ({ params }) => {
         const index = state.db.trash.findIndex((t) => t.id === params["id"])
         const [item] = state.db.trash.splice(index, 1)
-        return HttpResponse.json({
-          ...damagedWorkspace(state.db.now),
-          damaged: false,
-          name: item?.name ?? "",
-        })
+        return HttpResponse.json(
+          listItem({
+            ...damagedWorkspace(state.db.now),
+            damaged: false,
+            name: item?.name ?? "",
+          })
+        )
       })
     )
     const user = userEvent.setup()
