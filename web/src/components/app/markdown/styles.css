@@ -1,0 +1,75 @@
+/* Highlighted code: one set of CSS variables per theme (shiki `defaultColor: false`). */
+.lp-shiki pre {
+  margin: 0;
+  background: transparent !important;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.5;
+}
+.lp-shiki .shiki span {
+  color: var(--shiki-light);
+}
+.dark .lp-shiki .shiki span {
+  color: var(--shiki-dark);
+}
+
+/* Prose */
+.lp-prose {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.lp-prose pre,
+.lp-prose pre code {
+  white-space: pre;
+  overflow-wrap: normal;
+  word-break: normal;
+  tab-size: 4;
+}
+.lp-prose > :first-child {
+  margin-block-start: 0;
+}
+.lp-prose > :last-child {
+  margin-block-end: 0;
+}
+.lp-prose p,
+.lp-prose ul,
+.lp-prose ol,
+.lp-prose blockquote {
+  margin-block: 0.6em;
+}
+.lp-prose ul {
+  list-style: disc;
+  padding-inline-start: 1.4em;
+}
+.lp-prose ol {
+  list-style: decimal;
+  padding-inline-start: 1.4em;
+}
+.lp-prose blockquote {
+  border-inline-start: 2px solid var(--border);
+  padding-inline-start: 0.8em;
+  color: var(--muted-foreground);
+}
+.lp-prose h1,
+.lp-prose h2,
+.lp-prose h3,
+.lp-prose h4 {
+  margin-block: 0.9em 0.4em;
+  font-family: var(--font-heading);
+  font-weight: 500;
+  line-height: 1.2;
+}
+.lp-prose h1 {
+  font-size: 20px;
+}
+.lp-prose h2 {
+  font-size: 16px;
+}
+.lp-prose h3,
+.lp-prose h4 {
+  font-size: 14px;
+}
+.lp-prose .katex-display {
+  overflow-x: auto;
+  overflow-y: hidden;
+}

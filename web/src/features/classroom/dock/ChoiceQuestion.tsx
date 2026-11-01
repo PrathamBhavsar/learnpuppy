@@ -1,3 +1,4 @@
+import { useDraft } from "./drafts"
 import { SendIcon } from "lucide-react"
 import { useState } from "react"
 
@@ -15,7 +16,7 @@ import { OptionList } from "./OptionList"
 type ChoiceQuestionProps = {
   pending: PendingQuestion
   busy: boolean
-  onSubmit: (answer: AnswerInput) => void
+  onSubmit: (answer: AnswerInput) => void | Promise<void>
 }
 
 /** Quiz, option-style probes and `ask_user_question` with options. Keys a-d / 1-9 pick, Enter submits. */
@@ -28,7 +29,7 @@ export function ChoiceQuestion({
   const idk = pending.idkKey ?? null
   const scale = pending.confidenceScale ?? null
   const [picked, setPicked] = useState<string[]>([])
-  const [text, setText] = useState("")
+  const { text, setText, submit: submitDraft } = useDraft(pending.callId)
   const [confidence, setConfidence] = useState(3)
 
   const toggle = (key: string) =>
@@ -43,12 +44,21 @@ export function ChoiceQuestion({
     (picked.length > 0 || (pending.allowFreeText && text.trim() !== ""))
   const submit = () => {
     if (!canSubmit) return
-    onSubmit({
-      choice: picked,
-      text: text.trim() || undefined,
-      confidence: scale === null ? undefined : confidence,
-    })
+    void submitDraft(() =>
+      onSubmit({
+        choice: picked,
+        text: text.trim() || undefined,
+        confidence: scale === null ? undefined : confidence,
+      })
+    )
   }
+
+  useHotkey("mod+enter", submit, {
+    id: "answer-submit",
+    label: "Submit answer",
+    group: "Learn",
+    enabled: canSubmit,
+  })
 
   // Enter submits unless it is already activating a button (Submit, "I don't know").
   useHotkey(
@@ -118,7 +128,11 @@ export function ChoiceQuestion({
           value={text}
           onChange={(event) => setText(event.target.value)}
           onKeyDown={(event) => {
-            if (event.key === "Enter" && !event.shiftKey) {
+            if (
+              event.key === "Enter" &&
+              !event.shiftKey &&
+              !event.nativeEvent.isComposing
+            ) {
               event.preventDefault()
               submit()
             }
@@ -140,7 +154,7 @@ export function ChoiceQuestion({
           disabled={busy}
         />
       ) : null}
-      <div className="flex justify-end">
+      <div className="sticky bottom-0 z-10 flex justify-end bg-card py-2">
         <Button
           onClick={submit}
           disabled={!canSubmit}

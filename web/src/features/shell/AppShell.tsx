@@ -2,6 +2,7 @@ import { Outlet, useParams, useRouterState } from "@tanstack/react-router"
 import { motion } from "motion/react"
 import { useEffect, useRef, useState } from "react"
 
+import { ResponsiveSidebar } from "@/components/app/responsive-sidebar"
 import { useHotkey } from "@/hooks/use-hotkey"
 import { useShellHotkeys } from "@/hooks/use-shell-hotkeys"
 import { useActiveWorkspace } from "@/hooks/use-workspace"
@@ -66,12 +67,14 @@ export function AppShell() {
       >
         Skip to content
       </a>
-      <Sidebar
-        workspaceId={active.id ?? ""}
-        workspace={active.workspace}
-        collapsed={collapsed}
-        onToggle={toggleSidebar}
-      />
+      <ResponsiveSidebar>
+        <Sidebar
+          workspaceId={active.id ?? ""}
+          workspace={active.workspace}
+          collapsed={collapsed}
+          onToggle={toggleSidebar}
+        />
+      </ResponsiveSidebar>
       <div className="flex min-w-0 flex-1 flex-col">
         <Topbar workspace={active.workspace} />
         <ConnectionBanner />

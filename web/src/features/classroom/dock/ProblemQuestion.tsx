@@ -1,5 +1,7 @@
+import { useDraft } from "./drafts"
 import { LightbulbIcon, SendIcon } from "lucide-react"
 import { useState } from "react"
+import { useHotkey } from "@/hooks/use-hotkey"
 
 import type { AnswerInput, PendingQuestion } from "@/api/pending-types"
 import { InfoTip } from "@/components/app/info/info"
@@ -14,7 +16,7 @@ import { LazyMarkdown } from "../markdown/LazyMarkdown"
 type ProblemQuestionProps = {
   pending: PendingQuestion
   busy: boolean
-  onSubmit: (answer: AnswerInput) => void
+  onSubmit: (answer: AnswerInput) => void | Promise<void>
 }
 
 const MODE_LABEL: Record<string, string> = {
@@ -30,10 +32,19 @@ export function ProblemQuestion({
   onSubmit,
 }: ProblemQuestionProps) {
   const problem = pending.problem
-  const [text, setText] = useState("")
+  const { text, setText, submit: submitDraft } = useDraft(pending.callId)
   const [hints, setHints] = useState(0)
   const rungs = problem?.rungs ?? []
   const canSubmit = !busy && text.trim() !== ""
+  const submit = () => {
+    if (canSubmit) void submitDraft(() => onSubmit({ text: text.trim() }))
+  }
+  useHotkey("mod+enter", submit, {
+    id: "answer-submit",
+    label: "Submit answer",
+    group: "Learn",
+    enabled: canSubmit,
+  })
   return (
     <div className="flex flex-col gap-3">
       {problem ? (
@@ -55,8 +66,10 @@ export function ProblemQuestion({
               <span className="me-1.5 text-muted-foreground tabular-nums">
                 Hint {index + 1}.
               </span>
-              {rungs[index] ??
-                "Requested. The tutor answers in the conversation."}
+              <LazyMarkdown>
+                {rungs[index] ??
+                  "Requested. The tutor answers in the conversation."}
+              </LazyMarkdown>
             </li>
           ))}
         </ol>
@@ -73,7 +86,7 @@ export function ProblemQuestion({
         data-testid="problem-text"
         className="max-h-64 min-h-28 font-mono"
       />
-      <div className="flex items-center justify-between gap-2">
+      <div className="sticky bottom-0 z-10 flex items-center justify-between gap-2 bg-card py-2">
         <div className="flex items-center gap-1.5">
           <Button
             type="button"
@@ -81,7 +94,11 @@ export function ProblemQuestion({
             disabled={busy || (rungs.length > 0 && hints >= rungs.length)}
             onClick={() => {
               setHints((n) => n + 1)
-              onSubmit({ hint: true, text: text.trim() || undefined })
+              void Promise.resolve(
+                onSubmit({ hint: true, text: text.trim() || undefined })
+              ).catch(() => {
+                // The caller presents the error; requesting a hint never clears the draft.
+              })
             }}
             data-testid="problem-hint"
           >
@@ -91,7 +108,7 @@ export function ProblemQuestion({
           <InfoTip info={classroomInfo.hints} />
         </div>
         <Button
-          onClick={() => canSubmit && onSubmit({ text: text.trim() })}
+          onClick={submit}
           disabled={!canSubmit}
           data-testid="problem-submit"
         >

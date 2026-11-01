@@ -108,8 +108,8 @@ export function registerShortcut(
 function allowed(entry: Entry, event: KeyboardEvent): boolean {
   if (!entry.enabled.current) return false
   const allowInInput = entry.allowInInput ?? entry.keys.includes("mod")
-  // Plain keys belong to an open info dialog, never to the screen behind it.
-  if (!entry.keys.includes("mod") && inDialog(event.target)) return false
+  // The dialog owns keys while help is open.
+  if (inDialog(event.target)) return false
   return allowInInput || !isEditable(event.target)
 }
 
@@ -119,7 +119,7 @@ function fire(entry: Entry, event: KeyboardEvent) {
 }
 
 function onKeyDown(event: KeyboardEvent): void {
-  if (event.repeat || event.defaultPrevented) return
+  if (event.repeat || event.defaultPrevented || event.isComposing) return
   const now = Date.now()
   const chord = pending && now - pending.at <= CHORD_WINDOW_MS ? pending : null
   pending = null

@@ -49,7 +49,7 @@ export function MessageList({ chatId, view }: MessageListProps) {
       >
         <div
           ref={contentRef}
-          className="mx-auto flex max-w-3xl flex-col gap-4 px-4 py-4"
+          className="mx-auto flex w-full max-w-[72ch] flex-col gap-4 px-4 py-4"
         >
           {view.messages.map((message) => (
             <Message

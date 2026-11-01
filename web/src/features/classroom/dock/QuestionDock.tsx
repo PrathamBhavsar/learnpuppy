@@ -13,7 +13,7 @@ type QuestionDockProps = {
   pending: PendingQuestion
   probe: { asked: number; max: number }
   busy: boolean
-  onSubmit: (answer: AnswerInput) => void
+  onSubmit: (answer: AnswerInput) => void | Promise<void>
 }
 
 const TOOL_NAME: Record<string, string> = {
@@ -39,7 +39,7 @@ export function QuestionDock({
       data-testid="question-dock"
       data-tool={pending.tool}
       data-call-id={pending.callId}
-      className="lp-dock-in mx-auto flex max-h-[55%] w-full max-w-3xl shrink-0 flex-col gap-3 overflow-y-auto border-t bg-card px-4 py-3"
+      className="lp-dock-in mx-auto flex max-h-[55dvh] w-full max-w-3xl shrink-0 flex-col gap-3 overflow-y-auto overscroll-contain border-t bg-card px-4 py-3"
     >
       <div className="flex items-center justify-between gap-3">
         <div className="flex items-center gap-1.5">

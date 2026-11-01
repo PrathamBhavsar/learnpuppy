@@ -165,7 +165,8 @@ describe("QuestionDock: free-text tools", () => {
       text: "depends",
       confidence: undefined,
     })
-    await user.type(screen.getByTestId("probe-text"), "{Enter}")
+    expect(screen.getByTestId("probe-text")).toHaveValue("")
+    await user.type(screen.getByTestId("probe-text"), "another answer{Enter}")
     expect(onSubmit).toHaveBeenCalledTimes(2)
   })
 

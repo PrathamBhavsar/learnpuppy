@@ -6,17 +6,19 @@ import { Button } from "@/components/ui/button"
 import { Spinner } from "@/components/ui/spinner"
 import { Textarea } from "@/components/ui/textarea"
 import { Toggle } from "@/components/ui/toggle"
+import { useHotkey } from "@/hooks/use-hotkey"
 
 import { COPY } from "./copy"
 import { classroomInfo } from "./info"
+import { useDraft } from "./dock/drafts"
 
 type ComposerProps = {
   running: boolean
   sending: boolean
   stopping: boolean
   attaching: boolean
-  onSend: (text: string) => void
-  onSteer: (text: string) => void
+  onSend: (text: string) => void | Promise<void>
+  onSteer: (text: string) => void | Promise<void>
   onStop: () => void
   onAttach: (file: File) => void
 }
@@ -35,8 +37,9 @@ export function Composer({
   onStop,
   onAttach,
 }: ComposerProps) {
-  const [text, setText] = useState("")
+  const { text, setText, submit: submitDraft } = useDraft()
   const [steer, setSteer] = useState(false)
+  const [attachmentError, setAttachmentError] = useState<string | null>(null)
   const fileRef = useRef<HTMLInputElement>(null)
   const editable = !running || steer
   const canSend = editable && text.trim() !== "" && !sending
@@ -65,10 +68,15 @@ export function Composer({
   const submit = () => {
     if (!canSend) return
     const value = text.trim()
-    setText("")
-    if (running) onSteer(value)
-    else onSend(value)
+    void submitDraft(() => (running ? onSteer(value) : onSend(value)))
   }
+
+  useHotkey("mod+enter", submit, {
+    id: "composer-submit",
+    label: "Send message",
+    group: "Learn",
+    enabled: canSend,
+  })
 
   return (
     <div
@@ -114,7 +122,12 @@ export function Composer({
             onChange={(event) => {
               const file = event.target.files?.[0]
               event.target.value = ""
-              if (file) onAttach(file)
+              setAttachmentError(null)
+              if (file && file.size > 40 * 1024 * 1024) {
+                setAttachmentError(
+                  "This PDF is over 40 MB. Split it into smaller page ranges or compress scanned images, then attach it again."
+                )
+              } else if (file) onAttach(file)
             }}
           />
           <Button
@@ -183,6 +196,11 @@ export function Composer({
           ) : null}
         </div>
       </div>
+      {attachmentError ? (
+        <p role="alert" className="text-[13px] text-destructive">
+          {attachmentError}
+        </p>
+      ) : null}
     </div>
   )
 }

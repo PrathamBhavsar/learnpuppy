@@ -223,9 +223,10 @@ export function ReviewCardView({
                 {correct ? "Correct" : "Not quite"}
                 <InfoTip info={reviewInfo.verdict} />
               </p>
-              <p dir="auto" className="text-[13px] text-muted-foreground">
-                {result.explanation}
-              </p>
+              <PromptMarkdown
+                source={result.explanation}
+                className="text-[13px] text-muted-foreground"
+              />
             </div>
           </div>
 

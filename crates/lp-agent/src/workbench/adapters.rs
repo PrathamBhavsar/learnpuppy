@@ -2,8 +2,8 @@
 
 use std::io::Read;
 use std::net::{IpAddr, SocketAddr};
-use std::path::Path;
 use std::process::{Command, Stdio};
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
@@ -18,6 +18,8 @@ const MAX_REDIRECTS: usize = 4;
 const MAX_HITS: usize = 20;
 const PDF_TIMEOUT: Duration = Duration::from_secs(30);
 const MAX_PDF_BYTES: u64 = 8 << 20;
+const MAX_PDF_INPUT_BYTES: u64 = 40 << 20;
+const PDF_STALL_TIMEOUT: Duration = Duration::from_secs(10);
 
 /// Search through DuckDuckGo's HTML endpoint and fetch pages over http(s).
 ///
@@ -235,55 +237,160 @@ fn target(href: &str) -> String {
 /// Extracts page text with the `pdftotext` binary (poppler), one string per page.
 pub struct PdftotextPdf;
 
+fn pdf_path(path: &str) -> Result<String, String> {
+    let meta = std::fs::metadata(path).map_err(|e| format!("Cannot open PDF: {e}"))?;
+    if !meta.is_file() {
+        return Err(format!("{path} is not a file"));
+    }
+    if meta.len() > MAX_PDF_INPUT_BYTES {
+        return Err("This PDF exceeds 40 MiB. Split or compress it first; scanned PDFs may need OCR before reading.".into());
+    }
+    // A leading `-` must not be read as an option.
+    Ok(if path.starts_with('-') {
+        format!("./{path}")
+    } else {
+        path.to_owned()
+    })
+}
+
+fn pdf_command(
+    command: &mut Command,
+    timeout: Duration,
+    stall: Duration,
+) -> Result<Vec<u8>, String> {
+    let mut child = command
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .map_err(|e| format!("Poppler (pdfinfo and pdftotext) is required to read PDFs: {e}"))?;
+    let mut out = child.stdout.take().ok_or("PDF extractor gave no output")?;
+    let activity = Arc::new(Mutex::new(Instant::now()));
+    let clock = activity.clone();
+    let (tx, rx) = std::sync::mpsc::sync_channel(1);
+    std::thread::spawn(move || {
+        let result = (|| {
+            let mut buf = Vec::new();
+            let mut chunk = [0; 8192];
+            loop {
+                let n = out.read(&mut chunk).map_err(|e| e.to_string())?;
+                if n == 0 {
+                    break;
+                }
+                if let Ok(mut last) = clock.lock() {
+                    *last = Instant::now();
+                }
+                if buf.len() + n > MAX_PDF_BYTES as usize {
+                    return Err(
+                        "PDF page range produced too much text; request fewer pages".to_owned()
+                    );
+                }
+                buf.extend_from_slice(&chunk[..n]);
+            }
+            Ok(buf)
+        })();
+        let _ = tx.send(result);
+    });
+    let start = Instant::now();
+    let result = loop {
+        match rx.try_recv() {
+            Ok(Err(e)) => break Err(e),
+            Ok(Ok(buf)) => {
+                // EOF can precede process exit; keep watching the same deadline.
+                loop {
+                    match child.try_wait() {
+                        Ok(Some(_)) => break,
+                        Ok(None)
+                            if start.elapsed() < timeout
+                                && activity.lock().is_ok_and(|last| last.elapsed() < stall) =>
+                        {
+                            std::thread::sleep(Duration::from_millis(20))
+                        }
+                        Ok(None) => break,
+                        Err(e) => {
+                            let _ = child.kill();
+                            let _ = child.wait();
+                            return Err(e.to_string());
+                        }
+                    }
+                }
+                break match child.try_wait() {
+                    Ok(Some(status)) if status.success() => Ok(buf),
+                    Ok(Some(_)) => Err(
+                        "PDF extraction failed; check the file is readable and not encrypted"
+                            .into(),
+                    ),
+                    _ => Err("PDF extraction timed out; try a smaller page range".into()),
+                };
+            }
+            Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                break Err("PDF extractor reader stopped".into())
+            }
+            Err(std::sync::mpsc::TryRecvError::Empty) => {}
+        }
+        if start.elapsed() >= timeout {
+            break Err("PDF extraction timed out; try a smaller page range".into());
+        }
+        if activity.lock().map_or(true, |last| last.elapsed() >= stall) {
+            break Err("PDF extraction stalled without progress; try a smaller page range or OCR a scanned PDF".into());
+        }
+        std::thread::sleep(Duration::from_millis(20));
+    };
+    let _ = child.kill();
+    let _ = child.wait();
+    result
+}
+
 impl Pdf for PdftotextPdf {
     fn pages(&self, path: &str) -> Result<Vec<String>, String> {
-        if !Path::new(path).is_file() {
-            return Err(format!("{path} is not a file"));
+        self.page_range(path, 1, super::jobs::MAX_PDF_PAGES_PER_READ)
+    }
+
+    fn page_count(&self, path: &str) -> Result<usize, String> {
+        let arg = pdf_path(path)?;
+        let buf = pdf_command(
+            Command::new("pdfinfo").env("LC_ALL", "C").arg(arg),
+            PDF_TIMEOUT,
+            PDF_STALL_TIMEOUT,
+        )?;
+        String::from_utf8_lossy(&buf)
+            .lines()
+            .find_map(|line| {
+                line.strip_prefix("Pages:")
+                    .and_then(|n| n.trim().parse().ok())
+            })
+            .filter(|n| *n > 0)
+            .ok_or_else(|| "Cannot determine PDF page count".into())
+    }
+
+    fn page_range(&self, path: &str, first: usize, last: usize) -> Result<Vec<String>, String> {
+        if first == 0 || last < first || last - first >= super::jobs::MAX_PDF_PAGES_PER_READ {
+            return Err("Read 1 to 10 PDF pages at a time, using 1-based page numbers".into());
         }
-        // A leading `-` must not be read as an option.
-        let arg = if path.starts_with('-') {
-            format!("./{path}")
-        } else {
-            path.to_owned()
-        };
-        let mut child = Command::new("pdftotext")
-            .args([&arg, "-"])
-            .stdin(Stdio::null())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::null())
-            .spawn()
-            .map_err(|e| format!("pdftotext is required to read PDFs: {e}"))?;
-        let mut out = child.stdout.take().ok_or("pdftotext gave no output")?;
-        // Reader thread so a full pipe never blocks the child while we watch the clock.
-        let reader = std::thread::spawn(move || {
-            let mut buf = Vec::new();
-            let _ = (&mut out).take(MAX_PDF_BYTES).read_to_end(&mut buf);
-            // Keep draining so the child can exit instead of blocking on a full pipe.
-            let _ = std::io::copy(&mut out, &mut std::io::sink());
-            buf
-        });
-        let start = Instant::now();
-        let status = loop {
-            match child.try_wait().map_err(|e| e.to_string())? {
-                Some(s) => break s,
-                None if start.elapsed() > PDF_TIMEOUT => {
-                    let _ = child.kill();
-                    let _ = child.wait();
-                    return Err(format!("pdftotext timed out after {PDF_TIMEOUT:?}"));
-                }
-                None => std::thread::sleep(Duration::from_millis(20)),
-            }
-        };
-        let buf = reader.join().map_err(|_| "pdftotext reader panicked")?;
-        if !status.success() {
-            return Err(format!("pdftotext failed on {path}"));
-        }
+        let arg = pdf_path(path)?;
+        let buf = pdf_command(
+            Command::new("pdftotext").args([
+                "-f",
+                &first.to_string(),
+                "-l",
+                &last.to_string(),
+                &arg,
+                "-",
+            ]),
+            PDF_TIMEOUT,
+            PDF_STALL_TIMEOUT,
+        )?;
         let mut pages: Vec<String> = String::from_utf8_lossy(&buf)
             .split('\x0c')
             .map(str::to_owned)
             .collect();
         if pages.last().is_some_and(|p| p.trim().is_empty()) {
             pages.pop();
+        }
+        if pages.iter().all(|p| p.trim().is_empty()) {
+            return Err(
+                "No text found in this PDF range. Scanned pages need OCR before reading.".into(),
+            );
         }
         Ok(pages)
     }
@@ -454,23 +561,94 @@ mod tests {
         assert_eq!(pages.len(), 2);
         assert!(pages[0].contains("alpha") && pages[1].contains("beta"));
         assert!(PdftotextPdf.pages("/no/such.pdf").is_err());
+        assert_eq!(PdftotextPdf.page_count(path.to_str().unwrap()).unwrap(), 2);
+        let second = PdftotextPdf
+            .page_range(path.to_str().unwrap(), 2, 2)
+            .unwrap();
+        assert_eq!(second.len(), 1);
+        assert!(second[0].contains("beta") && !second[0].contains("alpha"));
+        assert!(PdftotextPdf
+            .page_range(path.to_str().unwrap(), 1, 11)
+            .is_err());
+        assert!(PdftotextPdf
+            .page_range(path.to_str().unwrap(), 0, 1)
+            .is_err());
     }
 
-    /// Minimal two-page PDF; pdftotext rebuilds the missing xref table.
+    #[test]
+    fn pdf_rejects_oversized_input_before_starting_extractor() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("scanned.pdf");
+        std::fs::File::create(&path)
+            .unwrap()
+            .set_len(MAX_PDF_INPUT_BYTES + 1)
+            .unwrap();
+        let error = PdftotextPdf.page_count(path.to_str().unwrap()).unwrap_err();
+        assert!(error.contains("40 MiB") && error.contains("OCR"), "{error}");
+    }
+
+    #[test]
+    fn pdf_subprocess_stall_and_timeout_are_bounded() {
+        let start = Instant::now();
+        let error = pdf_command(
+            Command::new("sh").args(["-c", "exec sleep 3"]),
+            Duration::from_secs(2),
+            Duration::from_millis(40),
+        )
+        .unwrap_err();
+        assert!(error.contains("stalled"), "{error}");
+        assert!(start.elapsed() < Duration::from_secs(1));
+        let error = pdf_command(
+            Command::new("sh").args(["-c", "exec sleep 3"]),
+            Duration::from_millis(40),
+            Duration::from_secs(2),
+        )
+        .unwrap_err();
+        assert!(error.contains("timed out"), "{error}");
+    }
+
+    #[test]
+    fn generated_large_pdf_extracts_only_requested_chunk() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("many.pdf");
+        std::fs::write(&path, multi_page_pdf(25)).unwrap();
+        let path = path.to_str().unwrap();
+        assert_eq!(PdftotextPdf.page_count(path).unwrap(), 25);
+        let pages = PdftotextPdf.page_range(path, 11, 20).unwrap();
+        assert_eq!(pages.len(), 10);
+        assert!(pages.first().unwrap().contains("page11"));
+        assert!(pages.last().unwrap().contains("page20"));
+        assert!(!pages.join("").contains("page21"));
+    }
+
     fn two_page_pdf() -> String {
+        multi_page_pdf(2)
+    }
+
+    /// Minimal PDF; Poppler rebuilds the missing xref table.
+    fn multi_page_pdf(count: usize) -> String {
         let stream = |t: &str| format!("BT /F1 12 Tf 20 100 Td ({t}) Tj ET");
+        let kids = (0..count)
+            .map(|i| format!("{} 0 R", i + 3))
+            .collect::<Vec<_>>()
+            .join(" ");
         let mut objs = vec![
             "<< /Type /Catalog /Pages 2 0 R >>".to_owned(),
-            "<< /Type /Pages /Kids [3 0 R 4 0 R] /Count 2 >>".to_owned(),
+            format!("<< /Type /Pages /Kids [{kids}] /Count {count} >>"),
         ];
-        for i in 0..2 {
+        for i in 0..count {
             objs.push(format!(
-                "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 200 200] /Contents {} 0 R /Resources << /Font << /F1 7 0 R >> >> >>",
-                5 + i
+                "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 200 200] /Contents {} 0 R /Resources << /Font << /F1 {} 0 R >> >> >>",
+                count + 3 + i, count * 2 + 3
             ));
         }
-        for t in ["alpha", "beta"] {
-            let s = stream(t);
+        for i in 0..count {
+            let text = match i {
+                0 => "alpha".to_owned(),
+                1 => "beta".to_owned(),
+                _ => format!("page{}", i + 1),
+            };
+            let s = stream(&text);
             objs.push(format!("<< /Length {} >>\nstream\n{s}\nendstream", s.len()));
         }
         objs.push("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>".into());
@@ -478,7 +656,10 @@ mod tests {
         for (i, o) in objs.iter().enumerate() {
             pdf.push_str(&format!("{} 0 obj\n{o}\nendobj\n", i + 1));
         }
-        pdf.push_str("trailer\n<< /Root 1 0 R /Size 8 >>\n%%EOF\n");
+        pdf.push_str(&format!(
+            "trailer\n<< /Root 1 0 R /Size {} >>\n%%EOF\n",
+            count * 2 + 4
+        ));
         pdf
     }
 }
