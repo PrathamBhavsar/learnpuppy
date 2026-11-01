@@ -19,6 +19,7 @@ import {
   useSendTurn,
   useUploadPdf,
 } from "@/api/queries/chats"
+import { InfoTip, ScreenGuide } from "@/components/app/info/info"
 import { EmptyState } from "@/components/app/empty-state"
 import { ErrorState } from "@/components/app/error-state"
 import { SkeletonBlock } from "@/components/app/skeleton-block"
@@ -32,6 +33,7 @@ import { useStatus } from "@/stores/status"
 import { ArtifactViewer } from "./ArtifactViewer"
 import { Composer } from "./Composer"
 import { COPY } from "./copy"
+import { classroomGuide, classroomInfo } from "./info"
 import { QuestionDock } from "./dock/QuestionDock"
 import { MessageList } from "./MessageList"
 import { PlanPanel } from "./PlanPanel"
@@ -192,6 +194,8 @@ function ClassroomBody({
           <Badge variant="secondary">
             {view.kind === "practice" ? "Practice" : "Teach"}
           </Badge>
+          <InfoTip info={classroomInfo.kind} />
+          <ScreenGuide {...classroomGuide} />
           <Button
             variant="ghost"
             size="icon-sm"

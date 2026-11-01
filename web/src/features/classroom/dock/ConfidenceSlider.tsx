@@ -1,4 +1,7 @@
+import { InfoTip } from "@/components/app/info/info"
 import { Slider } from "@/components/ui/slider"
+
+import { classroomInfo } from "../info"
 
 type ConfidenceSliderProps = {
   value: number
@@ -18,8 +21,11 @@ export function ConfidenceSlider({
   return (
     <div className="flex flex-col gap-1.5" data-testid="confidence">
       <div className="flex items-center justify-between text-[12px]">
-        <span id="confidence-label" className="text-muted-foreground">
-          How sure are you?
+        <span className="flex items-center gap-1.5">
+          <span id="confidence-label" className="text-muted-foreground">
+            How sure are you?
+          </span>
+          <InfoTip info={classroomInfo.confidence} />
         </span>
         <span
           data-testid="confidence-value"

@@ -10,6 +10,7 @@ import type { ChatKind } from "@/api/pending-types"
 import { useAccounts } from "@/api/queries/accounts"
 import { useCreateChat } from "@/api/queries/chats"
 import { useSettings } from "@/api/queries/settings"
+import { InfoTip } from "@/components/app/info/info"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
@@ -25,6 +26,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
 import { toastError } from "@/lib/toast"
 
+import { classroomInfo } from "./info"
 import { NodePicker } from "./NodePicker"
 
 const schema = z.object({
@@ -151,36 +153,42 @@ function NewChatForm({
         control={form.control}
         name="kind"
         render={({ field }) => (
-          <ToggleGroup
-            type="single"
-            variant="outline"
-            value={field.value}
-            onValueChange={(next) => next && field.onChange(next)}
-            aria-label="Chat kind"
-            data-testid="new-chat-kind"
-          >
-            <ToggleGroupItem value="teach" data-testid="kind-teach">
-              Teach
-            </ToggleGroupItem>
-            <ToggleGroupItem value="practice" data-testid="kind-practice">
-              Practice
-            </ToggleGroupItem>
-          </ToggleGroup>
+          <div className="flex items-center gap-2">
+            <ToggleGroup
+              type="single"
+              variant="outline"
+              value={field.value}
+              onValueChange={(next) => next && field.onChange(next)}
+              aria-label="Chat kind"
+              data-testid="new-chat-kind"
+            >
+              <ToggleGroupItem value="teach" data-testid="kind-teach">
+                Teach
+              </ToggleGroupItem>
+              <ToggleGroupItem value="practice" data-testid="kind-practice">
+                Practice
+              </ToggleGroupItem>
+            </ToggleGroup>
+            <InfoTip info={classroomInfo.kind} />
+          </div>
         )}
       />
 
       <div className="flex flex-col gap-1.5">
-        <Label htmlFor="new-chat-topic">
-          {kind === "teach" ? "Topic" : "Focus (optional with graph nodes)"}
-        </Label>
+        <div className="flex items-center gap-1.5">
+          <Label htmlFor="new-chat-topic">
+            {kind === "teach" ? "Topic" : "Focus (optional with graph nodes)"}
+          </Label>
+          <InfoTip info={classroomInfo.topic} />
+        </div>
         <Textarea
           id="new-chat-topic"
           dir="auto"
           rows={3}
           placeholder={
             kind === "teach"
-              ? "e.g. how async Rust works under the hood"
-              : "e.g. pinning and Unpin"
+              ? "e.g. Spanish for ordering food and asking directions"
+              : "e.g. ser versus estar"
           }
           aria-invalid={topicError ? true : undefined}
           aria-describedby={topicError ? "new-chat-topic-error" : undefined}
@@ -199,18 +207,20 @@ function NewChatForm({
       </div>
 
       <div className="flex flex-col gap-2">
-        <Button
-          type="button"
-          variant="ghost"
-          size="sm"
-          className="self-start"
-          aria-expanded={picker}
-          onClick={() => setPicker((v) => !v)}
-          data-testid="new-chat-use-nodes"
-        >
-          {picker ? "Hide graph nodes" : "Use nodes from the graph"}
-          {seeds.length > 0 ? ` (${seeds.length})` : ""}
-        </Button>
+        <div className="flex items-center gap-1.5 self-start">
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            aria-expanded={picker}
+            onClick={() => setPicker((v) => !v)}
+            data-testid="new-chat-use-nodes"
+          >
+            {picker ? "Hide graph nodes" : "Use nodes from the graph"}
+            {seeds.length > 0 ? ` (${seeds.length})` : ""}
+          </Button>
+          <InfoTip info={classroomInfo.nodes} />
+        </div>
         {picker ? (
           <NodePicker ws={ws} selected={seeds} onChange={setSeeds} />
         ) : null}
@@ -220,7 +230,10 @@ function NewChatForm({
         className="border bg-muted/30 px-3 py-2 text-[12px]"
         data-testid="new-chat-roles"
       >
-        <p className="mb-1 font-medium">What will run</p>
+        <p className="mb-1 flex items-center gap-1.5 font-medium">
+          What will run
+          <InfoTip info={classroomInfo.roles} />
+        </p>
         {settings.isPending ? (
           <p className="text-muted-foreground">Reading settings…</p>
         ) : (

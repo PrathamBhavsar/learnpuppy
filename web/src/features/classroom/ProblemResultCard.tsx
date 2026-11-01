@@ -1,8 +1,10 @@
 import { FlagIcon } from "lucide-react"
 
 import type { ProblemResult } from "@/api/pending-types"
+import { InfoTip } from "@/components/app/info/info"
 import { Badge } from "@/components/ui/badge"
 
+import { classroomInfo } from "./info"
 import { LazyMarkdown } from "./markdown/LazyMarkdown"
 
 const OUTCOME_LABEL: Record<string, string> = {
@@ -46,6 +48,7 @@ export function ProblemResultCard({ result }: { result: ProblemResult }) {
             Retest later
           </Badge>
         ) : null}
+        <InfoTip info={classroomInfo.problemResult} />
       </div>
       <LazyMarkdown className="text-[13px]">{result.verdict}</LazyMarkdown>
     </section>

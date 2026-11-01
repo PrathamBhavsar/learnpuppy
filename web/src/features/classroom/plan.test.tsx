@@ -1,15 +1,24 @@
-import { render, screen, waitFor, within } from "@testing-library/react"
+import {
+  render as rtlRender,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { HttpResponse, http } from "msw"
 import { beforeEach, describe, expect, it } from "vitest"
 
 import type { ClassroomView } from "@/api/pending-types"
+import { TooltipProvider } from "@/components/ui/tooltip"
 import { server } from "@/test/msw/server"
 import { renderApp, renderWithProviders, resetUi } from "@/test/render"
 
 import { PhaseStepper } from "./PhaseStepper"
 import { layoutPlan } from "./plan-layout"
 import { fitTransform } from "./use-pan-zoom"
+
+const render = (ui: React.ReactElement) =>
+  rtlRender(ui, { wrapper: TooltipProvider })
 
 const WS = "ws_rustasync"
 
