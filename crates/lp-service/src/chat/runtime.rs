@@ -12,6 +12,7 @@
 //! - Workbench jobs run per workspace; their results wake idle chats (the wake pump).
 
 use std::collections::HashMap;
+use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
@@ -36,8 +37,9 @@ use super::gate::{CliPermits, GateObserver, Gated, Permitted, TurnGate};
 use super::jobs::{job_artifact, job_title, kind_name, ObservedJobs};
 use super::meta::ChatMeta;
 use super::script::FaultPlan;
-use super::turn::run_to_rest;
+use super::turn::{role, run_to_rest};
 use super::view::pending_call;
+use crate::engine::{AiCode, AiFailure};
 use crate::events::{self as ev, DeltaKind, DeltaPump, Event, Scope};
 use crate::workspace::WorkspaceHandle;
 
@@ -112,6 +114,8 @@ pub struct TurnFailure {
     pub retryable: bool,
     pub retry_after_ms: Option<u64>,
     pub interrupted: bool,
+    /// Set when no AI could answer: the structured reason the UI explains.
+    pub ai: Option<AiFailure>,
 }
 
 /// The live turn state of one chat.
@@ -413,19 +417,42 @@ fn marker_path(root: &Path, chat: &str) -> PathBuf {
     root.join("turns").join(format!("{chat}.json"))
 }
 
+/// A torn or zero-byte marker (left by a crash mid-write) is treated as "no marker", never as an
+/// error: the chat's own record is the source of truth, so losing just the interrupted-turn
+/// indicator is safe.
 fn read_marker(root: &Path, chat: &str) -> Option<Marker> {
-    let bytes = std::fs::read(marker_path(root, chat)).ok()?;
-    serde_json::from_slice(&bytes).ok()
+    let bytes = match std::fs::read(marker_path(root, chat)) {
+        Ok(b) if !b.is_empty() => b,
+        Ok(_) => return None,
+        Err(_) => return None,
+    };
+    match serde_json::from_slice(&bytes) {
+        Ok(m) => Some(m),
+        Err(e) => {
+            tracing::warn!(chat, "turn marker unreadable, treating as none: {e}");
+            None
+        }
+    }
 }
 
+/// Temp file + fsync + rename + directory fsync, so a crash mid-write never leaves a torn marker
+/// where the previous, complete one used to be.
 fn write_marker(root: &Path, chat: &str, m: &Marker) -> std::io::Result<()> {
     let path = marker_path(root, chat);
-    if let Some(dir) = path.parent() {
-        std::fs::create_dir_all(dir)?;
-    }
-    let tmp = path.with_extension("json.tmp");
-    std::fs::write(&tmp, serde_json::to_vec(m).map_err(std::io::Error::other)?)?;
-    std::fs::rename(&tmp, &path)
+    let dir = path.parent().ok_or_else(|| {
+        std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "marker path has no parent",
+        )
+    })?;
+    std::fs::create_dir_all(dir)?;
+    let tmp = path.with_extension(format!("json.tmp.{}", std::process::id()));
+    let mut f = std::fs::File::create(&tmp)?;
+    f.write_all(&serde_json::to_vec(m).map_err(std::io::Error::other)?)?;
+    f.sync_all()?;
+    drop(f);
+    std::fs::rename(&tmp, &path)?;
+    std::fs::File::open(dir)?.sync_all()
 }
 
 fn remove_marker(root: &Path, chat: &str) {
@@ -614,6 +641,15 @@ fn failure_of(e: &LoopError, gate: &TurnGate) -> TurnFailure {
         retryable: true,
         retry_after_ms: None,
         interrupted: false,
+        ai: None,
+    };
+    let from_ai = |f: AiFailure| {
+        let mut t = fail(f.code.as_str(), f.message.clone());
+        t.retry_after_ms = f
+            .resets_at
+            .map(|r| r.saturating_sub(u64::try_from(crate::now_ms()).unwrap_or(0)));
+        t.ai = Some(f);
+        t
     };
     if let Some(ms) = *gate.surfaced_retry_after.lock() {
         let mut f = fail(
@@ -631,9 +667,17 @@ fn failure_of(e: &LoopError, gate: &TurnGate) -> TurnFailure {
             "engine_unavailable",
             "The scripted engine has no response left.".into(),
         ),
-        LoopError::Turn(TurnError::Driver(d)) => {
-            fail("engine_unavailable", format!("The model call failed: {d}"))
+        LoopError::Turn(TurnError::Driver(d @ DriverError::Timeout(_))) => {
+            from_ai(AiFailure::of_driver(d, 0))
         }
+        LoopError::Turn(TurnError::NoResponse) => from_ai(AiFailure::new(
+            AiCode::NoResponse,
+            "The tutor had nothing to say. Try again.",
+        )),
+        LoopError::Turn(TurnError::Driver(d)) => match AiFailure::from_error(d) {
+            Some(f) => from_ai(f),
+            None => fail("engine_unavailable", format!("The model call failed: {d}")),
+        },
         LoopError::Turn(t) => fail("internal", format!("The turn failed: {t}")),
         LoopError::Store(StoreError::Backend(m))
             if m.to_ascii_lowercase().contains("no space left") =>
@@ -651,6 +695,7 @@ fn interrupted() -> TurnFailure {
         retryable: true,
         retry_after_ms: None,
         interrupted: true,
+        ai: None,
     }
 }
 
@@ -1167,8 +1212,41 @@ impl<E: LlmEngine + 'static> ChatRuntime<E> {
                 }
                 TurnInput::Steer(text) => {
                     let id = format!("steer_user_{}", client_id);
-                    s.messages.push(Msg::Steer { id, text });
                     if pending.is_some() {
+                        // A clarifying question about the pending question or the lesson: answer
+                        // it inline, in plain text with no tools, and leave the pending question
+                        // open rather than jumping ahead to a new one.
+                        self.permits.resize(ctx.cap);
+                        let engine = Permitted {
+                            workspace: h.id().to_owned(),
+                            inner: (ctx.engines)(role(&s)),
+                            permits: self.permits.clone(),
+                        };
+                        let root = h.root().join("artifacts");
+                        let (etx, erx) = mpsc::channel(EVENT_CAP);
+                        let fwd = tokio::spawn(forward(
+                            self.pump.clone(),
+                            erx,
+                            h.id().to_owned(),
+                            chat.to_owned(),
+                            turn_id.clone(),
+                            ctx.shutdown.clone(),
+                        ));
+                        let clarified = lp_agent::loops::answer_pending_steer(
+                            &engine,
+                            &root,
+                            &mut s,
+                            &id,
+                            &text,
+                            &etx,
+                            &ctx.shutdown,
+                        )
+                        .await;
+                        drop(etx);
+                        let _ = fwd.await;
+                        if let Err(e) = clarified {
+                            tracing::warn!(chat, "clarifying answer failed: {e}");
+                        }
                         meta.remember(&client_id, &turn_id);
                         let now = self.now();
                         let chats = h.stores().chats.clone();
@@ -1187,6 +1265,7 @@ impl<E: LlmEngine + 'static> ChatRuntime<E> {
                         );
                         return Ok(Accepted::Recorded(turn_id));
                     }
+                    s.messages.push(Msg::Steer { id, text });
                 }
                 TurnInput::Resume => {}
             }
@@ -1263,6 +1342,7 @@ impl<E: LlmEngine + 'static> ChatRuntime<E> {
                     retryable: true,
                     retry_after_ms: None,
                     interrupted: false,
+                    ai: None,
                 }));
                 drop(guard);
                 self.publish(
@@ -1411,6 +1491,7 @@ impl<E: LlmEngine + 'static> ChatRuntime<E> {
                     retryable: true,
                     retry_after_ms: None,
                     interrupted: false,
+                    ai: None,
                 });
                 None
             }
@@ -1888,5 +1969,30 @@ mod tests {
         remove_marker(d.path(), "chat_1");
         remove_marker(d.path(), "chat_1");
         assert!(read_marker(d.path(), "chat_1").is_none());
+    }
+
+    #[test]
+    fn a_torn_or_zero_byte_marker_is_treated_as_none_not_an_error() {
+        let d = tempfile::tempdir().unwrap();
+        let m = Marker {
+            turn_id: "t".into(),
+            client_id: "c".into(),
+            started_at: 5,
+        };
+        write_marker(d.path(), "chat_1", &m).unwrap();
+        let path = marker_path(d.path(), "chat_1");
+
+        // Zero-byte (crash right after create, before any bytes landed).
+        std::fs::write(&path, []).unwrap();
+        assert!(read_marker(d.path(), "chat_1").is_none());
+
+        // Torn (crash mid-write): a truncated prefix of valid JSON.
+        let full = serde_json::to_vec(&m).unwrap();
+        std::fs::write(&path, &full[..full.len() / 2]).unwrap();
+        assert!(read_marker(d.path(), "chat_1").is_none());
+
+        // A fresh write still succeeds over the wreckage.
+        write_marker(d.path(), "chat_1", &m).unwrap();
+        assert_eq!(read_marker(d.path(), "chat_1"), Some(m));
     }
 }

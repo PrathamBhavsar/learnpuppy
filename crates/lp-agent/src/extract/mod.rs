@@ -262,7 +262,9 @@ fn batches<'a>(fresh: &'a [&'a SourceMessage]) -> Vec<&'a [&'a SourceMessage]> {
 fn extractor_prompt(digest: &str, fresh: &[&SourceMessage]) -> String {
     let mut p = String::from(
         "Extract atomic propositions and the chains (premises => conclusion) the passages argue. \
-         Reference existing node ids from THE GRAPH SO FAR directly in chains.\n\nTHE GRAPH SO FAR\n",
+         Reference existing node ids from THE GRAPH SO FAR directly in chains. Write names and \
+         statements in the same language as the passages below; never translate them.\n\n\
+         THE GRAPH SO FAR\n",
     );
     p.push_str(digest);
     for m in fresh {
