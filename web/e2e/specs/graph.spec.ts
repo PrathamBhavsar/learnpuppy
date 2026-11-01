@@ -537,3 +537,15 @@ test.describe("performance budgets (docs/web/07)", () => {
     })
   }
 })
+
+test("Practice from the selection bar creates a practice chat and opens it", async ({
+  page,
+}) => {
+  await openGraph(page)
+  const [a] = await clearNodes(page, 1)
+  await page.mouse.click(a!.x, a!.y)
+  await expect.poll(() => selection(page)).toEqual([a!.id])
+  await page.getByTestId("graph-selection-practice").click()
+  await expect(page).toHaveURL(/\/learn\/[\w-]+$/)
+  await expect(page.getByTestId("classroom")).toBeVisible()
+})

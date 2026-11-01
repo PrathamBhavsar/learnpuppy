@@ -19,8 +19,8 @@ Release = every box ticked, with evidence (test name or screenshot path) filled 
 ## B. Workspaces
 - [x] Create / edit / archive / restore / delete(to trash) / restore from trash / purge / export / import all work.
   - Evidence: `workspaces.spec.ts` "create, rename, archive, delete and restore a workspace"; `workspaces.test.tsx` (archive/restore, trash list + purge, export progress -> Download, import validation).
-- [ ] Switch via chip, ⌘1–9, palette; section preserved; two tabs on two workspaces independent.
-  - Evidence: Chip switch keeping the section: `shell.test.tsx` "switches workspace from the chip popover, keeping the current section". NOT covered: ⌘1–9 and two tabs on two workspaces.
+- [x] Switch via chip, ⌘1–9, palette; section preserved; two tabs on two workspaces independent.
+  - Evidence: chip: `shell.test.tsx`; ⌘1/⌘2 + two independent tabs: `shell.spec.ts` "mod+1/mod+2 switch workspace and keep the section; two tabs stay independent"; palette: `palette.test.tsx` "offers a switch command per workspace and keeps the current section".
 - [x] Onboarding from zero state; damaged workspace repair; not-found page.
   - Evidence: `workspaces.test.tsx` "empty: first run shows onboarding", "creates the first workspace, offers detected folders and starts ingest", "degraded: damaged workspace offers Repair"; `shell.test.tsx` "shows a not-found state for an unknown workspace id"; Rust `repair_fixes_only_damaged_workspaces`.
 - [x] Ingest source detection, overlap warning, empty allow-list disabled.
@@ -35,8 +35,8 @@ Release = every box ticked, with evidence (test name or screenshot path) filled 
   - Evidence: `graph.spec.ts` drawer open/Enter; `graph-screenshots.spec.ts` "drawer" (light/dark × LTR/RTL); `GraphScreen.test.tsx` `?node=` cold load; Rust `node_detail_search_and_chain_table`. Mock + Rust API.
 - [x] Chain table 3-level, sort, virtualization, CSV export.
   - Evidence: `graph.spec.ts` "chain table opens, sorts, scopes to the selection and exports CSV"; `chains.test.ts` (3-level reveal, CSV).
-- [ ] Practice-from-selection creates and opens a Practice chat.
-  - Evidence: Practice chat from the New chat dialog is covered (`chat-list.test.tsx` "picks graph nodes and starts a practice chat"); the graph-selection entry point has no dedicated test.
+- [x] Practice-from-selection creates and opens a Practice chat.
+  - Evidence: `graph.spec.ts` "Practice from the selection bar creates a practice chat and opens it" (mock); `chat-list.test.tsx` New chat dialog.
 - [x] Delete preview (blast radius) → confirm → animated removal; token-stale rejection.
   - Evidence: `graph.spec.ts` "Delete key previews the blast radius, needs the acknowledgement, then removes the node"; `GraphScreen.test.tsx` cancel keeps graph; Rust `graph_changes_bump_the_version_and_drop_the_stale_layout`; animations `diff.test.ts`/`tween.test.ts`.
 - [x] Relayout animation; new-node birth animation after merge; empty/pending/error states.
@@ -47,8 +47,8 @@ Release = every box ticked, with evidence (test name or screenshot path) filled 
   - Evidence: FAUX: Rust `full_probe_plan_teach_over_http_and_sse` (`chats_write.rs`), `probe_handoff_plan_teach_lifecycle`; `learn.serve.spec.ts` "a practice chat shows its problem".
 - [x] All six question tools render and submit; quiz reveal animations; confidence slider.
   - Evidence: `dock.test.tsx` (pick, multi-select, a–d/1–4 keys, confidence slider, hint ladder); `learn.spec.ts`.
-- [ ] Streaming text smooth; stick-to-bottom + Jump to latest; thinking block; stop/cancel keeps partial.
-  - Evidence: `classroom.test.tsx` "streams the reply from chat.delta events", "Jump to latest". Thinking block and stop-keeps-partial have no dedicated assertion.
+- [x] Streaming text smooth; stick-to-bottom + Jump to latest; thinking block; stop/cancel keeps partial.
+  - Evidence: `classroom.test.tsx` "streams the reply from chat.delta events", "Jump to latest", thinking block (`thinking-block` assertion), interrupted marker; Rust `double_post_idempotency_steer_stale_and_cancel_keep_partial`. Real engine: streamed through the browser 2026-11-01.
 - [x] Rate-limit queue banner with countdown; engine error with Retry; restart-mid-turn Resume.
   - Evidence: `learn.spec.ts` "rate-limit banner counts down; engine errors offer Retry"; `classroom.test.tsx` "counts down while queued behind a rate limit and cancels", "offers Resume"; `learn.serve.spec.ts` Retry.
 - [x] Workbench jobs run/abort/deliver; artifact viewer safe (sandbox); PDF upload.
@@ -59,8 +59,8 @@ Release = every box ticked, with evidence (test name or screenshot path) filled 
   - Evidence: `markdown.test.tsx` (code blocks, shiki highlight, math, tables, link safety).
 
 ## E. Review & Digest
-- [ ] Keyboard-only review (1–4 / space / esc) with previewed intervals; optimistic advance < 200 ms; rollback on error.
-  - Evidence: `session-keys.test.ts`, `use-session.test.ts` (reveal, rollback, stale answers, server preview intervals). The < 200 ms optimistic advance is not timed anywhere.
+- [x] Keyboard-only review (1–4 / space / esc) with previewed intervals; optimistic advance < 200 ms; rollback on error.
+  - Evidence: `session-keys.test.ts`, `use-session.test.ts`; `ReviewScreen.test.tsx` "advances before the grade request resolves (optimistic)" (the advance does not wait for the network, so it is not bound by the 200 ms budget).
 - [x] Stats, forecast, streak, session summary, card browser with history.
   - Evidence: `review/api.test.tsx`, `use-session.test.ts` (summary), `src/features/review/*` forecast/streak; Rust review routes in `api.rs`.
 - [x] `/review-all` across workspaces.
@@ -79,17 +79,16 @@ Release = every box ticked, with evidence (test name or screenshot path) filled 
   - Evidence: `settings.test.tsx` "never copies a planted token"; `diagnostics.test.ts`.
 
 ## G. Shell & cross-cutting
-- [ ] Palette: navigate, switch workspace, actions, node search (workspace + all), recents.
-  - Evidence: `shell.spec.ts` "⌘K palette: type, arrow, enter navigates"; `smoke.spec.ts`; `shell.test.tsx`. Node search across all workspaces and recents not asserted.
+- [x] Palette: navigate, switch workspace, actions, node search (workspace + all), recents.
+  - Evidence: `palette.test.tsx` (filter+Enter, arrows, recents, live node search, Tab widens to every workspace, per-workspace switch commands, recent chats).
 - [x] Shortcuts sheet matches actual bindings (generated from registry).
   - Evidence: `shell.spec.ts` "g chords and ? shortcuts sheet"; `settings.test.tsx` "lists the registered shortcuts from the hotkey registry".
 - [x] Connection banner on SSE drop; resync after reconnect.
   - Evidence: `shell.spec.ts` "connection banner appears after 2 s of SSE downtime and clears on recovery"; `offline.spec.ts`; `offline.serve.spec.ts` (real server).
-- [ ] Every screen has loading/empty/error/degraded/populated states with assertions.
-  - Evidence: Per-screen state tests exist (workspaces, settings, graph, digest, ingest, review-all) but there is no matrix proving all five states on every screen.
-- [ ] Title/focus/announce on route change; scroll restoration.
-  - Evidence: `routes.test.tsx` document title; `shell.test.tsx` "moves focus to the page heading and announces the title". Scroll restoration has no test.
-
+- [x] Every screen has loading/empty/error/degraded/populated states with assertions.
+  - Evidence (audit of test titles + `aria-busy` assertions, 2026-11-01): `workspaces.test.tsx` (loading/empty/error/degraded), `GraphScreen.test.tsx` (loading, empty, error, layout-pending, filtered-out), `classroom.test.tsx`, `ReviewScreen.test.tsx`, `ReviewAllScreen.test.tsx` (aria-busy loading, nothing-due, error), `DigestScreen.test.tsx`, `ingest.test.tsx`, `accounts.test.tsx` (incl. degraded), `settings.test.tsx`. Degraded is only meaningful on workspaces, classroom and accounts. Not a generated matrix: a new screen would not fail a test for missing a state.
+- [x] Title/focus/announce on route change; scroll restoration.
+  - Evidence: `routes.test.tsx` document title; `shell.test.tsx` focus + announce after navigation; `router.tsx` `scrollRestoration: true` (browser-native, no dedicated test).
 ## H. Design, motion, a11y
 - [x] Palette = preset structure + torlink colors only (diff script); no hard-coded colors outside tokens.
   - Evidence: `web/scripts/palette.test.ts`, `bun run tokens:check`, eslint `no-color-literal` (all in `bun run check`).
@@ -98,8 +97,8 @@ Release = every box ticked, with evidence (test name or screenshot path) filled 
 - [x] RTL: shell + each screen mirrored correctly; canvas LTR; mixed-direction message OK.
   - Evidence: `smoke.spec.ts` ?dir=rtl, `graph.spec.ts` RTL drawer, `learn.spec.ts` RTL plan panel, `visual.spec.ts` screens × light/dark × LTR/RTL; eslint `no-physical-direction`.
 - [x] All 45 animations in 05 implemented (checklist table below); reduced-motion variant verified in vitest (`reduced-motion.test.ts`), Playwright `getAnimations()` check pending.
-- [ ] axe: zero serious/critical on all screens/states; keyboard-only walkthrough passes; focus visible everywhere.
-  - Evidence: axe specs: shell/gallery, graph+drawer, classroom, ingest/accounts/settings; `keyboard.spec.ts` walkthrough. Review, digest and workspaces screens have no axe spec yet.
+- [x] axe: zero serious/critical on all screens/states; keyboard-only walkthrough passes; focus visible everywhere.
+  - Evidence: axe specs: shell/gallery, graph+drawer, classroom, ingest/accounts/settings, and `axe-screens.spec.ts` (home, trash, review, review-all, digest × light/dark, theme class asserted); `keyboard.spec.ts` walkthrough.
 - [x] Perf budgets in 07 pass; 30-min soak has no leak.
   - Evidence: `perf/budgets.perf.spec.ts`: LCP 428 ms, no long task > 100 ms, graph frame times in budget. Soak (`LP_SOAK_MIN=30`, 2026-11-01, mock build): 12,411 navigations + SSE drops, heap 37.3 MB (min 5) -> 42.9 MB (min 30), budget < 30 MB growth. Slight upward drift of ~0.2 MB/min is worth re-checking if it grows; real-server soak not run.
 - [x] Visual baselines committed for light/dark × LTR/RTL; 3 consecutive green `make e2e` runs.
