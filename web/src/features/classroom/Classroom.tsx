@@ -18,6 +18,7 @@ import {
   useChat,
   useSendTurn,
   useUploadPdf,
+  useUploadNote,
 } from "@/api/queries/chats"
 import { InfoTip, ScreenGuide } from "@/components/app/info/info"
 import { EmptyState } from "@/components/app/empty-state"
@@ -125,6 +126,7 @@ function ClassroomBody({
   const send = useSendTurn(ws, chatId)
   const cancel = useCancelTurn(ws, chatId)
   const upload = useUploadPdf(ws, chatId)
+  const uploadNote = useUploadNote(ws, chatId)
   const live = useStreamingTurn(chatId)
   const engineDown = useStatus((s) => s.engineUnavailable)
   const [artifact, setArtifact] = useState<ClassroomJob | null>(null)
@@ -175,11 +177,19 @@ function ClassroomBody({
       return post({ type: "answer", callId: pending.callId, answer: value })
   }
 
-  const attach = (file: File) =>
-    upload.mutate(file, {
-      onSuccess: () => toastSuccess("PDF uploaded. Reading it now."),
-      onError: (e) => toastError(e, "Could not upload the PDF"),
-    })
+  const attach = (file: File) => {
+    if (/\.(md|txt)$/i.test(file.name)) {
+      uploadNote.mutate(file, {
+        onSuccess: () => toastSuccess("Note imported. Ask the tutor about it."),
+        onError: (e) => toastError(e, "Could not import the note"),
+      })
+    } else {
+      upload.mutate(file, {
+        onSuccess: () => toastSuccess("PDF uploaded. Reading it now."),
+        onError: (e) => toastError(e, "Could not upload the PDF"),
+      })
+    }
+  }
 
   return (
     <div
@@ -288,7 +298,7 @@ function ClassroomBody({
               running={running || turn.state === "queued"}
               sending={send.isPending}
               stopping={cancel.isPending}
-              attaching={upload.isPending}
+              attaching={upload.isPending || uploadNote.isPending}
               onSend={(text) => post({ type: "user", text })}
               onSteer={(text) => post({ type: "steer", text })}
               onStop={() => cancel.mutate()}
@@ -310,7 +320,7 @@ function ClassroomBody({
           <aside
             aria-label="Plan"
             style={{ width }}
-            className="absolute inset-y-0 top-[3.25rem] end-0 z-20 w-full max-w-full shrink-0 border-s bg-background md:static md:top-auto md:z-auto"
+            className="absolute inset-y-0 end-0 top-[3.25rem] z-20 w-full max-w-full shrink-0 border-s bg-background md:static md:top-auto md:z-auto"
           >
             <PlanPanel ws={ws} view={view} onOpenArtifact={setArtifact} />
           </aside>

@@ -939,6 +939,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/workspaces/{ws}/sources/note": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["post_workspaces_ws_sources_note"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/workspaces/{ws}/sources/pdf": {
         parameters: {
             query?: never;
@@ -1593,8 +1609,18 @@ export interface components {
             id: string;
             /** @description `research`, `pdf`, `visual` or `demo`. */
             kind: string;
+            /**
+             * Format: int64
+             * @description PDF jobs: pages read so far.
+             */
+            pagesRead?: number | null;
             status: components["schemas"]["JobStatusDto"];
             title: string;
+            /**
+             * Format: int64
+             * @description PDF jobs: the document's page count.
+             */
+            totalPages?: number | null;
         };
         JobListDto: {
             /** @description Newest first. */
@@ -1654,6 +1680,17 @@ export interface components {
         };
         NodeSelection: {
             nodeIds: string[];
+        };
+        NoteUploadDto: {
+            artifactId: string;
+            /** Format: int64 */
+            bytes: number;
+            chatId: string;
+        };
+        /** @description UTF-8 Markdown or plain text, at most 1 MB. */
+        NoteUploadForm: {
+            /** Format: binary */
+            file: string;
         };
         OptionDto: {
             /** @description What to send back as the answer. */
@@ -4376,6 +4413,67 @@ export interface operations {
             };
             /** @description Workspace archived */
             409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    post_workspaces_ws_sources_note: {
+        parameters: {
+            query: {
+                /** @description The chat the reading job reports to. */
+                chat: string;
+            };
+            header?: never;
+            path: {
+                ws: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["NoteUploadForm"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NoteUploadDto"];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Note exceeds 1 MB */
+            413: {
                 headers: {
                     [name: string]: unknown;
                 };

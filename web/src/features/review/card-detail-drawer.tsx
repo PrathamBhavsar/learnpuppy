@@ -21,7 +21,7 @@ import { useEndSide } from "@/hooks/use-end-side"
 import { REVIEW_COPY } from "./copy"
 import { useCardDetail } from "./api"
 import { formatRelativeDue, useNow } from "./time"
-import { PromptMarkdown } from "./prompt-markdown"
+import { PromptMarkdown } from "@/components/app/prompt-markdown"
 
 type Props = {
   ws: string

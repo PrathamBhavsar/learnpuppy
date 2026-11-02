@@ -277,6 +277,41 @@ describe("Composer", () => {
     await waitFor(() => expect(cancelled).toBe(2))
   })
 
+  it("imports a Markdown note into the current chat", async () => {
+    let query = ""
+    let hasFile = false
+    server.use(
+      http.post("*/api/v1/workspaces/:ws/sources/note", async ({ request }) => {
+        query = new URL(request.url).search
+        const form = await request.formData()
+        hasFile = form.get("file") !== null
+        return HttpResponse.json(
+          { artifactId: "source_note", chatId: "c_done", bytes: 12 },
+          { status: 201 }
+        )
+      })
+    )
+    const { user } = await open("c_done")
+    await user.upload(
+      await screen.findByTestId("composer-note-file"),
+      new File(["# Notes\nOwnership"], "notes.md", { type: "text/markdown" })
+    )
+    expect(await screen.findByText(/Note imported/)).toBeInTheDocument()
+    expect(query).toBe("?chat=c_done")
+    expect(hasFile).toBe(true)
+  })
+
+  it("rejects notes above 1 MB before uploading", async () => {
+    const { user } = await open("c_done")
+    await user.upload(
+      await screen.findByTestId("composer-note-file"),
+      new File([new Uint8Array(1024 * 1024 + 1)], "large.txt", {
+        type: "text/plain",
+      })
+    )
+    expect(await screen.findByRole("alert")).toHaveTextContent("over 1 MB")
+  })
+
   it("uploads a PDF to the chat", async () => {
     let query = ""
     server.use(

@@ -901,6 +901,10 @@ pub struct JobItemDto {
     pub artifact_id: Option<String>,
     /// Why a finished job has no result.
     pub error: Option<String>,
+    /// PDF jobs: pages read so far.
+    pub pages_read: Option<u64>,
+    /// PDF jobs: the document's page count.
+    pub total_pages: Option<u64>,
     pub created_at: i64,
 }
 
@@ -914,6 +918,8 @@ impl From<chat::JobView> for JobItemDto {
             title: j.title,
             artifact_id: j.artifact_id,
             error: j.error,
+            pages_read: j.pages_read,
+            total_pages: j.total_pages,
             created_at: j.created_at,
         }
     }
@@ -923,6 +929,22 @@ impl From<chat::JobView> for JobItemDto {
 pub struct JobListDto {
     /// Newest first.
     pub items: Vec<JobItemDto>,
+}
+
+/// UTF-8 Markdown or plain text, at most 1 MB.
+#[derive(ToSchema)]
+#[allow(dead_code)]
+pub struct NoteUploadForm {
+    #[schema(value_type = String, format = Binary)]
+    pub file: Vec<u8>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct NoteUploadDto {
+    pub artifact_id: String,
+    pub chat_id: String,
+    pub bytes: u64,
 }
 
 /// `POST …/sources/pdf` form: the PDF and an optional question for the reading job.

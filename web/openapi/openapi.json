@@ -2155,11 +2155,29 @@
             "description": "`research`, `pdf`, `visual` or `demo`.",
             "type": "string"
           },
+          "pagesRead": {
+            "description": "PDF jobs: pages read so far.",
+            "format": "int64",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
           "status": {
             "$ref": "#/components/schemas/JobStatusDto"
           },
           "title": {
             "type": "string"
+          },
+          "totalPages": {
+            "description": "PDF jobs: the document's page count.",
+            "format": "int64",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
           }
         },
         "required": [
@@ -2389,6 +2407,40 @@
         },
         "required": [
           "nodeIds"
+        ],
+        "type": "object"
+      },
+      "NoteUploadDto": {
+        "properties": {
+          "artifactId": {
+            "type": "string"
+          },
+          "bytes": {
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "chatId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "artifactId",
+          "chatId",
+          "bytes"
+        ],
+        "type": "object"
+      },
+      "NoteUploadForm": {
+        "description": "UTF-8 Markdown or plain text, at most 1 MB.",
+        "properties": {
+          "file": {
+            "format": "binary",
+            "type": "string"
+          }
+        },
+        "required": [
+          "file"
         ],
         "type": "object"
       },
@@ -7478,6 +7530,95 @@
         "summary": "Grades a card (1 again .. 4 easy). A retry with the same `clientId` returns the first result.",
         "tags": [
           "review"
+        ]
+      }
+    },
+    "/workspaces/{ws}/sources/note": {
+      "post": {
+        "operationId": "post_workspaces_ws_sources_note",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "ws",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "The chat the reading job reports to.",
+            "in": "query",
+            "name": "chat",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/NoteUploadForm"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NoteUploadDto"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": ""
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Note exceeds 1 MB"
+          }
+        },
+        "tags": [
+          "chats"
         ]
       }
     },

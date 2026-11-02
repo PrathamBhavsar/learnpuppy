@@ -240,6 +240,26 @@ describe("Session cards and decision drawer", () => {
     expect(cardLink.getAttribute("href")).toContain("tab=cards")
   })
 
+  it("renders math in the decision text", async () => {
+    const detail = state.db.digest.details.get("dec_1")
+    if (!detail) throw new Error("fixture dec_1 missing")
+    state.db.digest.details.set("dec_1", {
+      ...detail,
+      chosen: String.raw`Keep \(x^2\) bounded`,
+      why: String.raw`Because $\sum_{i=1}^{n} i$ grows`,
+    })
+    renderApp(`${PATH}?decision=dec_1`)
+    const drawer = await screen.findByTestId("digest-drawer")
+    await waitFor(() =>
+      expect(
+        drawer.querySelector('[data-testid="digest-drawer-chosen"] .katex')
+      ).not.toBeNull()
+    )
+    await waitFor(() =>
+      expect(drawer.querySelectorAll(".katex").length).toBeGreaterThanOrEqual(2)
+    )
+  })
+
   it("opens straight from the URL and closes back to the list", async () => {
     const user = userEvent.setup()
     const { router } = renderApp(`${PATH}?decision=dec_3`)

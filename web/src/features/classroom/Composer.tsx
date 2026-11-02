@@ -41,6 +41,7 @@ export function Composer({
   const [steer, setSteer] = useState(false)
   const [attachmentError, setAttachmentError] = useState<string | null>(null)
   const fileRef = useRef<HTMLInputElement>(null)
+  const noteRef = useRef<HTMLInputElement>(null)
   const editable = !running || steer
   const canSend = editable && text.trim() !== "" && !sending
 
@@ -144,6 +145,37 @@ export function Composer({
               <PaperclipIcon data-icon="inline-start" />
             )}
             PDF
+          </Button>
+          <input
+            ref={noteRef}
+            type="file"
+            accept=".md,.txt,text/plain,text/markdown"
+            hidden
+            data-testid="composer-note-file"
+            aria-label="Note file"
+            onChange={(event) => {
+              const file = event.target.files?.[0]
+              event.target.value = ""
+              setAttachmentError(null)
+              if (!file) return
+              if (!/\.(md|txt)$/i.test(file.name)) {
+                setAttachmentError("Choose a .md or .txt note.")
+              } else if (file.size > 1024 * 1024) {
+                setAttachmentError(
+                  "This note is over 1 MB. Split it into smaller notes, then import it again."
+                )
+              } else onAttach(file)
+            }}
+          />
+          <Button
+            variant="ghost"
+            size="sm"
+            disabled={attaching || running}
+            onClick={() => noteRef.current?.click()}
+            aria-label="Import note"
+            data-testid="composer-note"
+          >
+            Note
           </Button>
           <InfoTip info={classroomInfo.pdf} />
           {running ? (

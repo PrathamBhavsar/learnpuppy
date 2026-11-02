@@ -607,6 +607,19 @@ mod tests {
         assert!(error.contains("timed out"), "{error}");
     }
 
+    /// Opt-in check against a PDF a real tool produced: `LP_REAL_PDF=/path cargo test -p lp-agent real_pdf -- --ignored`.
+    #[test]
+    #[ignore = "needs LP_REAL_PDF"]
+    fn real_pdf_reads_by_range() {
+        let path = std::env::var("LP_REAL_PDF").expect("set LP_REAL_PDF");
+        let total = PdftotextPdf.page_count(&path).unwrap();
+        assert!(total > 10, "use a PDF over ten pages");
+        let pages = PdftotextPdf.page_range(&path, 11, 20).unwrap();
+        assert_eq!(pages.len(), 10);
+        assert!(pages.iter().all(|p| p.trim().len() > 50));
+        assert!(PdftotextPdf.page_range(&path, 1, 11).is_err());
+    }
+
     #[test]
     fn generated_large_pdf_extracts_only_requested_chunk() {
         let dir = tempfile::tempdir().unwrap();

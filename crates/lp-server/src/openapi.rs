@@ -41,6 +41,7 @@ use crate::error::{ErrorBody, ErrorCode, ErrorEnvelope, FieldError};
         crate::routes::jobs::abort,
         crate::routes::artifacts::artifact,
         crate::routes::sources::pdf,
+        crate::routes::sources::note,
         crate::routes::graph_write::preview,
         crate::routes::graph_write::remove,
         crate::routes::graph_write::relayout,

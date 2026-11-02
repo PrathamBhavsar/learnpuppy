@@ -247,6 +247,9 @@ pub struct JobView {
     pub title: String,
     pub artifact_id: Option<String>,
     pub error: Option<String>,
+    /// PDF jobs: pages read so far and the document's page count.
+    pub pages_read: Option<u64>,
+    pub total_pages: Option<u64>,
     pub created_at: i64,
 }
 
@@ -265,9 +268,15 @@ impl From<&JobRecord> for JobView {
                 .and_then(|r| r.get("error"))
                 .and_then(Value::as_str)
                 .map(str::to_owned),
+            pages_read: progress_field(j, "pagesRead"),
+            total_pages: progress_field(j, "totalPages"),
             created_at: j.created_at,
         }
     }
+}
+
+fn progress_field(j: &JobRecord, key: &str) -> Option<u64> {
+    j.result.as_ref()?.get("progress")?.get(key)?.as_u64()
 }
 
 fn job_info(j: &JobRecord) -> ev::JobInfo {
@@ -1678,6 +1687,44 @@ impl<E: LlmEngine + 'static> ChatRuntime<E> {
         }
         self.bench(ctx).await?.wb.abort(job_id);
         Ok(job)
+    }
+
+    /// Adds an imported note as user-provided source context for the next tutor turn.
+    pub async fn attach_note(
+        self: &Arc<Self>,
+        ctx: &TurnCtx<E>,
+        chat: &str,
+        artifact_id: &str,
+        text: String,
+    ) -> Result<(), Rejected> {
+        self.ensure(ctx).await?;
+        let h = ctx.handle.clone();
+        let slot = self.slot(&h, chat);
+        let guard = slot
+            .lock
+            .clone()
+            .try_lock_owned()
+            .map_err(|_| Rejected::InProgress {
+                turn_id: slot.live.lock().turn_id.clone(),
+            })?;
+        let (chats, id) = (h.stores().chats.clone(), chat.to_owned());
+        let now = self.now();
+        let source = format!("Imported note (source {artifact_id}):\n\n{text}");
+        let version = blocking(move || {
+            let (mut rec, mut s, mut meta) = load(chats.as_ref(), &id)?;
+            s.messages.push(Msg::User(source));
+            Ok(save(chats.as_ref(), &mut rec, &s, &mut meta, now)?)
+        })
+        .await?;
+        drop(guard);
+        self.publish(
+            h.id(),
+            Event::ChatRest {
+                chat_id: chat.to_owned(),
+                view_version: version,
+            },
+        );
+        Ok(())
     }
 
     /// Starts a PDF reading job for `path` attached to `chat`; its job id.
