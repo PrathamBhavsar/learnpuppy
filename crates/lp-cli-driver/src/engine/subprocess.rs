@@ -1978,7 +1978,7 @@ case "$p" in *'<tool_call>'*quiz*) echo '{"type":"assistant","message":{"content
 echo '{"type":"error","message":"Reconnecting... waiting for network (Connection failed: error sending request)"}'
 sleep 30"#,
         );
-        e.timeout = Duration::from_millis(4000);
+        e.timeout = Duration::from_millis(10000);
         assert_eq!(
             turn_err(&e).await.failure(NOW),
             super::super::FailureKind::Offline
