@@ -5,6 +5,18 @@ import { useLive } from "@/stores/live"
 
 const RUNNING = new Set(["running", "queued", "pending"])
 
+/** `pdf · 12/40 pages` while a PDF is being read, else the job kind. */
+export function jobDetail(job: {
+  kind: string
+  pagesRead?: number | null
+  totalPages?: number | null
+}): string {
+  if (job.kind === "pdf" && job.totalPages) {
+    return `pdf · ${job.pagesRead ?? 0}/${job.totalPages} pages`
+  }
+  return job.kind
+}
+
 /** Running jobs (workbench sub-agents, PDF ingestion) plus any ingest run streaming progress. */
 export function WorkspaceJobs({ workspaceId }: { workspaceId: string | null }) {
   const jobs = useJobs(workspaceId ?? "")
@@ -17,7 +29,7 @@ export function WorkspaceJobs({ workspaceId }: { workspaceId: string | null }) {
       .map((job) => ({
         id: job.id,
         label: job.title,
-        detail: job.kind,
+        detail: jobDetail(job),
         cancellable: true,
       })),
     ...Object.values(ingest).map((run) => ({

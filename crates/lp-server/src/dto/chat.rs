@@ -398,8 +398,9 @@ pub enum TurnState {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct TurnErrorDto {
-    /// `engine_unavailable`, `rate_limited`, `internal`, `storage_full`, or `interrupted` when a
-    /// server restart cut the turn off.
+    /// AI failures: `OFFLINE`, `NOT_CONNECTED`, `NO_MODEL`, `RATE_LIMITED`, `TIMED_OUT`,
+    /// `NO_RESPONSE`, `UNKNOWN`. Others: `engine_unavailable`, `rate_limited`, `internal`,
+    /// `storage_full`, or `interrupted` when a server restart cut the turn off.
     pub code: String,
     pub message: String,
     pub retryable: bool,
@@ -407,6 +408,20 @@ pub struct TurnErrorDto {
     pub retry_after_ms: Option<u64>,
     /// The server stopped mid-turn; offer Resume.
     pub interrupted: bool,
+    /// `RATE_LIMITED`: epoch ms when the soonest limit lifts.
+    #[serde(default)]
+    pub resets_at: Option<i64>,
+    /// The provider the failure is about (`claude`, `codex`, `agy`, `kiro`, `opencode`).
+    #[serde(default)]
+    pub provider: Option<String>,
+    #[serde(default)]
+    pub model: Option<String>,
+    /// What to do next: a command to run (`kiro-cli login`) or a screen (`Settings`).
+    #[serde(default)]
+    pub action: Option<String>,
+    /// `OFFLINE`: seconds until the automatic retry.
+    #[serde(default)]
+    pub retry_in_secs: Option<u64>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
@@ -450,6 +465,15 @@ impl From<&chat::TurnStatus> for TurnDto {
                 retryable: e.retryable,
                 retry_after_ms: e.retry_after_ms,
                 interrupted: e.interrupted,
+                resets_at: e
+                    .ai
+                    .as_ref()
+                    .and_then(|a| a.resets_at)
+                    .and_then(|r| i64::try_from(r).ok()),
+                provider: e.ai.as_ref().and_then(|a| a.provider.clone()),
+                model: e.ai.as_ref().and_then(|a| a.model.clone()),
+                action: e.ai.as_ref().and_then(|a| a.action.clone()),
+                retry_in_secs: e.ai.as_ref().and_then(|a| a.retry_in_secs),
             }),
         }
     }
@@ -877,6 +901,10 @@ pub struct JobItemDto {
     pub artifact_id: Option<String>,
     /// Why a finished job has no result.
     pub error: Option<String>,
+    /// PDF jobs: pages read so far.
+    pub pages_read: Option<u64>,
+    /// PDF jobs: the document's page count.
+    pub total_pages: Option<u64>,
     pub created_at: i64,
 }
 
@@ -890,6 +918,8 @@ impl From<chat::JobView> for JobItemDto {
             title: j.title,
             artifact_id: j.artifact_id,
             error: j.error,
+            pages_read: j.pages_read,
+            total_pages: j.total_pages,
             created_at: j.created_at,
         }
     }
@@ -899,6 +929,22 @@ impl From<chat::JobView> for JobItemDto {
 pub struct JobListDto {
     /// Newest first.
     pub items: Vec<JobItemDto>,
+}
+
+/// UTF-8 Markdown or plain text, at most 1 MB.
+#[derive(ToSchema)]
+#[allow(dead_code)]
+pub struct NoteUploadForm {
+    #[schema(value_type = String, format = Binary)]
+    pub file: Vec<u8>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct NoteUploadDto {
+    pub artifact_id: String,
+    pub chat_id: String,
+    pub bytes: u64,
 }
 
 /// `POST …/sources/pdf` form: the PDF and an optional question for the reading job.

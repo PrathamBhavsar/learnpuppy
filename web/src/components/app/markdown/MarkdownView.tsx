@@ -4,7 +4,7 @@ import remarkGfm from "remark-gfm"
 
 import { cn } from "@/lib/utils"
 
-import "../styles.css"
+import "./styles.css"
 import { CodeBlock } from "./CodeBlock"
 
 type Plugins = ComponentProps<typeof ReactMarkdown>

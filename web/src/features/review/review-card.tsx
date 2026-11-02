@@ -14,7 +14,7 @@ import { cn } from "@/lib/utils"
 import { Choices } from "./choices"
 import { reviewInfo } from "./info"
 import { useAnswerCard, useGradeCard } from "./api"
-import { PromptMarkdown } from "./prompt-markdown"
+import { PromptMarkdown } from "@/components/app/prompt-markdown"
 import { RatingBar } from "./rating-bar"
 import { resolveSessionKey } from "./session-keys"
 import type { Session } from "./use-session"
@@ -223,9 +223,10 @@ export function ReviewCardView({
                 {correct ? "Correct" : "Not quite"}
                 <InfoTip info={reviewInfo.verdict} />
               </p>
-              <p dir="auto" className="text-[13px] text-muted-foreground">
-                {result.explanation}
-              </p>
+              <PromptMarkdown
+                source={result.explanation}
+                className="text-[13px] text-muted-foreground"
+              />
             </div>
           </div>
 

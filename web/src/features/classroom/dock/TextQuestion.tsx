@@ -1,5 +1,6 @@
+import { useDraft } from "./drafts"
 import { SendIcon } from "lucide-react"
-import { useState } from "react"
+import { useHotkey } from "@/hooks/use-hotkey"
 
 import type { AnswerInput, PendingQuestion } from "@/api/pending-types"
 import { InfoTip } from "@/components/app/info/info"
@@ -12,7 +13,7 @@ import { classroomInfo } from "../info"
 type TextQuestionProps = {
   pending: PendingQuestion
   busy: boolean
-  onSubmit: (answer: AnswerInput) => void
+  onSubmit: (answer: AnswerInput) => void | Promise<void>
 }
 
 const MIN_WORDS = 12
@@ -31,11 +32,17 @@ function wordCount(text: string): number {
 
 /** Free-text questions: probe, recall (with "I don't know"), explain and `ask_user_question`. */
 export function TextQuestion({ pending, busy, onSubmit }: TextQuestionProps) {
-  const [text, setText] = useState("")
+  const { text, setText, submit: submitDraft } = useDraft(pending.callId)
   const canSubmit = !busy && text.trim() !== ""
   const submit = () => {
-    if (canSubmit) onSubmit({ text: text.trim() })
+    if (canSubmit) void submitDraft(() => onSubmit({ text: text.trim() }))
   }
+  useHotkey("mod+enter", submit, {
+    id: "answer-submit",
+    label: "Submit answer",
+    group: "Learn",
+    enabled: canSubmit,
+  })
   const words = wordCount(text)
   return (
     <div className="flex flex-col gap-2">
@@ -43,7 +50,11 @@ export function TextQuestion({ pending, busy, onSubmit }: TextQuestionProps) {
         value={text}
         onChange={(event) => setText(event.target.value)}
         onKeyDown={(event) => {
-          if (event.key === "Enter" && !event.shiftKey) {
+          if (
+            event.key === "Enter" &&
+            !event.shiftKey &&
+            !event.nativeEvent.isComposing
+          ) {
             event.preventDefault()
             submit()
           }
@@ -60,7 +71,7 @@ export function TextQuestion({ pending, busy, onSubmit }: TextQuestionProps) {
         data-testid={`${pending.tool}-text`}
         className="max-h-48 min-h-16"
       />
-      <div className="flex items-center justify-between gap-2">
+      <div className="sticky bottom-0 z-10 flex items-center justify-between gap-2 bg-card py-2">
         <p className="text-[12px] text-muted-foreground">
           {HINTS[pending.tool] ?? HINTS["ask_user_question"]}
           {pending.tool === "explain" ? (
@@ -77,7 +88,9 @@ export function TextQuestion({ pending, busy, onSubmit }: TextQuestionProps) {
                 type="button"
                 variant="ghost"
                 disabled={busy}
-                onClick={() => onSubmit({ text: "I don't know" })}
+                onClick={() => {
+                  void submitDraft(() => onSubmit({ text: "I don't know" }))
+                }}
                 data-testid="recall-idk"
               >
                 I don&apos;t know

@@ -43,6 +43,8 @@ pub struct DoctorInput {
     pub path_dirs: Vec<PathBuf>,
     pub assets: Assets,
     pub port: u16,
+    /// Run `kiro-cli`/`opencode` status commands and test the network. Off in tests.
+    pub probe: bool,
 }
 
 fn data_root_check(root: &Path) -> Check {
@@ -129,11 +131,9 @@ fn find_on_path(dirs: &[PathBuf], bin: &str) -> Option<PathBuf> {
 
 fn cli_checks(input: &DoctorInput) -> Vec<Check> {
     let settings = Settings::load(&input.data_root).unwrap_or_default();
-    let pool = accounts::discover_pool(&accounts::roots(
-        &input.home,
-        input.claude_config_dir.clone(),
-        &settings,
-    ));
+    let mut roots = accounts::roots(&input.home, input.claude_config_dir.clone(), &settings);
+    roots.probe_clis = input.probe;
+    let pool = accounts::discover_pool(&roots);
     let found = accounts::list(&pool);
     let mut out = Vec::new();
     for (bin, name) in [
@@ -166,11 +166,20 @@ fn cli_checks(input: &DoctorInput) -> Vec<Check> {
         };
         out.push(c);
     }
+    if input.probe {
+        for (bin, name, provider) in [
+            ("kiro-cli", "kiro cli", "kiro"),
+            ("opencode", "opencode cli", "opencode"),
+        ] {
+            out.push(free_cli_check(&found, name, provider, bin));
+        }
+        out.push(network_check());
+    }
     if found.is_empty() {
         out.push(check(
             Level::Fail,
             "accounts",
-            "no CLI login found; sign in to claude, codex or agy (or use `serve --engine faux`)",
+            "no CLI login found; connect kiro or opencode (free), or claude, codex, agy (or use `serve --engine faux`)",
         ));
     } else {
         out.push(check(
@@ -180,6 +189,83 @@ fn cli_checks(input: &DoctorInput) -> Vec<Check> {
         ));
     }
     out
+}
+
+/// One line for kiro/opencode: installed? logged in? how many models, how many free, limited until?
+fn free_cli_check(
+    found: &[accounts::Account],
+    name: &'static str,
+    provider: &str,
+    bin: &str,
+) -> Check {
+    let mine: Vec<_> = found.iter().filter(|a| a.provider == provider).collect();
+    if mine.is_empty() {
+        return check(
+            Level::Warn,
+            name,
+            format!(
+                "not connected; install `{bin}` and run `{}` yourself",
+                accounts::how_to_connect(provider)
+            ),
+        );
+    }
+    let mut parts = Vec::new();
+    let mut level = Level::Ok;
+    for a in mine {
+        let free = a.models.iter().filter(|m| m.free).count();
+        let state = match &a.status {
+            accounts::Status::Ready => "ready".to_owned(),
+            accounts::Status::Cooldown { secs_left, .. } => {
+                level = Level::Warn;
+                format!("limited, resets in {}", human_secs(*secs_left))
+            }
+            accounts::Status::AuthExpired => {
+                level = Level::Warn;
+                format!("signed out; run `{}`", accounts::how_to_connect(provider))
+            }
+            accounts::Status::Disabled => "disabled".to_owned(),
+            accounts::Status::Offline => {
+                level = Level::Warn;
+                "offline".to_owned()
+            }
+            accounts::Status::NoModel => {
+                level = Level::Warn;
+                "no usable model".to_owned()
+            }
+            accounts::Status::Missing => {
+                level = Level::Warn;
+                "missing".to_owned()
+            }
+        };
+        parts.push(format!(
+            "{} {state} ({} models, {free} free)",
+            a.id,
+            a.models.len()
+        ));
+    }
+    check(level, name, parts.join("; "))
+}
+
+fn human_secs(s: u64) -> String {
+    match (s / 3600, s % 3600 / 60) {
+        (0, m) => format!("{m}m"),
+        (h, m) => format!("{h}h {m}m"),
+    }
+}
+
+/// A 1.5 s TCP connect to a public resolver: the same "offline" the engine would hit.
+fn network_check() -> Check {
+    use std::net::{SocketAddr, TcpStream};
+    use std::time::Duration;
+    let addr = SocketAddr::from(([1, 1, 1, 1], 443));
+    match TcpStream::connect_timeout(&addr, Duration::from_millis(1500)) {
+        Ok(_) => check(Level::Ok, "network", "online"),
+        Err(e) => check(
+            Level::Warn,
+            "network",
+            format!("offline ({e}); LearnPuppy pauses and retries when the AI cannot be reached"),
+        ),
+    }
 }
 
 fn web_check(assets: &Assets) -> Check {
@@ -229,6 +315,7 @@ mod tests {
             path_dirs: vec![d.join("bin")],
             assets: Assets::Dir(d.join("dist")),
             port: 0,
+            probe: false,
         }
     }
 
@@ -279,5 +366,37 @@ mod tests {
         )
         .unwrap();
         assert_eq!(level(&checks(&i), "server"), Level::Warn);
+    }
+
+    #[test]
+    fn free_cli_lines_say_how_to_connect_and_when_limits_lift() {
+        assert_eq!(human_secs(4 * 3600 + 12 * 60 + 5), "4h 12m");
+        assert_eq!(human_secs(90), "1m");
+        let missing = free_cli_check(&[], "kiro cli", "kiro", "kiro-cli");
+        assert_eq!(missing.level, Level::Warn);
+        assert!(
+            missing.detail.contains("kiro-cli login"),
+            "{}",
+            missing.detail
+        );
+        let limited = accounts::Account {
+            id: "opencode:opencode".into(),
+            provider: "opencode",
+            email: None,
+            tier: None,
+            config_dir: None,
+            status: accounts::Status::Cooldown {
+                secs_left: 5 * 3600,
+                reason: "Free usage limit".into(),
+            },
+            resets_at: None,
+            requests: 0,
+            tokens_in: 0,
+            tokens_out: 0,
+            models: vec![],
+        };
+        let c = free_cli_check(&[limited], "opencode cli", "opencode", "opencode");
+        assert_eq!(c.level, Level::Warn);
+        assert!(c.detail.contains("resets in 5h 0m"), "{}", c.detail);
     }
 }

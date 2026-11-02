@@ -4,11 +4,15 @@ import {
   CopyIcon,
   RotateCcwIcon,
   TriangleAlertIcon,
+  WifiOffIcon,
 } from "lucide-react"
+import { useEffect, useState } from "react"
 
 import type { ClassroomView } from "@/api/pending-types"
 import { Button } from "@/components/ui/button"
 import { Spinner } from "@/components/ui/spinner"
+import { providerTitle } from "@/lib/accounts-model"
+import { formatResets } from "@/lib/ai-time"
 import { toastInfo } from "@/lib/toast"
 
 import { COPY } from "./copy"
@@ -85,7 +89,126 @@ function diagnostics(chatId: string, turn: Turn, viewVersion: number): string {
     `message: ${e?.message ?? "unknown"}`,
     `retryable: ${e?.retryable ?? false}`,
     `interrupted: ${e?.interrupted ?? false}`,
+    ...(e?.provider ? [`provider: ${e.provider}`] : []),
+    ...(e?.model ? [`model: ${e.model}`] : []),
   ].join("\n")
+}
+
+/** Seconds between automatic retries while offline: 5, 10, 20, 40, then 60. */
+function offlineDelaySecs(attempt: number, hintSecs?: number | null) {
+  const base = Math.max(5, hintSecs ?? 5)
+  return Math.min(60, base * 2 ** Math.min(attempt, 4))
+}
+
+const offlineAttempts = new Map<string, number>()
+
+type Friendly = {
+  title: string
+  body: React.ReactNode
+  /** Hide the Retry button (the user has to fix something first). */
+  noRetry?: boolean
+}
+
+function describe(
+  turn: Turn,
+  now: number,
+  offlineLeft: number | null
+): Friendly | null {
+  const e = turn.error
+  if (!e) return null
+  const who = e.provider
+    ? `${providerTitle(e.provider)}${e.model ? ` (${e.model})` : ""}`
+    : "Your AI"
+  switch (e.code) {
+    case "OFFLINE":
+      return {
+        title: "You're offline",
+        body: (
+          <>
+            No AI can be reached right now, so nothing is lost. Retrying in{" "}
+            <span data-testid="offline-countdown" className="tabular-nums">
+              {offlineLeft ?? 0}s
+            </span>
+            ; it also resumes by itself when you are back online.
+          </>
+        ),
+      }
+    case "NOT_CONNECTED":
+      return {
+        title: "No AI is connected",
+        noRetry: true,
+        body: (
+          <>
+            {e.message}{" "}
+            {e.action ? (
+              <>
+                Run <code data-testid="howto-command">{e.action}</code> in a
+                terminal, then press Rescan on{" "}
+              </>
+            ) : (
+              <>Connect one on </>
+            )}
+            <Link
+              to="/accounts"
+              data-testid="turn-open-accounts"
+              className="text-primary underline underline-offset-2"
+            >
+              Accounts
+            </Link>
+            .
+          </>
+        ),
+      }
+    case "NO_MODEL":
+      return {
+        title: "That model is not available",
+        body: (
+          <>
+            {who} has no model that can run this. Choose another model in{" "}
+            <Link
+              to="/accounts"
+              data-testid="turn-open-settings"
+              className="text-primary underline underline-offset-2"
+            >
+              Role slots
+            </Link>
+            , then retry.
+          </>
+        ),
+      }
+    case "RATE_LIMITED":
+    case "rate_limited": {
+      const at = e.resetsAt ?? (e.retryAfterMs ? now + e.retryAfterMs : null)
+      return {
+        title: "All your AIs are limited",
+        body: (
+          <>
+            {who} is back first
+            {at ? (
+              <>
+                :{" "}
+                <span data-testid="limit-resets">{formatResets(at, now)}</span>
+              </>
+            ) : null}
+            . LearnPuppy already tried your other AIs and switches back by
+            itself. You can retry once any of them returns.
+          </>
+        ),
+      }
+    }
+    case "TIMED_OUT":
+      return {
+        title: "The AI took too long",
+        body: "It did not answer in time. Try again, or pick a faster model in Role slots.",
+      }
+    case "NO_RESPONSE":
+      return {
+        title: "The tutor had nothing to say",
+        body: "The AI returned an empty answer. Try again.",
+      }
+    default:
+      return null
+  }
 }
 
 /** The last turn failed. Retry re-posts the same `clientId`; a restart-interrupted turn offers Resume. */
@@ -98,6 +221,34 @@ export function TurnErrorCard({
 }: TurnErrorCardProps) {
   const error = turn.error
   const interrupted = error?.interrupted ?? false
+  const offline = error?.code === "OFFLINE"
+  const now = useNow(true)
+  const [shownAt, setShownAt] = useState(() => Date.now())
+  const attempt = offlineAttempts.get(chatId) ?? 0
+  const delay = offlineDelaySecs(attempt, error?.retryInSecs)
+  const offlineLeft = offline
+    ? Math.max(0, Math.ceil(delay - (now - shownAt) / 1000))
+    : null
+
+  // Offline: retry by itself with backoff, so a flaky network recovers without a click.
+  useEffect(() => {
+    if (!offline) {
+      offlineAttempts.delete(chatId)
+      return
+    }
+    // Restart the countdown for each new failed attempt (a timestamp, not derivable in render).
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setShownAt(Date.now())
+    const timer = window.setTimeout(() => {
+      offlineAttempts.set(chatId, attempt + 1)
+      onRetry()
+    }, delay * 1000)
+    return () => window.clearTimeout(timer)
+    // A new error object means a new failed attempt.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [offline, turn.turnId, error?.retryInSecs])
+
+  const friendly = interrupted ? null : describe(turn, now, offlineLeft)
   const copy = async () => {
     try {
       await navigator.clipboard.writeText(
@@ -113,23 +264,40 @@ export function TurnErrorCard({
       role="alert"
       data-testid="turn-error"
       data-code={error?.code}
-      className="mx-auto flex w-full max-w-3xl flex-col gap-2 border-t border-destructive/40 bg-destructive/10 px-4 py-3 text-[13px]"
+      className={
+        offline || friendly
+          ? "mx-auto flex w-full max-w-3xl flex-col gap-2 border-t border-warning/40 bg-warning/10 px-4 py-3 text-[13px]"
+          : "mx-auto flex w-full max-w-3xl flex-col gap-2 border-t border-destructive/40 bg-destructive/10 px-4 py-3 text-[13px]"
+      }
     >
       <div className="flex items-start gap-2">
-        <TriangleAlertIcon
-          aria-hidden
-          className="mt-0.5 size-4 shrink-0 text-destructive"
-        />
+        {offline ? (
+          <WifiOffIcon
+            aria-hidden
+            className="mt-0.5 size-4 shrink-0 text-warning"
+          />
+        ) : (
+          <TriangleAlertIcon
+            aria-hidden
+            className={
+              friendly
+                ? "mt-0.5 size-4 shrink-0 text-warning"
+                : "mt-0.5 size-4 shrink-0 text-destructive"
+            }
+          />
+        )}
         <div className="min-w-0 flex-1">
-          <p className="font-medium">
+          <p className="font-medium" data-testid="turn-error-title">
             {interrupted
               ? "The lesson was interrupted"
-              : "The tutor could not answer"}
+              : (friendly?.title ?? "The tutor could not answer")}
           </p>
-          <p className="text-muted-foreground">
-            {error?.message ?? "Something went wrong while running this turn."}
+          <p className="text-muted-foreground" data-testid="turn-error-body">
+            {friendly?.body ??
+              error?.message ??
+              "Something went wrong while running this turn."}
           </p>
-          {error?.code === "engine_unavailable" ? (
+          {!friendly && error?.code === "engine_unavailable" ? (
             <Link
               to="/accounts"
               className="text-primary underline underline-offset-2"
@@ -140,19 +308,21 @@ export function TurnErrorCard({
         </div>
       </div>
       <div className="flex items-center gap-2 ps-6">
-        <Button
-          size="sm"
-          onClick={onRetry}
-          disabled={retrying}
-          data-testid={interrupted ? "turn-resume" : "turn-retry"}
-        >
-          {retrying ? (
-            <Spinner data-icon="inline-start" />
-          ) : (
-            <RotateCcwIcon data-icon="inline-start" />
-          )}
-          {interrupted ? COPY.resume : COPY.retry}
-        </Button>
+        {friendly?.noRetry ? null : (
+          <Button
+            size="sm"
+            onClick={onRetry}
+            disabled={retrying}
+            data-testid={interrupted ? "turn-resume" : "turn-retry"}
+          >
+            {retrying ? (
+              <Spinner data-icon="inline-start" />
+            ) : (
+              <RotateCcwIcon data-icon="inline-start" />
+            )}
+            {interrupted ? COPY.resume : offline ? "Retry now" : COPY.retry}
+          </Button>
+        )}
         <Button
           variant="ghost"
           size="sm"

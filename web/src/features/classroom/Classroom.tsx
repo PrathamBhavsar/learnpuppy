@@ -18,6 +18,7 @@ import {
   useChat,
   useSendTurn,
   useUploadPdf,
+  useUploadNote,
 } from "@/api/queries/chats"
 import { InfoTip, ScreenGuide } from "@/components/app/info/info"
 import { EmptyState } from "@/components/app/empty-state"
@@ -34,6 +35,7 @@ import { ArtifactViewer } from "./ArtifactViewer"
 import { Composer } from "./Composer"
 import { COPY } from "./copy"
 import { classroomGuide, classroomInfo } from "./info"
+import { DraftScope } from "./dock/drafts"
 import { QuestionDock } from "./dock/QuestionDock"
 import { MessageList } from "./MessageList"
 import { PlanPanel } from "./PlanPanel"
@@ -107,7 +109,12 @@ export function Classroom({ ws, chatId }: ClassroomProps) {
     )
   }
   return (
-    <ClassroomBody key={chatId} ws={ws} chatId={chatId} view={query.data} />
+    <ClassroomBody
+      key={JSON.stringify([ws, chatId])}
+      ws={ws}
+      chatId={chatId}
+      view={query.data}
+    />
   )
 }
 
@@ -119,6 +126,7 @@ function ClassroomBody({
   const send = useSendTurn(ws, chatId)
   const cancel = useCancelTurn(ws, chatId)
   const upload = useUploadPdf(ws, chatId)
+  const uploadNote = useUploadNote(ws, chatId)
   const live = useStreamingTurn(chatId)
   const engineDown = useStatus((s) => s.engineUnavailable)
   const [artifact, setArtifact] = useState<ClassroomJob | null>(null)
@@ -151,26 +159,37 @@ function ClassroomBody({
     input: Parameters<typeof send.mutate>[0]["input"],
     clientId?: string
   ) =>
-    send.mutate(
-      { input, clientId: clientId ?? newClientId() },
-      {
-        onError: (e) => {
-          if (e instanceof ApiError && e.code === "stale_question")
-            toastInfo(COPY.questionUpdated)
-          else toastError(e, "Could not send")
-        },
-      }
-    )
+    send
+      .mutateAsync(
+        { input, clientId: clientId ?? newClientId() },
+        {
+          onError: (e) => {
+            if (e instanceof ApiError && e.code === "stale_question")
+              toastInfo(COPY.questionUpdated)
+            else toastError(e, "Could not send")
+          },
+        }
+      )
+      .then(() => undefined)
 
   const answer = (value: AnswerInput) => {
-    if (pending) post({ type: "answer", callId: pending.callId, answer: value })
+    if (pending)
+      return post({ type: "answer", callId: pending.callId, answer: value })
   }
 
-  const attach = (file: File) =>
-    upload.mutate(file, {
-      onSuccess: () => toastSuccess("PDF uploaded. Reading it now."),
-      onError: (e) => toastError(e, "Could not upload the PDF"),
-    })
+  const attach = (file: File) => {
+    if (/\.(md|txt)$/i.test(file.name)) {
+      uploadNote.mutate(file, {
+        onSuccess: () => toastSuccess("Note imported. Ask the tutor about it."),
+        onError: (e) => toastError(e, "Could not import the note"),
+      })
+    } else {
+      upload.mutate(file, {
+        onSuccess: () => toastSuccess("PDF uploaded. Reading it now."),
+        onError: (e) => toastError(e, "Could not upload the PDF"),
+      })
+    }
+  }
 
   return (
     <div
@@ -183,7 +202,7 @@ function ClassroomBody({
         aria-label="Conversation"
         className="flex min-w-0 flex-1 flex-col"
       >
-        <header className="flex items-center gap-2 border-b px-4 py-2">
+        <header className="relative z-30 flex items-center gap-2 border-b bg-background px-4 py-2">
           <h2
             className="min-w-0 flex-1 truncate font-heading text-[14px] font-medium"
             title={view.title}
@@ -257,30 +276,36 @@ function ClassroomBody({
             turn={{ ...turn, error }}
             viewVersion={view.viewVersion}
             retrying={send.isPending}
-            onRetry={() => post({ type: "resume" }, turn.clientId ?? undefined)}
+            onRetry={() => {
+              void post({ type: "resume" }, turn.clientId ?? undefined).catch(
+                () => undefined
+              )
+            }}
           />
         ) : null}
 
-        {pending ? (
-          <QuestionDock
-            key={pending.callId}
-            pending={pending}
-            probe={view.probeProgress}
-            busy={send.isPending || running}
-            onSubmit={answer}
-          />
-        ) : (
-          <Composer
-            running={running || turn.state === "queued"}
-            sending={send.isPending}
-            stopping={cancel.isPending}
-            attaching={upload.isPending}
-            onSend={(text) => post({ type: "user", text })}
-            onSteer={(text) => post({ type: "steer", text })}
-            onStop={() => cancel.mutate()}
-            onAttach={attach}
-          />
-        )}
+        <DraftScope ws={ws} chatId={chatId}>
+          {pending ? (
+            <QuestionDock
+              key={pending.callId}
+              pending={pending}
+              probe={view.probeProgress}
+              busy={send.isPending || running}
+              onSubmit={answer}
+            />
+          ) : (
+            <Composer
+              running={running || turn.state === "queued"}
+              sending={send.isPending}
+              stopping={cancel.isPending}
+              attaching={upload.isPending || uploadNote.isPending}
+              onSend={(text) => post({ type: "user", text })}
+              onSteer={(text) => post({ type: "steer", text })}
+              onStop={() => cancel.mutate()}
+              onAttach={attach}
+            />
+          )}
+        </DraftScope>
       </section>
 
       {open ? (
@@ -295,7 +320,7 @@ function ClassroomBody({
           <aside
             aria-label="Plan"
             style={{ width }}
-            className="absolute inset-y-0 end-0 z-20 w-full max-w-full shrink-0 border-s bg-background md:static md:z-auto"
+            className="absolute inset-y-0 end-0 top-[3.25rem] z-20 w-full max-w-full shrink-0 border-s bg-background md:static md:top-auto md:z-auto"
           >
             <PlanPanel ws={ws} view={view} onOpenArtifact={setArtifact} />
           </aside>

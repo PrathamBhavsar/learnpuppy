@@ -1264,13 +1264,14 @@ async fn accounts_can_be_disabled_rescanned_and_added() {
         .await;
     assert_eq!(add.status, StatusCode::OK, "{}", add.text);
     assert_eq!(add.json()["email"], "new@x.com");
-    assert_eq!(
-        a.get("/accounts").await.json()["items"]
-            .as_array()
-            .unwrap()
-            .len(),
-        3
-    );
+    let listed = a.get("/accounts").await.json();
+    let claude = listed["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|i| i["provider"] == "claude")
+        .count();
+    assert_eq!(claude, 3, "{listed}");
     let empty = a.root.join("empty");
     std::fs::create_dir_all(&empty).unwrap();
     let bad = a
@@ -1287,7 +1288,13 @@ async fn accounts_can_be_disabled_rescanned_and_added() {
 
     let rs = a.post_empty("/accounts/rescan").await;
     assert_eq!(rs.status, StatusCode::OK);
-    assert_eq!(rs.json()["items"].as_array().unwrap().len(), 3);
+    let claude_rows = rs.json()["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|i| i["provider"] == "claude")
+        .count();
+    assert_eq!(claude_rows, 3);
     assert_eq!(rs.json()["added"], json!([]));
 }
 

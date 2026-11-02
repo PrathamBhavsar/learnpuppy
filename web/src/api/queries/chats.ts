@@ -237,6 +237,29 @@ export function useUploadPdf(ws: string, chatId: string) {
   })
 }
 
+/** Stores a note as source context for the next tutor turn. */
+export function useUploadNote(ws: string, chatId: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async (file: File) => {
+      const form = new FormData()
+      form.set("file", file, file.name)
+      return unwrap(
+        await pendingApi.POST("/workspaces/{ws}/sources/note", {
+          params: { path: { ws }, query: { chat: chatId } },
+          body: form as unknown as { file: string },
+          bodySerializer: (body) => body as unknown as FormData,
+        })
+      )
+    },
+    onSuccess: () =>
+      Promise.all([
+        qc.invalidateQueries({ queryKey: keys.ws(ws).chat(chatId) }),
+        qc.invalidateQueries({ queryKey: keys.ws(ws).chats() }),
+      ]),
+  })
+}
+
 export type Artifact =
   | { kind: "text"; contentType: string; text: string }
   | { kind: "image"; contentType: string; url: string }

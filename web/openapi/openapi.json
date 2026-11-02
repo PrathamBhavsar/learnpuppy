@@ -24,11 +24,29 @@
               "null"
             ]
           },
+          "howToConnect": {
+            "description": "The exact command the user runs themselves to connect or renew this login. Never run by\nLearnPuppy.",
+            "type": "string"
+          },
           "id": {
             "type": "string"
           },
+          "loggedInAs": {
+            "description": "The identity the CLI is logged in as (its email), when it has one.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "models": {
+            "description": "Models the CLI lists for this account; empty for CLIs that pick their own.",
+            "items": {
+              "$ref": "#/components/schemas/AccountModelDto"
+            },
+            "type": "array"
+          },
           "provider": {
-            "description": "`claude`, `codex` or `agy`.",
+            "description": "`claude`, `codex`, `agy`, `kiro` or `opencode`.",
             "type": "string"
           },
           "reauthHint": {
@@ -43,6 +61,14 @@
             "format": "int32",
             "minimum": 0,
             "type": "integer"
+          },
+          "resetsAt": {
+            "description": "Epoch ms when the account's limit lifts, when the CLI said.",
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
           },
           "status": {
             "$ref": "#/components/schemas/AccountStatus"
@@ -68,9 +94,53 @@
           "id",
           "provider",
           "status",
+          "models",
+          "howToConnect",
           "requests",
           "tokensIn",
           "tokensOut"
+        ],
+        "type": "object"
+      },
+      "AccountModelDto": {
+        "description": "One model of an account with its own state.",
+        "properties": {
+          "creditMultiplier": {
+            "description": "Kiro: credits per unit of work relative to `auto` = 1.0.",
+            "format": "double",
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "disabled": {
+            "description": "The user switched this model off.",
+            "type": "boolean"
+          },
+          "free": {
+            "description": "Costs nothing (opencode free models).",
+            "type": "boolean"
+          },
+          "id": {
+            "type": "string"
+          },
+          "resetsAt": {
+            "description": "Epoch ms when this model's limit lifts.",
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "status": {
+            "$ref": "#/components/schemas/AccountStatus"
+          }
+        },
+        "required": [
+          "id",
+          "free",
+          "status",
+          "disabled"
         ],
         "type": "object"
       },
@@ -79,7 +149,10 @@
           "ready",
           "cooldown",
           "auth_expired",
-          "disabled"
+          "disabled",
+          "offline",
+          "no_model",
+          "missing"
         ],
         "type": "string"
       },
@@ -600,6 +673,13 @@
       },
       "CatalogProviderDto": {
         "properties": {
+          "freeModels": {
+            "description": "The subset of `models` that costs nothing.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
           "id": {
             "type": "string"
           },
@@ -612,7 +692,8 @@
         },
         "required": [
           "id",
-          "models"
+          "models",
+          "freeModels"
         ],
         "type": "object"
       },
@@ -2074,11 +2155,29 @@
             "description": "`research`, `pdf`, `visual` or `demo`.",
             "type": "string"
           },
+          "pagesRead": {
+            "description": "PDF jobs: pages read so far.",
+            "format": "int64",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
           "status": {
             "$ref": "#/components/schemas/JobStatusDto"
           },
           "title": {
             "type": "string"
+          },
+          "totalPages": {
+            "description": "PDF jobs: the document's page count.",
+            "format": "int64",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
           }
         },
         "required": [
@@ -2311,6 +2410,40 @@
         ],
         "type": "object"
       },
+      "NoteUploadDto": {
+        "properties": {
+          "artifactId": {
+            "type": "string"
+          },
+          "bytes": {
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "chatId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "artifactId",
+          "chatId",
+          "bytes"
+        ],
+        "type": "object"
+      },
+      "NoteUploadForm": {
+        "description": "UTF-8 Markdown or plain text, at most 1 MB.",
+        "properties": {
+          "file": {
+            "format": "binary",
+            "type": "string"
+          }
+        },
+        "required": [
+          "file"
+        ],
+        "type": "object"
+      },
       "OptionDto": {
         "properties": {
           "key": {
@@ -2372,6 +2505,23 @@
           }
         },
         "required": [
+          "disabled"
+        ],
+        "type": "object"
+      },
+      "PatchAccountModel": {
+        "properties": {
+          "disabled": {
+            "description": "Switch the model off (or back on).",
+            "type": "boolean"
+          },
+          "model": {
+            "description": "Model id as listed on the account, e.g. `opencode/big-pickle`.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "model",
           "disabled"
         ],
         "type": "object"
@@ -3874,8 +4024,15 @@
       "TurnErrorDto": {
         "description": "Why the last turn stopped short.",
         "properties": {
+          "action": {
+            "description": "What to do next: a command to run (`kiro-cli login`) or a screen (`Settings`).",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "code": {
-            "description": "`engine_unavailable`, `rate_limited`, `internal`, `storage_full`, or `interrupted` when a\nserver restart cut the turn off.",
+            "description": "AI failures: `OFFLINE`, `NOT_CONNECTED`, `NO_MODEL`, `RATE_LIMITED`, `TIMED_OUT`,\n`NO_RESPONSE`, `UNKNOWN`. Others: `engine_unavailable`, `rate_limited`, `internal`,\n`storage_full`, or `interrupted` when a server restart cut the turn off.",
             "type": "string"
           },
           "interrupted": {
@@ -3885,8 +4042,38 @@
           "message": {
             "type": "string"
           },
+          "model": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "provider": {
+            "description": "The provider the failure is about (`claude`, `codex`, `agy`, `kiro`, `opencode`).",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "resetsAt": {
+            "description": "`RATE_LIMITED`: epoch ms when the soonest limit lifts.",
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
           "retryAfterMs": {
             "description": "For `rate_limited`: how long until an account is free again.",
+            "format": "int64",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "retryInSecs": {
+            "description": "`OFFLINE`: seconds until the automatic retry.",
             "format": "int64",
             "minimum": 0,
             "type": [
@@ -4313,6 +4500,58 @@
         ]
       }
     },
+    "/accounts/{id}/models": {
+      "patch": {
+        "operationId": "patch_accounts_id_models",
+        "parameters": [
+          {
+            "description": "Account id, e.g. `opencode:opencode`",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PatchAccountModel"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccountDto"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "summary": "Switches one model of an account off, or back on (kiro and opencode list several).",
+        "tags": [
+          "accounts"
+        ]
+      }
+    },
     "/bootstrap": {
       "get": {
         "operationId": "get_bootstrap",
@@ -4616,6 +4855,27 @@
           }
         },
         "summary": "Providers, model ids, effort levels and the other choices settings forms offer.",
+        "tags": [
+          "settings"
+        ]
+      }
+    },
+    "/settings/free-defaults": {
+      "post": {
+        "operationId": "post_settings_free_defaults",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SettingsDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "summary": "\"Use free models\": every role runs on a free opencode or kiro model, with fallback across all\nof them. Never writes a paid model. Returns the new settings.",
         "tags": [
           "settings"
         ]
@@ -7270,6 +7530,95 @@
         "summary": "Grades a card (1 again .. 4 easy). A retry with the same `clientId` returns the first result.",
         "tags": [
           "review"
+        ]
+      }
+    },
+    "/workspaces/{ws}/sources/note": {
+      "post": {
+        "operationId": "post_workspaces_ws_sources_note",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "ws",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "The chat the reading job reports to.",
+            "in": "query",
+            "name": "chat",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/NoteUploadForm"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NoteUploadDto"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": ""
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Note exceeds 1 MB"
+          }
+        },
+        "tags": [
+          "chats"
         ]
       }
     },

@@ -44,6 +44,8 @@ export const accountHandlers = [
       tokensIn: 0,
       tokensOut: 0,
       reauthHint: null,
+      howToConnect: "claude login",
+      models: [],
     }
     state.db.accounts.push(account)
     bus.emit("accounts.changed", {})

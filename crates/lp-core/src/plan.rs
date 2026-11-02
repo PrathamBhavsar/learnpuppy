@@ -319,11 +319,27 @@ pub fn ask_option_problems(options: &[QuizOption]) -> Vec<String> {
     out
 }
 
+/// True if `text` names an option by letter or position (`option A`, `opción B`, `(C)`, a bare
+/// `D. ` label, …). Options are shuffled before the learner sees them, so a stored explanation
+/// naming a letter would point at the wrong option once rendered.
+pub fn cites_option_letters(text: &str) -> bool {
+    Regex::new(r"(?i)\b(?:option|opci[oó]n)\s+[a-d]\b|\([A-Da-d]\)|(?:^|\s)[A-Da-d]\.(?:\s|$)")
+        .expect("static pattern")
+        .is_match(text)
+}
+
 /// Authoring validation. Pass `tree` for `quiz`/`explain` (requires `type` + `nodeId`); `None` for `probe`.
 pub fn quiz_input_problems(q: &QuizInput, tree: Option<&PlanTree>) -> Vec<String> {
     let mut out = ask_option_problems(&q.options);
     if q.question.trim().is_empty() {
         out.push("question must be non-empty".to_string());
+    }
+    if cites_option_letters(&q.explanation) {
+        out.push(
+            "explanation must not cite option letters or positions (options are shuffled and \
+             shown without letters)"
+                .to_string(),
+        );
     }
     let answers = q.correct_answer.values();
     if answers.is_empty() || (!q.multi_select && answers.len() != 1) {
@@ -731,6 +747,36 @@ mod tests {
         assert!(quiz_input_problems(&q, Some(&t)).is_empty());
         q.multi_select = false;
         assert_eq!(quiz_input_problems(&q, Some(&t)).len(), 1);
+    }
+
+    #[test]
+    fn explanation_may_not_cite_option_letters_or_positions() {
+        assert!(!cites_option_letters("one is the start of the chain"));
+        assert!(!cites_option_letters(
+            "La fotosíntesis convierte la luz solar en energía química."
+        ));
+        for bad in [
+            "Option A is correct because it starts the chain",
+            "option b is wrong",
+            "The right answer is (C).",
+            "(a) because it comes first",
+            "Opción B es la correcta porque ocurre primero",
+            // The exact shape a real model produced in testing: a bare letter label up front.
+            "B. La fotosíntesis es el proceso mediante el cual las plantas convierten la luz solar.",
+        ] {
+            assert!(cites_option_letters(bad), "{bad}");
+        }
+        let t = parse_plan(PLAN, 1).unwrap();
+        let mut q = quiz();
+        q.explanation = "Option A is correct.".into();
+        assert_eq!(
+            quiz_input_problems(&q, Some(&t)),
+            vec![
+                "explanation must not cite option letters or positions (options are shuffled and \
+                 shown without letters)"
+                    .to_string()
+            ]
+        );
     }
 
     #[test]

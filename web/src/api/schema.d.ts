@@ -37,6 +37,23 @@ export interface paths {
         patch: operations["patch_accounts_id"];
         trace?: never;
     };
+    "/accounts/{id}/models": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Switches one model of an account off, or back on (kiro and opencode list several). */
+        patch: operations["patch_accounts_id_models"];
+        trace?: never;
+    };
     "/accounts/claude": {
         parameters: {
             query?: never;
@@ -187,6 +204,26 @@ export interface paths {
         get: operations["get_settings_catalog"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/settings/free-defaults": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * "Use free models": every role runs on a free opencode or kiro model, with fallback across all
+         *     of them. Never writes a paid model. Returns the new settings.
+         */
+        post: operations["post_settings_free_defaults"];
         delete?: never;
         options?: never;
         head?: never;
@@ -902,6 +939,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/workspaces/{ws}/sources/note": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["post_workspaces_ws_sources_note"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/workspaces/{ws}/sources/pdf": {
         parameters: {
             query?: never;
@@ -947,8 +1000,17 @@ export interface components {
              */
             cooldownUntil?: number | null;
             email?: string | null;
+            /**
+             * @description The exact command the user runs themselves to connect or renew this login. Never run by
+             *     LearnPuppy.
+             */
+            howToConnect: string;
             id: string;
-            /** @description `claude`, `codex` or `agy`. */
+            /** @description The identity the CLI is logged in as (its email), when it has one. */
+            loggedInAs?: string | null;
+            /** @description Models the CLI lists for this account; empty for CLIs that pick their own. */
+            models: components["schemas"]["AccountModelDto"][];
+            /** @description `claude`, `codex`, `agy`, `kiro` or `opencode`. */
             provider: string;
             /** @description The command that renews an expired login. */
             reauthHint?: string | null;
@@ -957,6 +1019,11 @@ export interface components {
              * @description Requests in the current rate-limit window.
              */
             requests: number;
+            /**
+             * Format: int64
+             * @description Epoch ms when the account's limit lifts, when the CLI said.
+             */
+            resetsAt?: number | null;
             status: components["schemas"]["AccountStatus"];
             tier?: string | null;
             /** Format: int64 */
@@ -964,11 +1031,30 @@ export interface components {
             /** Format: int64 */
             tokensOut: number;
         };
+        /** @description One model of an account with its own state. */
+        AccountModelDto: {
+            /**
+             * Format: double
+             * @description Kiro: credits per unit of work relative to `auto` = 1.0.
+             */
+            creditMultiplier?: number | null;
+            /** @description The user switched this model off. */
+            disabled: boolean;
+            /** @description Costs nothing (opencode free models). */
+            free: boolean;
+            id: string;
+            /**
+             * Format: int64
+             * @description Epoch ms when this model's limit lifts.
+             */
+            resetsAt?: number | null;
+            status: components["schemas"]["AccountStatus"];
+        };
         AccountsDto: {
             items: components["schemas"]["AccountDto"][];
         };
         /** @enum {string} */
-        AccountStatus: "ready" | "cooldown" | "auth_expired" | "disabled";
+        AccountStatus: "ready" | "cooldown" | "auth_expired" | "disabled" | "offline" | "no_model" | "missing";
         /** @description An account without credentials: provider, identity, health. */
         AccountSummaryDto: {
             cooldownReason?: string | null;
@@ -1115,6 +1201,8 @@ export interface components {
             themes: string[];
         };
         CatalogProviderDto: {
+            /** @description The subset of `models` that costs nothing. */
+            freeModels: string[];
             id: string;
             models: string[];
         };
@@ -1521,8 +1609,18 @@ export interface components {
             id: string;
             /** @description `research`, `pdf`, `visual` or `demo`. */
             kind: string;
+            /**
+             * Format: int64
+             * @description PDF jobs: pages read so far.
+             */
+            pagesRead?: number | null;
             status: components["schemas"]["JobStatusDto"];
             title: string;
+            /**
+             * Format: int64
+             * @description PDF jobs: the document's page count.
+             */
+            totalPages?: number | null;
         };
         JobListDto: {
             /** @description Newest first. */
@@ -1583,6 +1681,17 @@ export interface components {
         NodeSelection: {
             nodeIds: string[];
         };
+        NoteUploadDto: {
+            artifactId: string;
+            /** Format: int64 */
+            bytes: number;
+            chatId: string;
+        };
+        /** @description UTF-8 Markdown or plain text, at most 1 MB. */
+        NoteUploadForm: {
+            /** Format: binary */
+            file: string;
+        };
         OptionDto: {
             /** @description What to send back as the answer. */
             key: string;
@@ -1602,6 +1711,12 @@ export interface components {
         PatchAccount: {
             /** @description Exclude the account from the pool (or put it back). */
             disabled: boolean;
+        };
+        PatchAccountModel: {
+            /** @description Switch the model off (or back on). */
+            disabled: boolean;
+            /** @description Model id as listed on the account, e.g. `opencode/big-pickle`. */
+            model: string;
         };
         /** @description Fields left out stay as they are. */
         PatchWorkspace: {
@@ -2018,20 +2133,36 @@ export interface components {
         };
         /** @description Why the last turn stopped short. */
         TurnErrorDto: {
+            /** @description What to do next: a command to run (`kiro-cli login`) or a screen (`Settings`). */
+            action?: string | null;
             /**
-             * @description `engine_unavailable`, `rate_limited`, `internal`, `storage_full`, or `interrupted` when a
-             *     server restart cut the turn off.
+             * @description AI failures: `OFFLINE`, `NOT_CONNECTED`, `NO_MODEL`, `RATE_LIMITED`, `TIMED_OUT`,
+             *     `NO_RESPONSE`, `UNKNOWN`. Others: `engine_unavailable`, `rate_limited`, `internal`,
+             *     `storage_full`, or `interrupted` when a server restart cut the turn off.
              */
             code: string;
             /** @description The server stopped mid-turn; offer Resume. */
             interrupted: boolean;
             message: string;
+            model?: string | null;
+            /** @description The provider the failure is about (`claude`, `codex`, `agy`, `kiro`, `opencode`). */
+            provider?: string | null;
+            /**
+             * Format: int64
+             * @description `RATE_LIMITED`: epoch ms when the soonest limit lifts.
+             */
+            resetsAt?: number | null;
             retryable: boolean;
             /**
              * Format: int64
              * @description For `rate_limited`: how long until an account is free again.
              */
             retryAfterMs?: number | null;
+            /**
+             * Format: int64
+             * @description `OFFLINE`: seconds until the automatic retry.
+             */
+            retryInSecs?: number | null;
         };
         /** @enum {string} */
         TurnState: "idle" | "running" | "queued" | "error";
@@ -2148,6 +2279,40 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["PatchAccount"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AccountDto"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    patch_accounts_id_models: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Account id, e.g. `opencode:opencode` */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PatchAccountModel"];
             };
         };
         responses: {
@@ -2464,6 +2629,25 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["CatalogDto"];
+                };
+            };
+        };
+    };
+    post_settings_free_defaults: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SettingsDto"];
                 };
             };
         };
@@ -4229,6 +4413,67 @@ export interface operations {
             };
             /** @description Workspace archived */
             409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    post_workspaces_ws_sources_note: {
+        parameters: {
+            query: {
+                /** @description The chat the reading job reports to. */
+                chat: string;
+            };
+            header?: never;
+            path: {
+                ws: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["NoteUploadForm"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NoteUploadDto"];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Note exceeds 1 MB */
+            413: {
                 headers: {
                     [name: string]: unknown;
                 };

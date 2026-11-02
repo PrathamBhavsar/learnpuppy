@@ -43,3 +43,25 @@ export function useSetAccountDisabled() {
     onSuccess: () => qc.invalidateQueries({ queryKey: keys.accounts() }),
   })
 }
+
+export function useSetModelDisabled() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async ({
+      id,
+      model,
+      disabled,
+    }: {
+      id: string
+      model: string
+      disabled: boolean
+    }) =>
+      unwrap(
+        await pendingApi.PATCH("/accounts/{id}/models", {
+          params: { path: { id } },
+          body: { model, disabled },
+        })
+      ),
+    onSuccess: () => qc.invalidateQueries({ queryKey: keys.accounts() }),
+  })
+}

@@ -18,7 +18,7 @@ pub const RESEARCH: ToolSpec = ToolSpec {
 };
 pub const PDF: ToolSpec = ToolSpec {
     name: "pdf",
-    usage: "background PDF reading, answered later by a steer. {path, question}",
+    usage: "background PDF reading, answered later by a steer. {path, question, start_page?, end_page?}",
 };
 pub const VISUAL: ToolSpec = ToolSpec {
     name: "visual",

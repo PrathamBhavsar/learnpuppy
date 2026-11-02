@@ -6,6 +6,7 @@ import { toApiError } from "@/api/errors"
 import type { RoleProfile } from "@/api/pending-types"
 import { useAccounts, useRescanAccounts } from "@/api/queries/accounts"
 import {
+  useApplyFreeDefaults,
   useSaveSettings,
   useSettings,
   useSettingsCatalog,
@@ -19,11 +20,12 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
 import { Spinner } from "@/components/ui/spinner"
 import { usePageTitle } from "@/hooks/use-page-title"
-import { toastError } from "@/lib/toast"
+import { toastError, toastSuccess } from "@/lib/toast"
 
 import { AccountCard } from "./AccountCard"
 import { AddProfileDialog } from "./AddProfileDialog"
-import { groupAccounts, readyCount } from "./model"
+import { ProviderCard } from "./ProviderCard"
+import { aiState, groupAccounts, missingProviders, readyCount } from "@/lib/accounts-model"
 import { ACCOUNTS_GUIDE_PARTS, ACCOUNTS_INFO } from "./help"
 import { useNow } from "./use-now"
 
@@ -48,6 +50,31 @@ function RescanButton() {
       )}
       Rescan
     </Button>
+  )
+}
+
+/** One click: every role on a free model (opencode `*-free`, kiro), with fallback across them. */
+function FreeModelsButton() {
+  const apply = useApplyFreeDefaults()
+  return (
+    <span className="flex items-center gap-1.5">
+      <Button
+        variant="outline"
+        size="sm"
+        disabled={apply.isPending}
+        data-testid="use-free-models"
+        onClick={() =>
+          apply.mutate(undefined, {
+            onSuccess: () => toastSuccess("Every role now uses free models"),
+            onError: (error) => toastError(error, "Could not apply the preset"),
+          })
+        }
+      >
+        {apply.isPending ? <Spinner data-icon="inline-start" /> : null}
+        Use free models
+      </Button>
+      <InfoTip info={ACCOUNTS_INFO.freeModels} testId="info-free-models" />
+    </span>
   )
 }
 
@@ -90,11 +117,22 @@ export function AccountsScreen() {
   usePageTitle("Accounts")
   const accounts = useAccounts()
   const [adding, setAdding] = useState(false)
-  const cooling = accounts.data?.some((a) => a.status === "cooldown") ?? false
+  const cooling =
+    accounts.data?.some(
+      (a) =>
+        a.status === "cooldown" ||
+        a.models.some((m) => m.status === "cooldown")
+    ) ?? false
   const now = useNow(cooling)
 
   const list = accounts.data
   const ready = list ? readyCount(list) : 0
+  const ai = list ? aiState(list) : null
+  const rescan = useRescanAccounts()
+  const doRescan = () =>
+    rescan.mutate(undefined, {
+      onError: (error) => toastError(error, "Rescan failed"),
+    })
 
   return (
     <section
@@ -146,13 +184,22 @@ export function AccountsScreen() {
         <EmptyState
           icon={UsersRoundIcon}
           title="No accounts found"
-          description="Sign in with a CLI on this machine (run claude login, codex login or agy auth login), then rescan."
+          description="Sign in with a CLI on this machine (kiro and opencode are free), then rescan."
           action={<RescanButton />}
           className="border"
         />
       ) : list ? (
         <>
-          {ready === 0 ? (
+          {ai?.kind === "offline" ? (
+            <Alert data-testid="accounts-offline">
+              <AlertTitle>You are offline</AlertTitle>
+              <AlertDescription>
+                No AI can be reached without a network. Your accounts are fine;
+                LearnPuppy retries on its own.
+              </AlertDescription>
+            </Alert>
+          ) : null}
+          {ready === 0 && ai?.kind !== "offline" ? (
             <Alert variant="destructive" data-testid="accounts-none-ready">
               <AlertTitle>No account is ready</AlertTitle>
               <AlertDescription>
@@ -186,6 +233,25 @@ export function AccountsScreen() {
                 </ul>
               </section>
             ))}
+            {missingProviders(list).length > 0 ? (
+              <section
+                aria-labelledby="group-more"
+                data-testid="accounts-not-connected"
+                className="flex flex-col gap-2"
+              >
+                <h2
+                  id="group-more"
+                  className="font-heading text-[14px] font-medium"
+                >
+                  Not connected
+                </h2>
+                <ul role="list" className="grid gap-3 sm:grid-cols-2">
+                  {missingProviders(list).map((p) => (
+                    <ProviderCard key={p} provider={p} onRescan={doRescan} />
+                  ))}
+                </ul>
+              </section>
+            ) : null}
           </div>
         </>
       ) : null}
@@ -208,6 +274,7 @@ export function AccountsScreen() {
             Which provider, model and effort each agent role uses. Workspaces
             can override these in their own settings.
           </p>
+          <FreeModelsButton />
         </div>
         <RoleSlotsSection />
       </section>
