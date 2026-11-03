@@ -44,5 +44,6 @@ Chosen: one shot, Opus at low effort, about 14,000 tokens with the final schema,
 
 - **Good:** an order of magnitude less usage. Study survives limits. Steps show instantly. The Review and Graph screens fill up as a side effect.
 - **Bad:** content cannot adapt within a pack, only between packs. There is a wait of about 96 seconds on first use. The tutor feels less like a live conversation.
-- **Risk:** Opus's quota weight is unknown. The lead over Haiku holds only if an Opus token weighs under about 5.7 Haiku tokens. The meter in T8 gives real data, and the fallback path is measured and ready.
-- **Risk:** the evidence is one run per cell, and a judge noisy by about 1 point. G1 tests this before any large build.
+- **Bad:** Opus at low effort costs about 12x the Haiku path at API list prices. Better lessons are bought with that, and the `author` profile can flip it.
+- **Risk:** Opus's subscription quota weight is unknown. The meter in T8 gives real data, and the fallback path is measured and ready.
+- **Risk:** small samples and a judge noisy by about 1 point. The real-hour test T9 is what settles whether a person learns.
