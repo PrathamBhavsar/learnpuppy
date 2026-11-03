@@ -402,6 +402,12 @@ impl<E: LlmEngine + 'static> CourseService<E> {
         let me = self.inner.clone();
         blk(move || {
             let mut out = me.stores.courses.list()?;
+            // The goal is what the learner typed; the store's title is the Author's level note.
+            for c in &mut out {
+                if let Ok(p) = me.read_json::<Placement>(&c.id, "placement.json") {
+                    c.title = p.goal.chars().take(120).collect();
+                }
+            }
             out.extend(me.unwritten_courses());
             out.sort_by(|a, b| {
                 b.updated_at
