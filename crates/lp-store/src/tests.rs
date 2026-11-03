@@ -679,6 +679,8 @@ mod course_store {
         }
         assert_eq!(s.events("c1").unwrap().len(), 3000);
     }
+}
+
 #[test]
 fn second_based_timestamps_read_back_as_milliseconds() {
     let dir = tempfile::tempdir().unwrap();
