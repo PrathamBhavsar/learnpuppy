@@ -227,14 +227,15 @@ impl CliPoolEngine {
             }
             seen.stdout.lock().clear();
             seen.emitted.store(false, Ordering::Relaxed);
-            let err = match call(engine).await {
+            let result = call(engine).await;
+            let (i, o) = (
+                usage[0].load(Ordering::Relaxed),
+                usage[1].load(Ordering::Relaxed),
+            );
+            self.tokens[0].fetch_add(i, Ordering::Relaxed);
+            self.tokens[1].fetch_add(o, Ordering::Relaxed);
+            let err = match result {
                 Ok(v) => {
-                    let (i, o) = (
-                        usage[0].load(Ordering::Relaxed),
-                        usage[1].load(Ordering::Relaxed),
-                    );
-                    self.tokens[0].fetch_add(i, Ordering::Relaxed);
-                    self.tokens[1].fetch_add(o, Ordering::Relaxed);
                     self.pool.report_success(&acct.id, i, o);
                     return Ok(v);
                 }
@@ -242,6 +243,11 @@ impl CliPoolEngine {
             };
             let (text, kind) = failure_of(&err, &seen.stdout.lock());
             if matches!(kind, FailureKind::TimedOut | FailureKind::Other(_)) {
+                // A killed run reports no usage but may have spent quota: leave a non-zero mark so
+                // the course budget charges the attempt. A rate-limited call spent nothing.
+                if i + o == 0 {
+                    self.tokens[1].fetch_add(1, Ordering::Relaxed);
+                }
                 return Err(err);
             }
             self.pool.report_failure(
@@ -674,6 +680,15 @@ mod tests {
         assert_eq!(*n.lock(), 1);
         let st = e.pool.statuses(Instant::now(), now_ms());
         assert!(matches!(st[0].status, AccountStatus::CoolingDown { .. }));
+    }
+
+    #[tokio::test]
+    async fn a_killed_call_leaves_a_usage_mark_but_a_limited_one_does_not() {
+        let e = engine("claude:auto");
+        let _ = run_script(&e, vec![Err(exit("rate limit")), Ok("done")]).await;
+        assert_eq!(e.usage(), (0, 0));
+        let _ = run_script(&e, vec![Err(DriverError::Timeout(Duration::from_secs(1)))]).await;
+        assert_eq!(e.usage(), (0, 1));
     }
 
     #[tokio::test]
