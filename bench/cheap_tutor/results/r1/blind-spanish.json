@@ -1,0 +1,9 @@
+{
+ "V0": "strong-skeleton+haiku",
+ "V1": "strong-writes-all",
+ "V2": "strong-skeleton+flash-low",
+ "V3": "cheap-skeleton+qwen",
+ "V4": "cheap-skeleton+flash-low",
+ "V5": "cheap-skeleton+haiku",
+ "V6": "strong-skeleton+qwen"
+}

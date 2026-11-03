@@ -16,3 +16,4 @@ Cold-start entrypoint for orchestrators (`Claude Opus 4.6 Thinking High`) and im
 - [Decisions (ADR) Index](/decisions/index.md) — Architectural decision records (`0001` through `0006`), including the web UI over Dioxus decision (`0006`, superseding `0005`) and Ponytail skip list.
 - [Wisdom & Guardrails Index](/wisdom/index.md) — Banned anti-patterns (including Dioxus `wasm-bindgen` / inline-JS traps), time-traps, and mandatory pre-merge verification gates (`cargo`, `tester-army/e2e`, `alibaba/open-code-review`).
 - [Task DAG & Worker Dispatch](/tasks/index.md) — Active web UI rollout (`V00`–`A70`), completed backend tasks, archived Dioxus phase, and the model/effort matrix for Orca multi-agent orchestration.
+- [Cheap Tutor Plan](/cheap-tutor/index.md) — Plan to run hour-long learning sessions at a fraction of today's usage: measured audit, benchmark, course-as-data design, memory system, routing and task DAG.

@@ -31,3 +31,7 @@ Back to [Brain Index](/index.md). Related: [Overview](/overview.md), [Task DAG](
 
 ## 2026-11-01 — D60 Docs Sweep
 - Added [Web UI](/architecture/web-ui.md) and [Server API](/architecture/server-api.md) specs, root `README.md`, superseded note on `docs/PLAN.md`, archived pointer on `docs/DESIGN_SYSTEM_PLAN.md`; marked `D60` done in the [Task DAG](/tasks/index.md).
+
+
+## 2026-11-03 — Cheap Tutor Plan
+- Measured per-call CLI overhead and ran a local benchmark (`bench/cheap_tutor/`). Added the [Cheap Tutor Plan](/cheap-tutor/index.md) and proposed [ADR-0007](/decisions/0007-course-as-data.md): a rare strong call writes a course, code runs the session.
