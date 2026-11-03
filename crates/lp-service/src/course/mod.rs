@@ -25,6 +25,7 @@ use lp_core::course::{
     fold_learner, match_answer, next_step, rating_for, rating_from_grade, render_packet,
     wants_refill, AskKind, Course, CourseEvent, Item, ItemKind, Lesson, Match, Step,
 };
+use lp_core::plan::{shuffle_options, QuizOption};
 use lp_core::ports::{FlashCard, StoreError, TrackerStore};
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
@@ -213,6 +214,8 @@ struct Session {
     last: i64,
     start: bool,
     served: usize,
+    /// The review item last handed out and not yet answered.
+    pending: Option<String>,
 }
 
 #[derive(Default)]
@@ -290,6 +293,23 @@ async fn blk<T: Send + 'static>(f: impl FnOnce() -> Res<T> + Send + 'static) -> 
         .map_err(|e| CourseError::Store(e.to_string()))?
 }
 
+/// Options in a deterministic order keyed on `seed` (the existing `shuffle_options`), so the
+/// correct one is not predictably first and the order is stable across reloads. Display only:
+/// answers are compared by the stored option text.
+fn shuffled(options: &[String], seed: &str) -> Vec<String> {
+    let opts: Vec<QuizOption> = options
+        .iter()
+        .map(|o| QuizOption {
+            label: String::new(),
+            value: o.clone(),
+        })
+        .collect();
+    shuffle_options(&opts, seed)
+        .into_iter()
+        .map(|o| o.value)
+        .collect()
+}
+
 fn card_id(course: &str, item: &str) -> String {
     format!("c:{course}:{item}")
 }
@@ -322,11 +342,11 @@ fn flash_card(course: &Course, lesson: &Lesson, item: &Item) -> Option<FlashCard
             if opts.len() < 4 {
                 return None;
             }
-            let at = item.id.bytes().map(usize::from).sum::<usize>() % 4;
-            opts.swap(0, at);
             opts
         }
     };
+    // Review serves a card's options as stored, so the card itself is stored shuffled.
+    let options = shuffled(&options, &card_id(&course.id, &item.id));
     let correct = options.iter().position(|o| o == &item.answer)?;
     let options: [String; 4] = options.try_into().ok()?;
     Some(FlashCard {
@@ -402,7 +422,7 @@ impl<E: LlmEngine + 'static> CourseService<E> {
                     id: i.id.clone(),
                     kind: i.kind,
                     q: i.q.clone(),
-                    options: i.options.clone(),
+                    options: shuffled(&i.options, &format!("{id}:{}", i.id)),
                 })
                 .collect();
             me.write_json(&id, "placement.json", &p)?;
@@ -548,6 +568,33 @@ impl<E: LlmEngine + 'static> CourseService<E> {
             self.maybe_refill(id).await;
         }
         Ok(view)
+    }
+
+    /// The learner has read this lesson's explanation (the UI calls it on Continue). Idempotent:
+    /// it logs `Shown` only while `next` would still return that explanation.
+    pub async fn seen(&self, id: &str, lesson: &str) -> Res<()> {
+        let (me, cid, lid) = (self.inner.clone(), id.to_string(), lesson.to_string());
+        blk(move || {
+            let lk = me.lock_for(&cid);
+            let _g = lk.lock();
+            let course = me.load(&cid)?;
+            me.find_lesson(&course, &lid)?;
+            let events = me.events(&cid)?;
+            let state = fold_learner(&course, &events);
+            let again =
+                pending_reexplain(&course, &events, &HashSet::new()).as_deref() == Some(&lid);
+            if again || !state.studied.contains(&lid) {
+                me.append(
+                    &cid,
+                    &CourseEvent::Shown {
+                        ts: (me.clock)(),
+                        lesson: lid,
+                    },
+                )?;
+            }
+            Ok(())
+        })
+        .await
     }
 
     /// Grades with code, never a model, and never reveals the answer before this call.
@@ -858,20 +905,20 @@ async fn run_write<E: LlmEngine + 'static>(me: &Arc<Inner<E>>, id: &str) -> Res<
     blk(move || {
         let lk = m2.lock_for(&cid);
         let _g = lk.lock();
-        let r = (|| match written {
+        // Tokens were spent whatever came of them: charge before looking at the result.
+        let charged = m2
+            .usage_event(&cid, "author", su)
+            .and_then(|()| m2.usage_event(&cid, "placer", cu));
+        let r = charged.and_then(|()| match written {
             Ok(w) => {
                 let mut course = w.authored.course;
                 course.id = cid.clone();
-                m2.save_course(&course)?;
-                if w.path == AuthorPath::Strong {
-                    m2.usage_event(&cid, "author", su)?;
-                }
-                m2.usage_event(&cid, "placer", cu)
+                m2.save_course(&course)
             }
             Err(e) => Err(CourseError::Unavailable(format!(
                 "No AI could write the course: {e}"
             ))),
-        })();
+        });
         if reserved {
             m2.release_strong();
         }
@@ -896,6 +943,8 @@ async fn run_refill<E: LlmEngine + 'static>(me: &Arc<Inner<E>>, id: &str) -> Res
     blk(move || {
         let lk = m2.lock_for(&cid);
         let _g = lk.lock();
+        m2.usage_event(&cid, "author", su)?;
+        m2.usage_event(&cid, "placer", cu)?;
         match written {
             Ok(w) => {
                 // Study may have changed the course (a re-taught lesson): add only the new lessons.
@@ -914,10 +963,6 @@ async fn run_refill<E: LlmEngine + 'static>(me: &Arc<Inner<E>>, id: &str) -> Res
                 fresh.lessons.extend(added);
                 fresh.version += 1;
                 m2.save_course(&fresh)?;
-                if w.path == AuthorPath::Strong {
-                    m2.usage_event(&cid, "author", su)?;
-                }
-                m2.usage_event(&cid, "placer", cu)?;
                 Ok(())
             }
             Err(e) => Err(CourseError::Unavailable(format!("refill failed: {e}"))),
@@ -1207,12 +1252,14 @@ impl<E> Inner<E> {
                         last: i64::MIN,
                         start: true,
                         served: 0,
+                        pending: None,
                     });
                     if now.saturating_sub(s.last) > SESSION_IDLE_MS {
                         *s = Session {
                             last: now,
                             start: true,
                             served: 0,
+                            pending: None,
                         };
                     }
                     s.last = now;
@@ -1230,11 +1277,8 @@ impl<E> Inner<E> {
                         match step {
                             Step::Ask {
                                 kind: AskKind::Review,
-                                ..
-                            } => {
-                                s.served += 1;
-                                s.start = s.served < START_REVIEWS;
-                            }
+                                ref item,
+                            } => s.pending = Some(item.clone()),
                             _ => s.start = false,
                         }
                     }
@@ -1246,13 +1290,6 @@ impl<E> Inner<E> {
         let view = match step {
             Step::Explain { lesson } => {
                 let l = self.find_lesson(&course, &lesson)?;
-                self.append(
-                    id,
-                    &CourseEvent::Shown {
-                        ts: now,
-                        lesson: lesson.clone(),
-                    },
-                )?;
                 StepView::Explain(LessonView {
                     id: l.id.clone(),
                     title: l.title.clone(),
@@ -1268,7 +1305,7 @@ impl<E> Inner<E> {
                     lesson: l.id.clone(),
                     kind: it.kind,
                     q: it.q.clone(),
-                    options: it.options.clone(),
+                    options: shuffled(&it.options, &it.id),
                     ask: kind,
                 })
             }
@@ -1303,6 +1340,16 @@ impl<E> Inner<E> {
         // scheduled, so one answer makes one FSRS review.
         let rating = (it.kind == ItemKind::Mcq || correct).then(|| rating_for(correct, confidence));
         let reteach = self.record_outcome(&course, item, ev, rating)?;
+        {
+            let mut rt = self.rt.lock();
+            if let Some(s) = rt.sessions.get_mut(id) {
+                if s.pending.as_deref() == Some(item) {
+                    s.pending = None;
+                    s.served += 1;
+                    s.start = s.start && s.served < START_REVIEWS;
+                }
+            }
+        }
         Ok((
             Feedback {
                 correct,

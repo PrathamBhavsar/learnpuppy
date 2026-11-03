@@ -28,6 +28,8 @@ struct Shared {
     calls: Mutex<Vec<String>>,
     /// Roles that fail with a rate limit; `*` means all of them.
     limited: Mutex<HashSet<String>>,
+    /// Roles that answer with unusable text (tokens are still spent).
+    garbage: Mutex<HashSet<String>>,
     /// The Author waits for a permit (tests start it empty to hold the course in `Writing`).
     gate: Semaphore,
     batch: AtomicUsize,
@@ -40,6 +42,7 @@ impl Shared {
         Arc::new(Self {
             calls: Mutex::default(),
             limited: Mutex::default(),
+            garbage: Mutex::default(),
             gate: Semaphore::new(if hold { 0 } else { 10_000 }),
             batch: AtomicUsize::new(0),
             tick: std::sync::atomic::AtomicBool::new(false),
@@ -117,12 +120,19 @@ impl LlmEngine for Mock {
         _c: CancellationToken,
     ) -> Result<TurnResponse, DriverError> {
         self.shared.calls.lock().push(self.role.clone());
-        self.calls.fetch_add(1, Ordering::Relaxed);
         {
             let l = self.shared.limited.lock();
             if l.contains("*") || l.contains(&self.role) {
                 return Err(DriverError::Failed("rate limit reached".into()));
             }
+        }
+        // Only calls that were served spend tokens.
+        self.calls.fetch_add(1, Ordering::Relaxed);
+        if self.shared.garbage.lock().contains(&self.role) {
+            return Ok(TurnResponse {
+                text: "this is not json".into(),
+                tool_calls: vec![],
+            });
         }
         let p = req.prompt;
         let text = if p.contains("Write 5 placement questions") {
@@ -335,6 +345,9 @@ impl World {
     /// One step with every answer right. Returns the step.
     async fn step(&self, id: &str) -> StepView {
         let v = self.svc.next(id).await.unwrap();
+        if let StepView::Explain(l) = &v {
+            self.svc.seen(id, &l.id).await.unwrap();
+        }
         if let StepView::Ask(a) = &v {
             let right = self.item(id, &a.id).answer;
             let fb = self
@@ -827,7 +840,12 @@ async fn a_lesson_under_half_is_explained_again_then_re_taught_once() {
             break;
         }
         match w.svc.next(&id).await.unwrap() {
-            StepView::Explain(l) if l.id == first => explained += 1,
+            StepView::Explain(l) => {
+                if l.id == first {
+                    explained += 1;
+                }
+                w.svc.seen(&id, &l.id).await.unwrap();
+            }
             StepView::Ask(a) => {
                 let it = w.item(&id, &a.id);
                 let text = if a.lesson == first {
@@ -837,7 +855,6 @@ async fn a_lesson_under_half_is_explained_again_then_re_taught_once() {
                 };
                 w.svc.answer(&id, &a.id, &text, None, None).await.unwrap();
             }
-            StepView::Explain(_) => {}
             other => panic!("{other:?}"),
         }
         w.advance(5_000);
@@ -852,8 +869,14 @@ async fn a_lesson_under_half_is_explained_again_then_re_taught_once() {
     );
     assert_eq!(w.shared.count("follow_up"), 1);
     // The new text is shown once, and there is never a third round.
-    match w.svc.next(&id).await.unwrap() {
-        StepView::Explain(l) => assert_eq!(l.explain, "A new explanation from another angle."),
+    let v = w.svc.next(&id).await.unwrap();
+    match &v {
+        StepView::Explain(l) => {
+            assert_eq!(l.explain, "A new explanation from another angle.");
+            assert_eq!(w.svc.next(&id).await.unwrap(), v);
+            w.svc.seen(&id, &l.id).await.unwrap();
+            w.svc.seen(&id, &l.id).await.unwrap();
+        }
         v => panic!("{v:?}"),
     }
     for _ in 0..30 {
@@ -869,4 +892,154 @@ async fn a_lesson_under_half_is_explained_again_then_re_taught_once() {
     }
     assert_eq!(dones(&w), 2);
     assert_eq!(w.shared.count("follow_up"), 1);
+}
+
+#[tokio::test]
+async fn next_is_repeatable_and_seen_acknowledges_the_explanation_once() {
+    let w = world();
+    let id = w.ready().await;
+    let first = w.svc.next(&id).await.unwrap();
+    let StepView::Explain(l) = &first else {
+        panic!("{first:?}")
+    };
+    // A reload or a double fetch changes nothing.
+    assert_eq!(w.svc.next(&id).await.unwrap(), first);
+    assert_eq!(w.svc.next(&id).await.unwrap(), first);
+    let shown = |w: &World| {
+        w.events(&id)
+            .iter()
+            .filter(|e| matches!(e, CourseEvent::Shown { .. }))
+            .count()
+    };
+    assert_eq!(shown(&w), 0);
+    w.svc.seen(&id, &l.id).await.unwrap();
+    w.svc.seen(&id, &l.id).await.unwrap();
+    assert_eq!(shown(&w), 1);
+    let next = w.svc.next(&id).await.unwrap();
+    assert!(matches!(next, StepView::Ask(_)));
+    assert_eq!(w.svc.next(&id).await.unwrap(), next);
+    assert!(matches!(
+        w.svc.seen(&id, "nope").await,
+        Err(CourseError::NotFound(_))
+    ));
+}
+
+#[tokio::test]
+async fn repeated_next_does_not_use_up_the_session_start_reviews() {
+    let w = world();
+    let id = w.ready().await;
+    for _ in 0..12 {
+        w.step(&id).await;
+    }
+    w.advance(3 * DAY);
+    // Many fetches with no answer: still the same review, and the phase is not spent.
+    let first = w.svc.next(&id).await.unwrap();
+    for _ in 0..15 {
+        assert_eq!(w.svc.next(&id).await.unwrap(), first);
+    }
+    let StepView::Ask(a) = first else { panic!() };
+    assert_eq!(a.ask, AskKind::Review);
+    let right = w.item(&id, &a.id).answer;
+    w.svc.answer(&id, &a.id, &right, None, None).await.unwrap();
+    let second = w.svc.next(&id).await.unwrap();
+    assert!(matches!(second, StepView::Ask(ref b) if b.ask == AskKind::Review));
+}
+
+#[tokio::test]
+async fn strong_tokens_are_charged_even_when_the_reply_is_unusable() {
+    let w = world();
+    let id = w.ready().await;
+    assert_eq!(w.svc.usage(&id).await.unwrap().strong_calls_this_hour, 1);
+    // Opus answers with garbage (tokens spent) and the cheap path is down: the refill fails.
+    w.shared.garbage.lock().insert("author".into());
+    w.shared.limit("placer", true);
+    let mut waiting = false;
+    for _ in 0..200 {
+        if w.step(&id).await == StepView::Waiting {
+            waiting = true;
+            break;
+        }
+        w.settle_refill(&id).await;
+    }
+    assert!(waiting);
+    w.settle_refill(&id).await;
+    let u = w.svc.usage(&id).await.unwrap();
+    assert_eq!(u.strong_calls_this_hour, 2, "the failed refill was charged");
+    assert!(u.strong_in > 100);
+    assert_eq!(w.svc.status(&id).await.unwrap(), CourseStatus::Ready);
+    // Past the backoff the cap holds: no further Opus call.
+    let authors = w.shared.count("author");
+    w.advance(REFILL_BACKOFF_MS + 1);
+    w.svc.next(&id).await.unwrap();
+    w.settle_refill(&id).await;
+    assert_eq!(w.shared.count("author"), authors);
+    assert!(w
+        .svc
+        .usage(&id)
+        .await
+        .unwrap()
+        .refill_waiting_until
+        .is_some());
+}
+
+#[tokio::test]
+async fn an_attempt_that_spent_no_tokens_is_not_charged() {
+    let w = world();
+    w.shared.limit("author", true);
+    let id = w.ready().await;
+    assert_eq!(w.svc.usage(&id).await.unwrap().strong_calls_this_hour, 0);
+}
+
+#[tokio::test]
+async fn options_are_shuffled_by_item_id_and_stable() {
+    let w = world();
+    let created = w.svc.create("learn spanish").await.unwrap();
+    let p: Placement = w.inner().read_json(&created.id, "placement.json").unwrap();
+    let id = w.ready().await;
+    let c = w.course(&id);
+    let mut first_correct = 0;
+    let mut total = 0;
+    for l in &c.lessons {
+        for it in l.items.iter().filter(|i| i.kind == ItemKind::Mcq) {
+            let a = shuffled(&it.options, &it.id);
+            assert_eq!(a, shuffled(&it.options, &it.id));
+            let mut sorted = a.clone();
+            sorted.sort();
+            let mut stored = it.options.clone();
+            stored.sort();
+            assert_eq!(sorted, stored);
+            total += 1;
+            first_correct += usize::from(a[0] == it.answer);
+        }
+    }
+    // The stored order has the answer first; shown order must not always.
+    assert!(first_correct < total, "{first_correct}/{total}");
+    // The served view uses it, twice the same, and the placement view too.
+    let v1 = w.svc.next(&id).await.unwrap();
+    assert_eq!(v1, w.svc.next(&id).await.unwrap());
+    let StepView::Explain(l) = v1 else { panic!() };
+    w.svc.seen(&id, &l.id).await.unwrap();
+    let StepView::Ask(a) = w.svc.next(&id).await.unwrap() else {
+        panic!()
+    };
+    assert_eq!(a.options, shuffled(&w.item(&id, &a.id).options, &a.id));
+    assert!(created
+        .items
+        .iter()
+        .all(|i| p.items.iter().any(|q| q.id == i.id)));
+    // Review serves cards as stored, so cards are stored shuffled, and still point at the answer.
+    let t = &*w.stores.tracker;
+    let cards = t.cards().unwrap();
+    let firsts = cards
+        .iter()
+        .filter(|c| c.options[0] == c.options[usize::from(c.correct_index)])
+        .count();
+    assert!(firsts < cards.len());
+    for card in &cards {
+        let item = card.id.rsplit(':').next().unwrap();
+        assert_eq!(
+            card.options[usize::from(card.correct_index)],
+            w.item(&id, item).answer
+        );
+    }
 }
