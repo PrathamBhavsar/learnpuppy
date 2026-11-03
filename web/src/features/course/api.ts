@@ -56,6 +56,20 @@ export function useCourseStatus(ws: string, id: string, enabled: boolean) {
   })
 }
 
+/** Placement questions still unanswered; empty once submitted, so a reload carries on. */
+export function usePlacementItems(ws: string, id: string) {
+  return useQuery({
+    queryKey: [...courseKey(ws, id), "placement"],
+    queryFn: async ({ signal }) =>
+      unwrap(
+        await api.GET("/workspaces/{ws}/courses/{id}/placement", {
+          params: { path: { ws, id } },
+          signal,
+        })
+      ).items,
+  })
+}
+
 export function useMisses(ws: string, id: string, enabled: boolean) {
   return useQuery({
     queryKey: [...courseKey(ws, id), "misses"],

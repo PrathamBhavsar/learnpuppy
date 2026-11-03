@@ -1561,6 +1561,12 @@ async fn a_course_runs_from_goal_to_feedback_and_usage() {
     let items = created["items"].as_array().unwrap();
     assert_eq!(items.len(), 5);
 
+    // A reload before submitting: the same questions, no secrets.
+    let again = a.get(&ws(&format!("/courses/{id}/placement"))).await;
+    assert_eq!(again.status, StatusCode::OK, "{}", again.text);
+    no_secret_keys(&again.json());
+    assert_eq!(again.json()["items"], created["items"]);
+
     let answers: Vec<Value> = items
         .iter()
         .enumerate()
@@ -1582,6 +1588,8 @@ async fn a_course_runs_from_goal_to_feedback_and_usage() {
         .await;
     assert_eq!(r.status, StatusCode::OK, "{}", r.text);
     assert_eq!(r.json()["graded"].as_array().unwrap().len(), 5);
+    let after = a.get(&ws(&format!("/courses/{id}/placement"))).await.json();
+    assert_eq!(after["items"], json!([]));
 
     let r = a.get(&ws(&format!("/courses/{id}/misses"))).await;
     assert_eq!(r.status, StatusCode::OK, "{}", r.text);

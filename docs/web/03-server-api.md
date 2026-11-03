@@ -106,6 +106,7 @@ Model-backed calls (`create`, `placement`, `ask`, `check`) are plain awaited POS
 | `GET …/courses` | `{courses[{id, title, version, updatedAt}]}` newest first |
 | `POST …/courses` | `{goal}` -> `201 {id, items[{id, kind, q, options}]}`; runs placement; nothing stored on `503` |
 | `POST …/courses/{id}/placement` | `{answers[{item, text}]}` -> `{graded[{item, correct, answer, why}]}`; starts the Author in the background |
+| `GET …/courses/{id}/placement` | `{items[{id, kind, q, options}]}` the questions still to answer, same order and options as `create`; empty once submitted. Lets a reloaded page carry on |
 | `GET …/courses/{id}/misses` | `{misses[{q, answer, why}]}` mini lesson while writing |
 | `GET …/courses/{id}/status` | `{state: writing\|ready\|failed\|refilling, reason?}` |
 | `POST …/courses/{id}/retry` | `204`; rewrites a failed course |

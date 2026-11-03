@@ -6,7 +6,12 @@ import { Button } from "@/components/ui/button"
 import { Spinner } from "@/components/ui/spinner"
 import { toastError } from "@/lib/toast"
 
-import { useCourseActions, useCourseStatus, useMisses } from "./api"
+import {
+  useCourseActions,
+  useCourseStatus,
+  useMisses,
+  usePlacementItems,
+} from "./api"
 import { Lesson } from "./Lesson"
 import { Placement } from "./Placement"
 
@@ -16,18 +21,17 @@ type Graded = Dto["GradedDto"]
 type Props = {
   ws: string
   id: string
-  /** Present only right after create; otherwise placement is already done. */
-  placement: Dto["PlacementItemDto"][] | undefined
-  onPlaced: () => void
   onBack: () => void
 }
 
 /** Placement, the wait while the course is written, then the lesson loop. */
-export function CourseView({ ws, id, placement, onPlaced, onBack }: Props) {
+export function CourseView({ ws, id, onBack }: Props) {
   const actions = useCourseActions(ws, id)
   const [graded, setGraded] = useState<Graded[] | null>(null)
-  const placing = placement !== undefined && graded === null
-  const status = useCourseStatus(ws, id, !placing)
+  const items = usePlacementItems(ws, id)
+  const placement = items.data
+  const placing = (placement?.length ?? 0) > 0 && graded === null
+  const status = useCourseStatus(ws, id, placement !== undefined && !placing)
   const state = status.data?.state
   const [started, setStarted] = useState(false)
 
@@ -36,6 +40,14 @@ export function CourseView({ ws, id, placement, onPlaced, onBack }: Props) {
       All courses
     </Button>
   )
+
+  if (placement === undefined)
+    return (
+      <Shell>
+        {back}
+        <Spinner />
+      </Shell>
+    )
 
   if (placing)
     return (
@@ -48,7 +60,6 @@ export function CourseView({ ws, id, placement, onPlaced, onBack }: Props) {
             actions.placement.mutate(answers, {
               onSuccess: (g) => {
                 setGraded(g)
-                onPlaced()
               },
               onError: (e) => toastError(e, "Could not check your answers"),
             })

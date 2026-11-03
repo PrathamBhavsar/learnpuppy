@@ -69,6 +69,7 @@ use crate::error::{ErrorBody, ErrorCode, ErrorEnvelope, FieldError};
         crate::routes::courses::list,
         crate::routes::courses::create,
         crate::routes::courses::placement,
+        crate::routes::courses::pending_placement,
         crate::routes::courses::misses,
         crate::routes::courses::status,
         crate::routes::courses::retry,

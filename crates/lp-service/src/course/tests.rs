@@ -659,6 +659,37 @@ async fn create_fails_soft_and_leaves_no_course_behind() {
 }
 
 #[tokio::test]
+async fn pending_placement_survives_a_reload_and_empties_once_submitted() {
+    let w = world_with(true);
+    let created = w.svc.create("learn spanish").await.unwrap();
+    // A reloaded page gets the same questions in the same option order.
+    assert_eq!(
+        w.svc.pending_placement(&created.id).await.unwrap(),
+        created.items
+    );
+    assert!(matches!(
+        w.svc.pending_placement("nope").await,
+        Err(CourseError::NotFound(_))
+    ));
+    let p: Placement = w.inner().read_json(&created.id, "placement.json").unwrap();
+    let answers = p
+        .items
+        .iter()
+        .map(|it| PlacementAnswer {
+            item: it.id.clone(),
+            text: it.answer.clone(),
+        })
+        .collect();
+    w.svc.submit_placement(&created.id, answers).await.unwrap();
+    assert!(w
+        .svc
+        .pending_placement(&created.id)
+        .await
+        .unwrap()
+        .is_empty());
+}
+
+#[tokio::test]
 async fn placement_misses_are_a_mini_lesson_while_the_course_is_written() {
     let w = world_with(true);
     let id = w.start(2).await;

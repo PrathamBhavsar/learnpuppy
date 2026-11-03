@@ -57,6 +57,7 @@ export function Lesson({
       {step?.step === "explain" ? (
         <Explain
           lesson={step.lesson}
+          busy={actions.seen.isPending || next.isPending}
           onSeen={() =>
             actions.seen.mutate(step.lesson.id, {
               onSuccess: advance,
@@ -87,9 +88,11 @@ export function Lesson({
 
 function Explain({
   lesson,
+  busy,
   onSeen,
 }: {
   lesson: Dto["LessonDto"]
+  busy: boolean
   onSeen: () => void
 }) {
   return (
@@ -104,7 +107,7 @@ function Explain({
           ))}
         </ul>
       ) : null}
-      <Button onClick={onSeen} className="self-start">
+      <Button onClick={onSeen} disabled={busy} className="self-start">
         Got it
       </Button>
     </article>
@@ -125,6 +128,7 @@ function Ask({
   const [reason, setReason] = useState<string | null>(null)
   const [note, setNote] = useState<string | null>(null)
   const [flagged, setFlagged] = useState(false)
+  const busy = actions.selfGrade.isPending || actions.next.isPending
   const [result, setResult] = useState<Dto["FeedbackDto"] | null>(null)
 
   return (
@@ -172,6 +176,7 @@ function Ask({
                 key={grade}
                 size="sm"
                 variant="outline"
+                disabled={busy}
                 onClick={() =>
                   actions.selfGrade.mutate(
                     { item: item.id, grade },
@@ -185,7 +190,7 @@ function Ask({
                 {grade}
               </Button>
             ))}
-            <Button size="sm" onClick={onNext}>
+            <Button size="sm" disabled={busy} onClick={onNext}>
               Continue
             </Button>
           </div>

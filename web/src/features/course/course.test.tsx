@@ -1,6 +1,6 @@
 import { screen, waitFor, within } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
-import { HttpResponse, http } from "msw"
+import { HttpResponse, delay, http } from "msw"
 import { beforeEach, describe, expect, it } from "vitest"
 
 import { state } from "@/test/msw/db"
@@ -16,9 +16,45 @@ beforeEach(() => {
   resetUi()
 })
 
-const seed = () => state.db.courses.set(WS, [newCourse("c1", "Rust async")])
+const seed = (placed = true) =>
+  state.db.courses.set(WS, [
+    { ...newCourse("c1", "Rust async"), graded: placed },
+  ])
 
 describe("Course screen", () => {
+  it("shows the questions when a course with unsubmitted placement is opened by URL", async () => {
+    seed(false)
+    renderApp(`/w/${WS}/course?id=c1`)
+    const form = await screen.findByTestId("course-placement")
+    expect(form).toHaveTextContent("What does `await` do?")
+    expect(screen.queryByText(/could not be written/)).not.toBeInTheDocument()
+  })
+
+  it("sends one request for two rapid clicks on a grade", async () => {
+    seed()
+    let grades = 0
+    server.use(
+      http.post(`${API}/:id/self-grade`, async () => {
+        grades += 1
+        await delay(50)
+        return new HttpResponse(null, { status: 204 })
+      })
+    )
+    const user = userEvent.setup()
+    renderApp(`/w/${WS}/course?id=c1`)
+    await user.click(
+      await screen.findByRole("button", { name: "Start lesson" })
+    )
+    await user.click(await screen.findByRole("button", { name: "Got it" }))
+    const q1 = await screen.findByTestId("course-question")
+    await user.click(within(q1).getByLabelText("Pending or Ready"))
+    await user.click(within(q1).getByRole("button", { name: "Answer" }))
+    const good = await screen.findByRole("button", { name: "good" })
+    await user.dblClick(good)
+    await screen.findByText(/Name the value poll returns/)
+    expect(grades).toBe(1)
+  })
+
   it("creates a course from a goal, runs placement, then shows the misses", async () => {
     const user = userEvent.setup()
     renderApp(`/w/${WS}/course`)

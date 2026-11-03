@@ -42,6 +42,15 @@ export const courseHandlers = [
     return HttpResponse.json(body, { status: 201 })
   }),
 
+  http.get(`${API}/:id/placement`, ({ params }) => {
+    const course = find(params["ws"], params["id"])
+    if (!course) return notFound("Course")
+    const body: Dto["PlacementListDto"] = {
+      items: course.graded ? [] : placementItems,
+    }
+    return HttpResponse.json(body)
+  }),
+
   http.post(`${API}/:id/placement`, async ({ params, request }) => {
     const course = find(params["ws"], params["id"])
     if (!course) return notFound("Course")

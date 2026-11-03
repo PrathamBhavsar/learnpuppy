@@ -1,7 +1,6 @@
 import { useState } from "react"
 
 import { toApiError } from "@/api/errors"
-import type { components } from "@/api/schema"
 import { ErrorState } from "@/components/app/error-state"
 import { PageHeader } from "@/components/app/page-header"
 import { Button } from "@/components/ui/button"
@@ -11,8 +10,6 @@ import { toastError } from "@/lib/toast"
 
 import { useCourses, useCreateCourse } from "./api"
 import { CourseView } from "./CourseView"
-
-type Placement = components["schemas"]["CreatedCourseDto"]
 
 type Props = {
   ws: string
@@ -26,19 +23,8 @@ export function CourseScreen({ ws, id, onOpen }: Props) {
   const courses = useCourses(ws)
   const create = useCreateCourse(ws)
   const [goal, setGoal] = useState("")
-  // Placement questions only come back from create, so they live here, not in the cache.
-  const [placement, setPlacement] = useState<Placement | null>(null)
 
-  if (id)
-    return (
-      <CourseView
-        ws={ws}
-        id={id}
-        placement={placement?.id === id ? placement.items : undefined}
-        onPlaced={() => setPlacement(null)}
-        onBack={() => onOpen(undefined)}
-      />
-    )
+  if (id) return <CourseView ws={ws} id={id} onBack={() => onOpen(undefined)} />
 
   const start = () => {
     const value = goal.trim()
@@ -46,7 +32,6 @@ export function CourseScreen({ ws, id, onOpen }: Props) {
     create.mutate(value, {
       onSuccess: (created) => {
         setGoal("")
-        setPlacement(created)
         onOpen(created.id)
       },
       onError: (e) => toastError(e, "Could not start the course"),

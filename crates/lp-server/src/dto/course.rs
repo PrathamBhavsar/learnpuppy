@@ -69,22 +69,30 @@ pub struct CreatedCourseDto {
     pub items: Vec<PlacementItemDto>,
 }
 
+impl From<svc::PlacementItem> for PlacementItemDto {
+    fn from(i: svc::PlacementItem) -> Self {
+        Self {
+            id: i.id,
+            kind: i.kind.into(),
+            q: i.q,
+            options: i.options,
+        }
+    }
+}
+
 impl From<svc::Created> for CreatedCourseDto {
     fn from(c: svc::Created) -> Self {
         Self {
             id: c.id,
-            items: c
-                .items
-                .into_iter()
-                .map(|i| PlacementItemDto {
-                    id: i.id,
-                    kind: i.kind.into(),
-                    q: i.q,
-                    options: i.options,
-                })
-                .collect(),
+            items: c.items.into_iter().map(Into::into).collect(),
         }
     }
+}
+
+/// `GET …/placement`: the questions still to answer, empty once submitted.
+#[derive(Clone, Debug, Serialize, ToSchema)]
+pub struct PlacementListDto {
+    pub items: Vec<PlacementItemDto>,
 }
 
 #[derive(Clone, Debug, Deserialize, ToSchema)]
