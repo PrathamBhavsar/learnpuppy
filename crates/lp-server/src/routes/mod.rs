@@ -6,6 +6,7 @@ pub mod artifacts;
 pub mod chats;
 pub mod chats_write;
 pub mod common;
+pub mod courses;
 pub mod digest;
 pub mod exports;
 pub mod graph;
@@ -39,6 +40,7 @@ pub fn api() -> Router<AppState> {
         .merge(artifacts::routes())
         .merge(sources::routes())
         .merge(review::routes())
+        .merge(courses::routes())
         .merge(digest::routes())
         .merge(accounts::routes())
         .merge(search::routes())

@@ -1,6 +1,7 @@
 //! Shared server state and the router: `/api/v1` (route files under `routes/`), the SPA
 //! fallback, and the middleware stack (request id → compression → Host/token/CSRF guard).
 
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
@@ -8,7 +9,9 @@ use std::time::Duration;
 use axum::Router;
 use lp_cli_driver::accounts::AccountPool;
 use lp_cli_driver::engine::FauxEngine;
+use lp_service::chat::runtime::Engines;
 use lp_service::chat::{ChatRuntime, RuntimeConfig};
+use lp_service::course::CourseService;
 use lp_service::engine::CliPoolEngine;
 use lp_service::events::{DeltaPump, EventHub};
 use lp_service::settings::Settings;
@@ -58,6 +61,9 @@ pub struct AppState {
     pub shutdown: CancellationToken,
     /// Chat turns, the CLI semaphore and workbench jobs (docs/web/03 §Turn state machine).
     pub chats: Arc<ChatRuntime<RoleEngine>>,
+    /// One course service per workspace, shared by every request: it holds the session state and
+    /// locks. Built on first access (which also runs its restart recovery for stuck courses).
+    courses: Arc<parking_lot::Mutex<HashMap<String, CourseService<RoleEngine>>>>,
     faux: Arc<FauxEngine>,
 }
 
@@ -90,6 +96,7 @@ impl AppState {
             device_id: device_id.into(),
             shutdown: CancellationToken::new(),
             chats,
+            courses: Arc::default(),
             faux: Arc::new(FauxEngine::new()),
         }
     }
@@ -112,6 +119,49 @@ impl AppState {
                 settings.pin(role),
             )),
         }
+    }
+
+    /// The shared course service of workspace `ws`, built on first use. Blocking: opens files.
+    pub fn course_service(
+        &self,
+        ws: &str,
+        stores: &lp_service::stores::Stores,
+        root: &std::path::Path,
+    ) -> CourseService<RoleEngine> {
+        let mut map = self.courses.lock();
+        if let Some(s) = map.get(ws) {
+            return s.clone();
+        }
+        let (mode, faux, pool, data) = (
+            self.config.engine,
+            self.faux.clone(),
+            self.pool.clone(),
+            self.config.data_root.clone(),
+        );
+        let engines: Engines<RoleEngine> = Arc::new(move |role: &str| {
+            let settings = Settings::load(&data).unwrap_or_else(|_| {
+                let mut s = Settings::default();
+                s.fill_course_roles();
+                s
+            });
+            Arc::new(match mode {
+                EngineMode::Faux => RoleEngine::Faux(faux.clone()),
+                EngineMode::Real => RoleEngine::Real(CliPoolEngine::for_role(
+                    pool.clone(),
+                    &settings,
+                    role,
+                    settings.pin(role),
+                )),
+            })
+        });
+        let s = CourseService::new(
+            root.to_path_buf(),
+            Arc::new(stores.clone()),
+            engines,
+            self.device_id.to_string(),
+        );
+        map.insert(ws.to_owned(), s.clone());
+        s
     }
 
     /// The scripted engine used in faux mode (tests queue responses on it).

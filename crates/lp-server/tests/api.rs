@@ -1488,3 +1488,220 @@ async fn settings_test_pings_a_profile_without_erroring_on_failure() {
         .await;
     assert_eq!(unknown.status, 400);
 }
+
+// ------------------------------------------------------------------ courses
+
+fn course_lesson(id: &str) -> Value {
+    let items: Vec<Value> = (0..6)
+        .map(|i| {
+            if i < 4 {
+                json!({"type":"mcq","q":format!("Which statement about {id} number {i} holds?"),
+                    "options":["red apple","blue plum","pink pear","gray kiwi"],
+                    "answer":"red apple","why":format!("because {id} {i}"),"tests":0})
+            } else {
+                json!({"type":"recall","q":format!("State fact {i} of {id}."),
+                    "answer":format!("answer {id} {i}"),"accept":["a fact"],
+                    "why":format!("because {id} {i}"),"tests":1})
+            }
+        })
+        .collect();
+    json!({"id":id,"title":format!("Title {id}"),"objective":"obj",
+        "explain":"red apple and the fact are explained here",
+        "key_facts":["red apple","the fact"],"fixes":[],"items":items})
+}
+
+fn queue_course_models(a: &Api) {
+    let mut items: Vec<Value> = (0..3)
+        .map(|i| {
+            json!({"type":"mcq","q":format!("Which statement about placement number {i} holds?"),
+                "options":["red apple","blue plum","pink pear","gray kiwi"],
+                "answer":"red apple","why":format!("placement why {i}")})
+        })
+        .collect();
+    for i in 3..5 {
+        items.push(json!({"type":"recall","q":format!("State placement fact {i}."),
+            "answer":format!("placement answer {i}"),"accept":[],"why":format!("placement why {i}")}));
+    }
+    a.state
+        .faux()
+        .faux_text(&json!({ "items": items }).to_string());
+    let lessons: Vec<Value> = (0..10).map(|i| course_lesson(&format!("b0l{i}"))).collect();
+    a.state
+        .faux()
+        .faux_text(&json!({"learner":"knows little","lessons":lessons}).to_string());
+}
+
+fn no_secret_keys(v: &Value) {
+    match v {
+        Value::Object(m) => {
+            for (k, v) in m {
+                assert!(
+                    !["answer", "accept", "why"].contains(&k.as_str()),
+                    "leaked `{k}`"
+                );
+                no_secret_keys(v);
+            }
+        }
+        Value::Array(a) => a.iter().for_each(no_secret_keys),
+        _ => {}
+    }
+}
+
+#[tokio::test]
+async fn a_course_runs_from_goal_to_feedback_and_usage() {
+    let a = api();
+    queue_course_models(&a);
+    let r = a
+        .post(&ws("/courses"), json!({"goal": "learn spanish"}))
+        .await;
+    assert_eq!(r.status, StatusCode::CREATED, "{}", r.text);
+    let created = r.json();
+    no_secret_keys(&created);
+    let id = created["id"].as_str().unwrap().to_owned();
+    let items = created["items"].as_array().unwrap();
+    assert_eq!(items.len(), 5);
+
+    let answers: Vec<Value> = items
+        .iter()
+        .enumerate()
+        .map(|(n, i)| {
+            // The first question wrong on purpose, so there is a miss to show.
+            let text = if n == 0 {
+                "definitely wrong".to_owned()
+            } else {
+                i["options"][0].as_str().unwrap_or("x").to_owned()
+            };
+            json!({"item": i["id"], "text": text})
+        })
+        .collect();
+    let r = a
+        .post(
+            &ws(&format!("/courses/{id}/placement")),
+            json!({"answers": answers}),
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::OK, "{}", r.text);
+    assert_eq!(r.json()["graded"].as_array().unwrap().len(), 5);
+
+    let r = a.get(&ws(&format!("/courses/{id}/misses"))).await;
+    assert_eq!(r.status, StatusCode::OK, "{}", r.text);
+    assert!(!r.json()["misses"].as_array().unwrap().is_empty());
+
+    let mut state = String::new();
+    for _ in 0..200 {
+        let r = a.get(&ws(&format!("/courses/{id}/status"))).await;
+        assert_eq!(r.status, StatusCode::OK, "{}", r.text);
+        state = r.json()["state"].as_str().unwrap().to_owned();
+        if state != "writing" {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(25)).await;
+    }
+    assert_eq!(state, "ready");
+    let list = a.get(&ws("/courses")).await.json();
+    assert_eq!(list["courses"][0]["id"], id.as_str());
+
+    let step = a
+        .post_empty(&ws(&format!("/courses/{id}/next")))
+        .await
+        .json();
+    assert_eq!(step["step"], "explain", "{step}");
+    let lesson = step["lesson"]["id"].as_str().unwrap().to_owned();
+    let r = a
+        .post(
+            &ws(&format!("/courses/{id}/seen")),
+            json!({"lesson": lesson}),
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::NO_CONTENT, "{}", r.text);
+
+    let step = a
+        .post_empty(&ws(&format!("/courses/{id}/next")))
+        .await
+        .json();
+    assert_eq!(step["step"], "ask", "{step}");
+    no_secret_keys(&step);
+    let item = &step["item"];
+    let r = a
+        .post(
+            &ws(&format!("/courses/{id}/answer")),
+            json!({"item": item["id"], "text": "red apple", "confidence": 3, "ms": 1200}),
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::OK, "{}", r.text);
+    let fb = r.json();
+    assert_eq!(fb["correct"], true);
+    assert_eq!(fb["answer"], "red apple");
+
+    let r = a
+        .post(
+            &ws(&format!("/courses/{id}/flag")),
+            json!({"item": item["id"], "reason": "looks odd"}),
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::NO_CONTENT, "{}", r.text);
+    let r = a
+        .post(
+            &ws(&format!("/courses/{id}/self-grade")),
+            json!({"item": item["id"], "grade": "sideways"}),
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::BAD_REQUEST);
+    assert_eq!(r.code(), "validation");
+
+    let u = a.get(&ws(&format!("/courses/{id}/usage"))).await;
+    assert_eq!(u.status, StatusCode::OK, "{}", u.text);
+    assert!(u.json()["strongCallsThisHour"].is_number());
+}
+
+#[tokio::test]
+async fn course_calls_without_an_ai_share_the_engine_unavailable_shape() {
+    let a = api();
+    let r = a
+        .post(&ws("/courses"), json!({"goal": "learn spanish"}))
+        .await;
+    assert_eq!(r.status, StatusCode::SERVICE_UNAVAILABLE, "{}", r.text);
+    assert_eq!(r.code(), "engine_unavailable");
+    assert_eq!(r.json()["error"]["retryable"], true);
+    assert_eq!(a.get(&ws("/courses")).await.json()["courses"], json!([]));
+}
+
+#[tokio::test]
+async fn course_ids_are_scoped_to_their_workspace_and_cannot_traverse() {
+    let a = api();
+    queue_course_models(&a);
+    let id = a
+        .post(&ws("/courses"), json!({"goal": "learn spanish"}))
+        .await
+        .json()["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let other = format!("/workspaces/{SECOND_WS}/courses/{id}/status");
+    let r = a.get(&other).await;
+    assert_eq!(r.status, StatusCode::NOT_FOUND, "{}", r.text);
+    for bad in ["..%2F..%2Fsettings", "%2e%2e", "UPPER", "a.b"] {
+        let r = a.get(&ws(&format!("/courses/{bad}/status"))).await;
+        assert_eq!(r.status, StatusCode::NOT_FOUND, "{bad}: {}", r.text);
+    }
+    assert_eq!(
+        a.get(&ws("/courses/nope/usage")).await.status,
+        StatusCode::NOT_FOUND
+    );
+}
+
+#[tokio::test]
+async fn course_inputs_are_length_checked_at_the_boundary() {
+    let a = api();
+    for goal in ["".to_owned(), "x".repeat(501)] {
+        let r = a.post(&ws("/courses"), json!({"goal": goal})).await;
+        assert_eq!(r.status, StatusCode::BAD_REQUEST, "{}", r.text);
+    }
+    let r = a
+        .post(
+            &ws("/courses/c1/ask"),
+            json!({"question": "q".repeat(2001)}),
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::BAD_REQUEST, "{}", r.text);
+}
