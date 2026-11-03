@@ -187,11 +187,13 @@ impl WorkspaceMeta {
             id: id.clone(),
             reason,
         };
-        let meta: Self = match fsx::read_json(&dir.join(META_FILE)) {
+        let mut meta: Self = match fsx::read_json(&dir.join(META_FILE)) {
             Ok(Some(m)) => m,
             Ok(None) => return Err(damaged(format!("{META_FILE} is missing"))),
             Err(e) => return Err(damaged(format!("{META_FILE} is unreadable: {e}"))),
         };
+        meta.created_at = lp_core::ports::epoch_ms(meta.created_at);
+        meta.last_opened_at = lp_core::ports::epoch_ms(meta.last_opened_at);
         if meta.id != id {
             return Err(damaged(format!("{META_FILE} names id {:?}", meta.id)));
         }
@@ -411,6 +413,23 @@ mod tests {
         );
         assert_eq!(m.sources, Sources::default());
         assert_eq!(m.schema, SCHEMA);
+    }
+
+    #[test]
+    fn second_based_workspace_times_load_as_milliseconds() {
+        let root = tempfile::tempdir().unwrap();
+        let dir = root.path().join("ws_sec");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            dir.join(META_FILE),
+            r#"{"id":"ws_sec","name":"x","created_at":1793131000,"last_opened_at":1793131171}"#,
+        )
+        .unwrap();
+        let m = WorkspaceMeta::load(&dir).unwrap();
+        assert_eq!(
+            (m.created_at, m.last_opened_at),
+            (1_793_131_000_000, 1_793_131_171_000)
+        );
     }
 
     #[test]

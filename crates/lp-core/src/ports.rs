@@ -18,6 +18,15 @@ pub type StoreResult<T> = Result<T, StoreError>;
 
 // ---------------------------------------------------------------- chats
 
+/// Older records stored epoch seconds; anything below 1e11 (before 1973 in ms) is seconds.
+pub fn epoch_ms(t: i64) -> i64 {
+    if t != 0 && t.abs() < 100_000_000_000 {
+        t * 1000
+    } else {
+        t
+    }
+}
+
 /// `chats/<chat_id>.json`. `turns`/`extractions` are append-only usage logs, separate from `body`.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct ChatRecord {

@@ -84,6 +84,9 @@ pub fn account_label(id: &str) -> String {
     format!("{provider}-{:06x}", hash & 0xff_ffff)
 }
 
+/// Args, stdin, and the codex instructions file that must outlive the call.
+type TurnArgs = (Vec<String>, Option<String>, Option<tempfile::NamedTempFile>);
+
 /// Drives one agent CLI (`claude -p`, `codex exec`, `agy -p`) as a child process.
 #[derive(Debug, Clone)]
 pub struct SubprocessEngine {
@@ -300,10 +303,7 @@ impl SubprocessEngine {
     }
 
     /// Args and stdin for one turn, plus the codex instructions file that must outlive the call.
-    fn turn_args(
-        &self,
-        req: &TurnRequest,
-    ) -> Result<(Vec<String>, Option<String>, Option<tempfile::NamedTempFile>), DriverError> {
+    fn turn_args(&self, req: &TurnRequest) -> Result<TurnArgs, DriverError> {
         let mut a: Vec<String> = Vec::new();
         let mut prompt = with_tools(&req.prompt, &req.tools);
         let mut system_file = None;
