@@ -96,6 +96,19 @@ pub enum CourseStatus {
     Refilling,
 }
 
+/// What the learner sees of placement: option order is seeded by `{course}:{item}`, so stable.
+fn placement_view(id: &str, p: &Placement) -> Vec<PlacementItem> {
+    p.items
+        .iter()
+        .map(|i| PlacementItem {
+            id: i.id.clone(),
+            kind: i.kind,
+            q: i.q.clone(),
+            options: shuffled(&i.options, &format!("{id}:{}", i.id)),
+        })
+        .collect()
+}
+
 /// A placement question as the learner sees it: never the answer.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PlacementItem {
@@ -415,16 +428,7 @@ impl<E: LlmEngine + 'static> CourseService<E> {
                 items,
                 results: None,
             };
-            let view = p
-                .items
-                .iter()
-                .map(|i| PlacementItem {
-                    id: i.id.clone(),
-                    kind: i.kind,
-                    q: i.q.clone(),
-                    options: shuffled(&i.options, &format!("{id}:{}", i.id)),
-                })
-                .collect();
+            let view = placement_view(&id, &p);
             me.write_json(&id, "placement.json", &p)?;
             me.usage_event(&id, "placer", used)?;
             Ok(Created { id, items: view })
@@ -486,6 +490,21 @@ impl<E: LlmEngine + 'static> CourseService<E> {
         .await?;
         self.spawn_write(id);
         Ok(graded)
+    }
+
+    /// The unanswered placement questions, same order and options as `create` returned them.
+    /// Empty once placement was submitted. Lets a reloaded page carry on instead of wasting the call.
+    pub async fn pending_placement(&self, id: &str) -> Res<Vec<PlacementItem>> {
+        let (me, cid) = (self.inner.clone(), id.to_string());
+        blk(move || {
+            let p: Placement = me.read_json(&cid, "placement.json")?;
+            Ok(if p.results.is_some() {
+                Vec::new()
+            } else {
+                placement_view(&cid, &p)
+            })
+        })
+        .await
     }
 
     /// The placement misses with their explanations: the first mini lesson while the Author writes.

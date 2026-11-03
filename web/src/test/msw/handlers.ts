@@ -2,6 +2,7 @@ import type { RequestHandler } from "msw"
 
 import { accountHandlers } from "./handlers/accounts"
 import { chatHandlers } from "./handlers/chats"
+import { courseHandlers } from "./handlers/courses"
 import { digestHandlers } from "./handlers/digest"
 import { graphHandlers } from "./handlers/graph"
 import { ingestHandlers } from "./handlers/ingest"
@@ -22,6 +23,7 @@ export const handlers: RequestHandler[] = [
   ...workspaceHandlers,
   ...graphHandlers,
   ...chatHandlers,
+  ...courseHandlers,
   ...reviewHandlers,
   ...digestHandlers,
   ...ingestHandlers,

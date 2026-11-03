@@ -3100,6 +3100,21 @@
         ],
         "type": "object"
       },
+      "PlacementListDto": {
+        "description": "`GET …/placement`: the questions still to answer, empty once submitted.",
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/PlacementItemDto"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "type": "object"
+      },
       "PlanDto": {
         "properties": {
           "currentId": {
@@ -7068,6 +7083,55 @@
       }
     },
     "/workspaces/{ws}/courses/{id}/placement": {
+      "get": {
+        "operationId": "get_workspaces_ws_courses_id_placement",
+        "parameters": [
+          {
+            "description": "Workspace id",
+            "in": "path",
+            "name": "ws",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Course id",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlacementListDto"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "summary": "The placement questions still to answer (empty once submitted), so a reloaded page can carry on.",
+        "tags": [
+          "courses"
+        ]
+      },
       "post": {
         "operationId": "post_workspaces_ws_courses_id_placement",
         "parameters": [

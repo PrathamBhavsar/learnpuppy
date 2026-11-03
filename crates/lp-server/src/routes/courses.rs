@@ -19,7 +19,7 @@ use crate::app::AppState;
 use crate::dto::course::{
     AskQuestionRequest, AskReplyDto, CheckDto, CheckRequest, CourseAnswerRequest, CourseListDto,
     CourseStatusDto, CreateCourseRequest, CreatedCourseDto, FeedbackDto, FlagRequest, GradedDto,
-    GradedListDto, MissDto, MissListDto, SeenRequest, SelfGradeRequest, StepDto,
+    GradedListDto, MissDto, MissListDto, PlacementListDto, SeenRequest, SelfGradeRequest, StepDto,
     SubmitPlacementRequest, UsageDto,
 };
 use crate::engine::RoleEngine;
@@ -30,7 +30,10 @@ type Svc = CourseService<RoleEngine>;
 pub fn routes() -> Router<AppState> {
     Router::new()
         .route("/workspaces/{ws}/courses", get(list).post(create))
-        .route("/workspaces/{ws}/courses/{id}/placement", post(placement))
+        .route(
+            "/workspaces/{ws}/courses/{id}/placement",
+            get(pending_placement).post(placement),
+        )
         .route("/workspaces/{ws}/courses/{id}/misses", get(misses))
         .route("/workspaces/{ws}/courses/{id}/status", get(status))
         .route("/workspaces/{ws}/courses/{id}/retry", post(retry))
@@ -204,6 +207,26 @@ pub async fn placement(
         })
         .collect();
     Ok(Json(GradedListDto { graded }))
+}
+
+/// The placement questions still to answer (empty once submitted), so a reloaded page can carry on.
+#[utoipa::path(
+    get,
+    path = "/workspaces/{ws}/courses/{id}/placement",
+    tag = "courses",
+    params(("ws" = String, Path, description = "Workspace id"), ("id" = String, Path, description = "Course id")),
+    responses((status = 200, body = PlacementListDto), (status = 404, body = ErrorEnvelope))
+)]
+pub async fn pending_placement(
+    State(st): State<AppState>,
+    Path((ws, id)): Path<(String, String)>,
+) -> Result<Json<PlacementListDto>, ApiError> {
+    course_id(&id)?;
+    let s = svc(&st, &ws, false).await?;
+    let items = s.pending_placement(&id).await?;
+    Ok(Json(PlacementListDto {
+        items: items.into_iter().map(Into::into).collect(),
+    }))
 }
 
 /// The questions the learner missed in placement, with answers: a mini lesson while the course is

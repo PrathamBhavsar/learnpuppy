@@ -599,7 +599,8 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        /** The placement questions still to answer (empty once submitted), so a reloaded page can carry on. */
+        get: operations["get_workspaces_ws_courses_id_placement"];
         put?: never;
         /** Grades placement with code and starts writing the course in the background; poll `status`. */
         post: operations["post_workspaces_ws_courses_id_placement"];
@@ -2108,6 +2109,10 @@ export interface components {
             kind: components["schemas"]["ItemKindDto"];
             options: string[];
             q: string;
+        };
+        /** @description `GET …/placement`: the questions still to answer, empty once submitted. */
+        PlacementListDto: {
+            items: components["schemas"]["PlacementItemDto"][];
         };
         PlanDto: {
             currentId?: string | null;
@@ -4124,6 +4129,38 @@ export interface operations {
             };
             /** @description Workspace archived */
             409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    get_workspaces_ws_courses_id_placement: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Course id */
+                id: string;
+                /** @description Workspace id */
+                ws: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PlacementListDto"];
+                };
+            };
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };
