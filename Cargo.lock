@@ -1317,6 +1317,7 @@ dependencies = [
 name = "lp-cli-driver"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "async-trait",
  "chrono",
  "lp-core",
