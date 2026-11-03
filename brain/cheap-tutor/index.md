@@ -8,14 +8,14 @@ A learner can study for an hour without hitting a limit, and actually learn. If 
 
 | Target | Value | Benchmark result |
 |---|---|---|
-| Tokens for a 60-minute session | under 100k, at least 10x below today | about 11,500, against 670,000 to 1,042,000 for today's shape, projected |
+| Tokens for a 60-minute session | under 100k, at least 10x below today | about 14,000 with the final schema, against 670,000 to 1,042,000 for today's shape, projected |
 | Strong-model calls per 60-minute session | at most 2 | 1 |
 | Learner-visible steps needing no model call | at least 60% | 100%, unless the learner asks something |
 | Teaching quality | no worse than today on the blind rubric | Above today on Spanish, on small samples |
 
 ## The plan in short
 
-A course is data, not a conversation. One strong call writes an hour of lessons, code runs the session, and cheap models answer only when the learner asks. If every AI is limited, study continues. Read the limits in [Benchmark](/cheap-tutor/benchmark.md) first: this rests on small samples, and no person has studied with it yet. The decision is [ADR-0007](/decisions/0007-course-as-data.md), still proposed.
+A course is data, not a conversation. One strong call writes an hour of lessons, code runs the session, and cheap models answer only when the learner asks. If every AI is limited, study continues. Read the limits in [Benchmark](/cheap-tutor/benchmark.md) first: this rests on small samples, and no person has studied with it yet. The decision is [ADR-0007](/decisions/0007-course-as-data.md), accepted after gate G1.
 
 ## Work order
 

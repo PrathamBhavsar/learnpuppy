@@ -19,12 +19,12 @@ Every job has a limit on how often it runs. Most steps of a session use no model
 | Show explanation, ask question, grade multiple choice, schedule | Every step | **No model** | 0 | 0 |
 | Match a typed answer | Every recall | **No model** | 0 | 0 |
 | Placement | Once per course | `claude-haiku-5-5` | about 1,000 | about 2,000, not yet measured |
-| Author | Once per course | `claude-opus-5-5` | about 900 | about 10,500 |
-| Review and refill | About once per study hour | `claude-opus-5-5` | under 1,000, target | about 10,500, not yet measured |
+| Author | Once per course | `claude-opus-5-5` at low effort | about 1,150 | about 12,000 to 14,000 |
+| Review and refill | About once per study hour | `claude-opus-5-5` at low effort | under 1,500, target | about 12,000 to 14,000, not yet measured |
 | Learner follow-up | On request | `claude-haiku-5-5` | about 1,000 | about 600 |
 | Check my answer | On request | `claude-haiku-5-5` | about 850 | about 550 |
 
-**Planned usage for one study hour:** about 11,500 Opus tokens, plus about 16,000 Haiku tokens if the learner asks 10 questions. Against about 1,000,000 for today's shape on Flash low, in raw tokens.
+**Planned usage for one study hour:** about 14,000 Opus tokens, about $0.25 to $0.28 at API list prices, plus about 16,000 Haiku tokens if the learner asks 10 questions. Against about 1,000,000 for today's shape on Flash low, in raw tokens. See section 9 of the [Benchmark](/cheap-tutor/benchmark.md).
 
 ## 2. Ladders
 
@@ -32,10 +32,10 @@ Every role falls back, always, as the owner decided. A ladder is ordered by the 
 
 **Author and Review:**
 
-1. `claude-opus-5-5` on each Claude account, with the system prompt cut
+1. `claude-opus-5-5` at low effort on each Claude account, with the system prompt cut
 2. `claude-opus-5-5-high` via `agy` (adds about 11,000 input, and is still one call)
 3. Codex `gpt-6-sol` high (adds about 21,000 input, not benchmarked for this job)
-4. **Fallback writer, no strong model:** `claude-haiku-5-5` writes the outline, then each lesson. Measured accuracy 4 to 5, about 65,000 Haiku tokens.
+4. **Fallback writer, no strong model:** `claude-haiku-5-5` writes the outline, then each lesson. Measured accuracy 3 to 5, about 50,000 to 57,000 Haiku tokens, about $0.02 at API list prices.
 5. `gemini-3.8-flash-medium` by the same two-stage path. Measured accuracy 3 to 4, about 250,000 tokens.
 6. Nothing left: no error. The learner continues with stored lessons and due reviews, and refill retries when a limit resets.
 
