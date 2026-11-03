@@ -540,3 +540,142 @@ fn unreadable_chat_and_job_files_are_reported_not_silent() {
     assert!(list.is_empty());
     assert!(skipped[0].ends_with("bad.json"));
 }
+
+mod course_store {
+    use super::*;
+    use lp_core::course::{Course, CourseEvent};
+    use std::os::unix::fs::PermissionsExt;
+
+    fn course(id: &str, learner: &str) -> Course {
+        Course {
+            id: id.into(),
+            learner: learner.into(),
+            lessons: vec![],
+            must_fix: vec![],
+            version: 1,
+        }
+    }
+
+    fn ev(n: u32) -> CourseEvent {
+        CourseEvent::Shown {
+            ts: i64::from(n),
+            lesson: format!("l{n}"),
+        }
+    }
+
+    #[test]
+    fn round_trip_list_delete_learner() {
+        let d = tempfile::tempdir().unwrap();
+        let s = FsCourseStore::new(d.path());
+        assert!(s.list().unwrap().is_empty());
+        assert_eq!(s.load_learner().unwrap(), "");
+        s.save_course(&course("c1", "\n  learn rust\nmore"))
+            .unwrap();
+        assert_eq!(s.load_course("c1").unwrap().learner, "\n  learn rust\nmore");
+        s.append_event("c1", &ev(1)).unwrap();
+        assert_eq!(s.events("c1").unwrap(), vec![ev(1)]);
+        std::fs::create_dir_all(d.path().join("courses/broken")).unwrap();
+        let l = s.list().unwrap();
+        assert_eq!(
+            (l.len(), l[0].title.as_str(), l[0].version),
+            (1, "learn rust", 1)
+        );
+        assert!(l[0].updated_at > 0);
+        s.save_learner("likes diagrams").unwrap();
+        assert_eq!(s.load_learner().unwrap(), "likes diagrams");
+        s.delete_course("c1").unwrap();
+        assert!(matches!(s.load_course("c1"), Err(StoreError::NotFound(_))));
+        s.delete_course("c1").unwrap();
+    }
+
+    #[test]
+    fn torn_tail_then_append() {
+        let d = tempfile::tempdir().unwrap();
+        let s = FsCourseStore::new(d.path());
+        s.append_event("c1", &ev(1)).unwrap();
+        let p = d.path().join("courses/c1/events.jsonl");
+        let mut f = std::fs::OpenOptions::new().append(true).open(&p).unwrap();
+        f.write_all(b"deadbeef\t{\"kind\":\"sho").unwrap();
+        assert_eq!(s.events("c1").unwrap(), vec![ev(1)]);
+        s.append_event("c1", &ev(2)).unwrap();
+        assert_eq!(s.events("c1").unwrap(), vec![ev(1), ev(2)]);
+    }
+
+    #[test]
+    fn concurrent_appends_from_independent_handles() {
+        let d = tempfile::tempdir().unwrap();
+        let hs: Vec<_> = (0..8u32)
+            .map(|t| {
+                let root = d.path().to_path_buf();
+                std::thread::spawn(move || {
+                    let s = FsCourseStore::new(root);
+                    for i in 0..25 {
+                        s.append_event("c1", &ev(t * 100 + i)).unwrap();
+                    }
+                })
+            })
+            .collect();
+        hs.into_iter().for_each(|h| h.join().unwrap());
+        assert_eq!(
+            FsCourseStore::new(d.path()).events("c1").unwrap().len(),
+            200
+        );
+    }
+
+    #[test]
+    fn roots_isolated() {
+        let (a, b) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+        let (sa, sb) = (FsCourseStore::new(a.path()), FsCourseStore::new(b.path()));
+        sa.save_course(&course("c1", "x")).unwrap();
+        sa.save_learner("me").unwrap();
+        sa.append_event("c1", &ev(1)).unwrap();
+        assert!(sb.list().unwrap().is_empty());
+        assert!(sb.events("c1").unwrap().is_empty());
+        assert_eq!(sb.load_learner().unwrap(), "");
+    }
+
+    #[test]
+    fn bad_ids_rejected() {
+        let d = tempfile::tempdir().unwrap();
+        let s = FsCourseStore::new(d.path());
+        for id in ["", "..", ".", "../x", "a/b", "A", "a.b", "a b", "a\\b"] {
+            assert!(s.save_course(&course(id, "x")).is_err(), "{id:?}");
+            assert!(s.load_course(id).is_err());
+            assert!(s.append_event(id, &ev(1)).is_err());
+            assert!(s.events(id).is_err());
+            assert!(s.delete_course(id).is_err());
+        }
+        assert!(s.save_course(&course("ok_1-x", "x")).is_ok());
+    }
+
+    #[test]
+    fn owner_only_permissions() {
+        let d = tempfile::tempdir().unwrap();
+        let s = FsCourseStore::new(d.path());
+        s.save_course(&course("c1", "x")).unwrap();
+        s.append_event("c1", &ev(1)).unwrap();
+        s.save_learner("me").unwrap();
+        let mode = |p: &str| {
+            std::fs::metadata(d.path().join(p))
+                .unwrap()
+                .permissions()
+                .mode()
+                & 0o777
+        };
+        assert_eq!(mode("courses/c1/course.json"), 0o600);
+        assert_eq!(mode("courses/c1/events.jsonl"), 0o600);
+        assert_eq!(mode("learner.json"), 0o600);
+        assert_eq!(mode("courses/c1"), 0o700);
+        assert_eq!(mode("courses"), 0o700);
+    }
+
+    #[test]
+    fn large_event_count_read() {
+        let d = tempfile::tempdir().unwrap();
+        let s = FsCourseStore::new(d.path());
+        for i in 0..3000 {
+            s.append_event("c1", &ev(i)).unwrap();
+        }
+        assert_eq!(s.events("c1").unwrap().len(), 3000);
+    }
+}
