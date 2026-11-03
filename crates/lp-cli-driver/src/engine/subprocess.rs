@@ -180,12 +180,7 @@ impl SubprocessEngine {
 
     /// One info line per CLI call. The prompt travels on stdin and the schema is blanked, so neither is logged.
     fn log_start(&self, args: &[String]) -> std::time::Instant {
-        let mut argv = args.to_vec();
-        for i in 1..argv.len() {
-            if argv[i - 1] == "--json-schema" {
-                argv[i] = "<redacted>".into();
-            }
-        }
+        let argv = redact_argv(args);
         let flag = |names: [&str; 2]| {
             args.windows(2)
                 .find(|w| names.contains(&w[0].as_str()))
@@ -419,6 +414,17 @@ impl SubprocessEngine {
             CliKind::Claude => (a, Some(prompt.into())),
         }
     }
+}
+
+/// Argv for the log: the schema and system text are prompt content, not log material.
+fn redact_argv(args: &[String]) -> Vec<String> {
+    let mut argv = args.to_vec();
+    for i in 1..argv.len() {
+        if matches!(argv[i - 1].as_str(), "--json-schema" | "--system-prompt") {
+            argv[i] = "<redacted>".into();
+        }
+    }
+    argv
 }
 
 /// `~/.learnpuppy/logs/raw` (or under `$LEARNPUPPY_HOME`), only when `LEARNPUPPY_DEBUG_RAW=1`.
@@ -2221,6 +2227,19 @@ echo '{"type":"sessionUpdate","data":{"update":{"sessionUpdate":"agent_message_c
             .turn_args(&TurnRequest::default())
             .unwrap();
         assert!(!a.contains(&"--system-prompt".to_string()));
+    }
+
+    #[test]
+    fn logged_argv_does_not_contain_the_system_text() {
+        let e = SubprocessEngine::new(CliKind::Claude).unwrap();
+        let req = TurnRequest {
+            system: Some("SECRET-SYSTEM-TEXT".into()),
+            ..Default::default()
+        };
+        let (a, ..) = e.turn_args(&req).unwrap();
+        assert!(a.iter().any(|x| x == "SECRET-SYSTEM-TEXT"));
+        let logged = format!("{:?}", redact_argv(&a));
+        assert!(!logged.contains("SECRET-SYSTEM-TEXT") && logged.contains("--system-prompt"));
     }
 
     #[test]
