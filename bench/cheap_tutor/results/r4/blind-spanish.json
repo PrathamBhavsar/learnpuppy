@@ -1,0 +1,8 @@
+{
+ "V0": "haiku-early",
+ "V1": "haiku-late",
+ "V2": "opus-low-early",
+ "V3": "opus-low-late",
+ "V4": "opus-default-early",
+ "V5": "opus-default-late"
+}

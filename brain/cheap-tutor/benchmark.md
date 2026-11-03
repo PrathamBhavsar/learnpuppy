@@ -116,3 +116,34 @@ Read the conclusions with these in mind:
 - **"Today" was run on cheap models for fairness of comparison.** The owner's settings used stronger models, so the real figure is likely worse, not better. The judged "today" sample is also short and truncated to 900 characters per step.
 - **Free opencode models were not tested.** They were limited through the driver all day. See [Usage Audit](/cheap-tutor/usage-audit.md).
 - **Wasted calls.** A race in the harness wrote the Opus skeleton 3 times per topic. The tables count one.
+
+## 9. Gate G1 result (rounds 3 and 4)
+
+Run after approval, with the final schema (`key_facts`, `fixes`, `tests`, `accept`). Harness: `round3.py`, `round4.py`. **This section overrides sections 4 and 7 where they differ.** The new fields raised Opus output from about 10,500 to about 18,000 to 21,500, and logging `total_cost_usd` gave the first real model weights.
+
+| Path, 10 lessons | Topic | Calls | In | Out | API-equivalent USD | Seconds | Lessons parsed |
+|---|---|---|---|---|---|---|---|
+| Opus default effort | Spanish | 1 | 1,159 | 17,314 | 0.3465 | 150 | 10 |
+| **Opus low effort** | Spanish | 1 | 1,159 | 12,140 | 0.2456 | 105 | 10 |
+| Haiku outline + lessons | Spanish | 11 | 17,901 | 39,070 | 0.0231 | 226 | 10 |
+| Opus default effort | Stats | 1 | 1,133 | 20,846 | 0.4172 | 178 | 10 |
+| **Opus low effort** | Stats | 1 | 1,133 | 13,847 | 0.2797 | 124 | 10 |
+| Haiku outline + lessons | Stats | 10 | 16,505 | 34,014 | 0.0203 | 180 | 9, the outline gave 9 lessons |
+
+Blind judge, accuracy / teaching / level / variety, with untaught item count:
+
+| Variant | Spanish | Stats |
+|---|---|---|
+| Opus default, early | 5 / 5 / 5 / 4, 0 | 5 / 5 / 5 / 4, 0 |
+| Opus default, late | 5 / 5 / 4 / 4, 0 | 5 / 5 / 4 / 4, 0 |
+| Opus low, early | 5 / 5 / 5 / 4, 0 | 5 / 5 / 4 / 3, 0 |
+| Opus low, late | 5 / 4 / 4 / 4, 0 | 5 / 5 / 4 / 4, 0 |
+| Haiku, early | 5 / 4 / 4 / 3, 1 | 5 / 4 / 4 / 3, 1 |
+| Haiku, late | 3 / 3 / 4 / 4, 1 | 5 / 4 / 5 / 4, 0 |
+
+Round 3 also ran Opus default six times on Rust, Stats and Spanish. All parsed, with 59 or 60 of 60 items passing gates. A 20-lesson call decayed: 5 untaught items and level 2 late on. **20 lessons in one call is rejected.** The earlier "level" drop came from judge wording, which marked later lessons down for being harder than day one; round 4 corrected the wording.
+
+**Decision.** Opus low effort passes every G1 rule: all parsed, late within 1 of early, under 15,000 output. It is the default Author. Haiku costs about 12x less in API-equivalent dollars, so the 5.7x break-even in section 8 is settled in Haiku's favour on price, but it taught real errors: `Uds.` accepted for `usted`, and `a las` taught with no `a la una` exception. For a tutor, wrong facts are the worst failure, and one Opus call per study hour fits the owner's rule of strong models used rarely. Haiku stays as the automatic fallback, and any owner can make it the default through the `author` profile.
+
+Still unknown: subscription quota weight, since USD is API list weighting only. The session's one 5-hour limit was hit after many hours of mixed Opus and Sonnet benchmark and worker use, so it says little about one Opus call per hour.
+

@@ -12,7 +12,7 @@ Back to [Decisions Index](/decisions/index.md) | [Brain Index](/index.md). Relat
 
 ## Status
 
-**Proposed** (2026-11-03). Awaits the owner's approval and gate G1 in the [Task DAG](/cheap-tutor/task-dag.md).
+**Accepted** (2026-11-03). Owner approved. Gate G1 passed with Opus at low effort, see section 9 of the [Benchmark](/cheap-tutor/benchmark.md).
 
 ## Context
 
@@ -38,7 +38,7 @@ Back to [Decisions Index](/decisions/index.md) | [Brain Index](/index.md). Relat
 | Cheap skeleton + Haiku | about 65,000 | 4 to 5 on most | **Kept as the fallback, and the default if G1 fails** |
 | Skeleton + Qwen | about 6,000 to 9,000 | Accuracy 1 to 4 | Wrong facts taught |
 
-Chosen: one shot, Opus. About 11,500 tokens, accuracy 4 to 5.
+Chosen: one shot, Opus at low effort, about 14,000 tokens with the final schema, accuracy 5. Haiku two-stage is the automatic fallback: about 12x cheaper at API list prices, but it taught real errors.
 
 ## Consequences
 
