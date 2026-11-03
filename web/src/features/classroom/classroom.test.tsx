@@ -425,6 +425,14 @@ describe("turn status", () => {
     expect(bodies[0]).toEqual({ type: "resume", clientId: "client_err_1" })
   })
 
+  it("does not claim other AIs were tried when one is rate limited", async () => {
+    await open("c_limited")
+    const card = await screen.findByTestId("turn-error")
+    expect(card).toHaveTextContent("Your AI is limited")
+    expect(card).toHaveTextContent("pick another AI in Role slots")
+    expect(card).not.toHaveTextContent("already tried")
+  })
+
   it("offers Resume after a restart interrupted the turn", async () => {
     const bodies = captureTurns()
     const { user } = await open("c_interrupted")

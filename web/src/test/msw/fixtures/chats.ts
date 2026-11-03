@@ -361,6 +361,38 @@ export function chatFixtures(now: number): ClassroomView[] {
     },
     {
       ...base,
+      id: "c_limited",
+      kind: "teach",
+      title: "Mutex across await",
+      phase: "teach",
+      messages: [
+        msg(
+          "m1",
+          "user",
+          "Why can holding a Mutex across await deadlock?",
+          now - 4 * HOUR
+        ),
+      ],
+      pending: null,
+      plan: PLAN(["current", "upcoming", "upcoming", "upcoming"]),
+      probeProgress: { asked: 8, max: 8 },
+      turn: {
+        state: "error",
+        turnId: "turn_lim_1",
+        startedAt: now - 4 * HOUR,
+        clientId: "client_lim_1",
+        error: {
+          code: "RATE_LIMITED",
+          message: "limited",
+          provider: "claude",
+          resetsAt: now + HOUR,
+          retryable: true,
+          interrupted: false,
+        },
+      },
+    },
+    {
+      ...base,
       id: "c_queued",
       kind: "teach",
       title: "Send and Sync",
