@@ -1,6 +1,8 @@
 import { useState } from "react"
 
+import { toApiError } from "@/api/errors"
 import type { components } from "@/api/schema"
+import { ErrorState } from "@/components/app/error-state"
 import { PromptMarkdown } from "@/components/app/prompt-markdown"
 import { Button } from "@/components/ui/button"
 import { Spinner } from "@/components/ui/spinner"
@@ -45,7 +47,14 @@ export function CourseView({ ws, id, onBack }: Props) {
     return (
       <Shell>
         {back}
-        <Spinner />
+        {items.isError ? (
+          <ErrorState
+            message={toApiError(items.error).message}
+            onRetry={() => items.refetch()}
+          />
+        ) : (
+          <Spinner />
+        )}
       </Shell>
     )
 

@@ -30,6 +30,11 @@ describe("Course screen", () => {
     expect(screen.queryByText(/could not be written/)).not.toBeInTheDocument()
   })
 
+  it("shows an error, not an endless spinner, for an unknown course", async () => {
+    renderApp(`/w/${WS}/course?id=gone`)
+    expect(await screen.findByRole("alert")).toBeInTheDocument()
+  })
+
   it("sends one request for two rapid clicks on a grade", async () => {
     seed()
     let grades = 0
