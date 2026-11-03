@@ -1,6 +1,7 @@
 //! The four sub-agents: each turns a tool-call brief into a result plus a file artifact.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
+use std::sync::Arc;
 
 use async_trait::async_trait;
 use lp_cli_driver::engine::LlmEngine;
@@ -32,7 +33,24 @@ pub trait Web: Send + Sync {
 /// PDF text extraction behind a port: one string per page.
 pub trait Pdf: Send + Sync {
     fn pages(&self, path: &str) -> Result<Vec<String>, String>;
+    fn page_count(&self, path: &str) -> Result<usize, String> {
+        self.pages(path).map(|pages| pages.len())
+    }
+    fn page_range(&self, path: &str, first: usize, last: usize) -> Result<Vec<String>, String> {
+        if first == 0 || last < first || last - first >= MAX_PDF_PAGES_PER_READ {
+            return Err("Read 1 to 10 PDF pages at a time".into());
+        }
+        Ok(self
+            .pages(path)?
+            .into_iter()
+            .skip(first - 1)
+            .take(last - first + 1)
+            .collect())
+    }
 }
+
+pub const MAX_PDF_PAGES_PER_READ: usize = 10;
+pub type PdfProgress = Arc<dyn Fn(usize, usize) + Send + Sync>;
 
 /// A finished job: the `JobRecord.result` value and the artifact file (extension, contents).
 pub struct Done {
@@ -168,36 +186,112 @@ struct BriefSubmit {
 
 /// Page search and reads, remembering which pages the model actually saw.
 struct PdfTools {
-    pages: Vec<String>,
+    reader: Arc<dyn Pdf>,
+    path: String,
+    first: usize,
+    last: usize,
+    total: usize,
+    pages: Mutex<BTreeMap<usize, String>>,
     read: Mutex<BTreeSet<usize>>,
     consulted: Mutex<BTreeSet<usize>>,
+    progress: PdfProgress,
+}
+
+impl PdfTools {
+    async fn extract(&self, first: usize, last: usize) -> Result<Vec<(usize, String)>, String> {
+        if first < self.first
+            || last > self.last
+            || last < first
+            || last - first >= MAX_PDF_PAGES_PER_READ
+        {
+            return Err(format!(
+                "Read up to 10 pages within {}..={}",
+                self.first, self.last
+            ));
+        }
+        if !(first..=last).all(|p| self.pages.lock().contains_key(&p)) {
+            let reader = self.reader.clone();
+            let path = self.path.clone();
+            let pages = tokio::task::spawn_blocking(move || reader.page_range(&path, first, last))
+                .await
+                .map_err(|e| format!("PDF extraction stopped: {e}"))??;
+            if pages.len() != last - first + 1 {
+                return Err("PDF extractor returned an incomplete page range".into());
+            }
+            let mut cache = self.pages.lock();
+            let bytes = cache.values().map(String::len).sum::<usize>()
+                + pages.iter().map(String::len).sum::<usize>();
+            if bytes > 8 << 20 {
+                return Err(
+                    "PDF text exceeds the reading budget; request a smaller page range".into(),
+                );
+            }
+            cache.extend(
+                pages
+                    .into_iter()
+                    .enumerate()
+                    .map(|(i, text)| (first + i, text)),
+            );
+            (self.progress)(cache.len(), self.total);
+        }
+        let cache = self.pages.lock();
+        Ok((first..=last).map(|p| (p, cache[&p].clone())).collect())
+    }
 }
 
 #[async_trait]
 impl Tools for PdfTools {
     async fn call(&self, name: &str, args: &Value) -> Option<Result<String, String>> {
         Some(match name {
-            "search" => str_arg(args, "query").map(|q| {
-                let q = q.to_lowercase();
-                let mut out = Vec::new();
-                for (i, text) in self.pages.iter().enumerate() {
-                    if let Some(line) = text.lines().find(|l| l.to_lowercase().contains(&q)) {
-                        self.consulted.lock().insert(i + 1);
-                        out.push(format!("page {}: {}", i + 1, cap(line.trim(), 200)));
+            "search" => match str_arg(args, "query") {
+                Ok(q) => {
+                    let q = q.to_lowercase();
+                    let mut out = Vec::new();
+                    for first in (self.first..=self.last).step_by(MAX_PDF_PAGES_PER_READ) {
+                        let pages = match self
+                            .extract(first, (first + MAX_PDF_PAGES_PER_READ - 1).min(self.last))
+                            .await
+                        {
+                            Ok(pages) => pages,
+                            Err(e) => return Some(Err(e)),
+                        };
+                        for (p, text) in pages {
+                            if let Some(line) = text.lines().find(|l| l.to_lowercase().contains(&q))
+                            {
+                                self.consulted.lock().insert(p);
+                                out.push(format!("page {p}: {}", cap(line.trim(), 200)));
+                                if out.len() == MAX_HITS {
+                                    return Some(Ok(out.join("\n")));
+                                }
+                            }
+                        }
                     }
+                    Ok(out.join("\n"))
                 }
-                out.truncate(MAX_HITS);
-                out.join("\n")
-            }),
-            "read" => match args.get("page").and_then(Value::as_u64) {
-                Some(p) if (1..=self.pages.len() as u64).contains(&p) => {
-                    let p = p as usize;
-                    self.read.lock().insert(p);
-                    self.consulted.lock().insert(p);
-                    Ok(cap(&self.pages[p - 1], MAX_PAGE_CHARS))
-                }
-                _ => Err(format!("page must be 1..={}", self.pages.len())),
+                Err(e) => Err(e),
             },
+            "read" => {
+                let page = args
+                    .get("page")
+                    .and_then(Value::as_u64)
+                    .and_then(|p| usize::try_from(p).ok());
+                let end = match args.get("end_page") {
+                    Some(value) => value.as_u64().and_then(|p| usize::try_from(p).ok()),
+                    None => page,
+                };
+                match (page, end) {
+                    (Some(first), Some(last)) => self.extract(first, last).await.map(|pages| {
+                        let mut out = Vec::new();
+                        for (p, text) in pages {
+                            self.read.lock().insert(p);
+                            self.consulted.lock().insert(p);
+                            out.push(format!("page {p}: {}", cap(&text, MAX_PAGE_CHARS)));
+                        }
+                        out.join("\n")
+                    }),
+                    _ => Err("page must be a positive integer".into()),
+                }
+            }
             _ => return None,
         })
     }
@@ -205,21 +299,54 @@ impl Tools for PdfTools {
 
 pub async fn pdf<E: LlmEngine>(
     run: &Run<'_, E>,
-    reader: &dyn Pdf,
+    reader: Arc<dyn Pdf>,
     args: &Value,
+    progress: PdfProgress,
 ) -> Result<Done, String> {
     let (path, question) = (str_arg(args, "path")?, str_arg(args, "question")?);
-    let pages = reader.pages(path)?;
+    let count_reader = reader.clone();
+    let count_path = path.to_owned();
+    let total = tokio::task::spawn_blocking(move || count_reader.page_count(&count_path))
+        .await
+        .map_err(|e| format!("PDF page count stopped: {e}"))??;
+    let page_arg = |key: &str, default: usize| -> Result<usize, String> {
+        match args.get(key) {
+            None => Ok(default),
+            Some(value) => value
+                .as_u64()
+                .and_then(|n| usize::try_from(n).ok())
+                .ok_or_else(|| format!("{key} must be a positive page number")),
+        }
+    };
+    let first = page_arg("start_page", 1)?;
+    let last = page_arg("end_page", total)?;
+    if first == 0 || first > last || last > total {
+        return Err(format!("PDF page range must be within 1..={total}"));
+    }
+    (progress)(0, total);
     let tools = PdfTools {
-        pages,
+        reader,
+        path: path.to_owned(),
+        first,
+        last,
+        total,
+        pages: Mutex::default(),
         read: Mutex::default(),
         consulted: Mutex::default(),
+        progress,
     };
+    let preview = tools
+        .extract(first, (first + 2).min(last))
+        .await?
+        .into_iter()
+        .map(|(p, text)| format!("page {p}: {}", cap(&text, 1200)))
+        .collect::<Vec<_>>()
+        .join("\n");
     let task = format!(
-        "You are a PDF reading sub-agent for {path} ({} pages). Answer: {question}\n\
-         Tools: search {{query}} lists matching pages; read {{page}} returns one page (1-based).\n\
-         submit {{brief}} after reading the pages your answer rests on.",
-        tools.pages.len()
+        "You are a PDF reading sub-agent for {path} ({total} pages; requested range {first}..={last}). Answer: {question}\n\
+         First inspect this opening/TOC preview and identify relevant pages:\n{preview}\n\
+         Tools: search {{query}} lists matching pages in the requested range; read {{page, end_page?}} returns at most 10 pages (1-based).\n\
+         submit {{brief}} after reading the pages your answer rests on."
     );
     let sub: BriefSubmit = run_submit_agent(run, &task, &tools, |v| {
         let s: BriefSubmit = parse(v)?;
@@ -240,6 +367,8 @@ pub async fn pdf<E: LlmEngine>(
         result: json!({
             "path": path, "question": question, "brief": sub.brief,
             "pagesRead": read, "pagesConsulted": consulted,
+            "progress": {"pagesRead": tools.pages.lock().len(), "totalPages": total},
+            "startPage": first, "endPage": last,
         }),
         artifact: ("md", md),
     })

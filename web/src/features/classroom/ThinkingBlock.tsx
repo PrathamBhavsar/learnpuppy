@@ -22,7 +22,7 @@ export function ThinkingBlock({ text, live = false }: ThinkingBlockProps) {
       open={open}
       onOpenChange={setOpen}
       data-testid="thinking-block"
-      className="text-[12px] text-muted-foreground"
+      className="w-full min-w-0 text-[12px] text-muted-foreground"
     >
       <CollapsibleTrigger
         className="flex items-center gap-1.5 py-0.5 outline-none focus-visible:ring-1 focus-visible:ring-ring/50"
@@ -49,7 +49,7 @@ export function ThinkingBlock({ text, live = false }: ThinkingBlockProps) {
           <span>Thought process</span>
         )}
       </CollapsibleTrigger>
-      <CollapsibleContent>
+      <CollapsibleContent className="max-h-64 overflow-y-auto overscroll-contain">
         <p
           dir="auto"
           className="mt-1 border-s ps-3 leading-[1.5] whitespace-pre-wrap"

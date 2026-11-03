@@ -8,6 +8,7 @@ import { useReducedMotion } from "@/hooks/use-reduced-motion"
 import { cn } from "@/lib/utils"
 
 import type { ReviewCard } from "@/api/pending-types"
+import { LazyMarkdown } from "@/components/app/markdown/LazyMarkdown"
 
 const KEYS = ["a", "b", "c", "d"] as const
 const NUM_KEYS = ["1", "2", "3", "4"] as const
@@ -78,9 +79,9 @@ export const Choices = forwardRef<HTMLDivElement, ChoicesProps>(
                   >
                     {key}
                   </span>
-                  <span dir="auto" className="min-w-0 flex-1">
+                  <LazyMarkdown className="min-w-0 flex-1 text-[13px]">
                     {opt.text}
-                  </span>
+                  </LazyMarkdown>
                   {isCorrect ? (
                     <CheckIcon className="size-4 shrink-0 text-success" />
                   ) : isWrongChosen ? (

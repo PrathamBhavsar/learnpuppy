@@ -1,3 +1,4 @@
+import { LazyMarkdown } from "../markdown/LazyMarkdown"
 import { cn } from "@/lib/utils"
 
 type Option = { key: string; text: string }
@@ -78,12 +79,14 @@ export function OptionList({
                 letter
               )}
             </span>
-            <span dir="auto" className="min-w-0 flex-1">
+            <div dir="auto" className="min-w-0 flex-1">
               <span className="me-1.5 font-medium text-muted-foreground tabular-nums">
                 {letter}.
               </span>
-              {option.text}
-            </span>
+              <LazyMarkdown className="inline text-[13px] [&_p]:m-0 [&_p]:inline">
+                {option.text}
+              </LazyMarkdown>
+            </div>
           </button>
         )
       })}

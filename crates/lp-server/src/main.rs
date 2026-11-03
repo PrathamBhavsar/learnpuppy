@@ -119,6 +119,7 @@ fn doctor_cmd(out: &mut dyn Write) -> anyhow::Result<ExitCode> {
             .unwrap_or_default(),
         assets: Assets::Embedded,
         port: doctor::DEFAULT_PORT,
+        probe: true,
     };
     let ok = doctor::report(&doctor::checks(&input), out)?;
     Ok(if ok {

@@ -67,6 +67,7 @@ Base: `/api/v1`. JSON, camelCase on the wire (serde `rename_all = "camelCase"` i
 | `GET …/chats/{id}/export.md` | markdown transcript |
 | `GET …/jobs` · `POST …/jobs/{id}/abort` | workbench sub-agent jobs (`research|pdf|visual|demo`) |
 | `GET …/artifacts/{id}` | job output (markdown/html/png) with correct content-type, `Content-Security-Policy: sandbox` for html |
+| `POST …/sources/note` | multipart `.md`/`.txt` UTF-8 note, max 1 MB; stores an artifact and a user source message for the next tutor turn (`?chat=`); returns `201 {artifactId, chatId, bytes}` |
 | `POST …/sources/pdf` | multipart PDF → pdf workbench job attached to chat (`?chat=`) |
 
 `ClassroomView` (single source the UI renders; derived server-side by `classroom_view` + `derive_plan_statuses`):

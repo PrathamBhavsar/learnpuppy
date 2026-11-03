@@ -92,7 +92,7 @@ export const classroomInfo = {
       "Pick an answer, set how sure you are, and submit. You get a Correct or Not quite right away, with an explanation.",
     ],
     tips: [
-      "Press 1-9, or a-d for the first four, to pick an option, and Enter to submit.",
+      "Press 1-9, or a-d for the first four, to pick an option, and Enter or Cmd/Ctrl+Enter to submit.",
     ],
   },
   recall: {
@@ -108,7 +108,9 @@ export const classroomInfo = {
     body: [
       "Explaining an idea as if to a friend shows whether you really understand it. Around 12 words or more works well. The tutor then tells you what was right and what was missing.",
     ],
-    tips: ["Enter sends, Shift+Enter starts a new line."],
+    tips: [
+      "Enter or Cmd/Ctrl+Enter sends; Shift+Enter starts a new line. Your draft is saved until the answer is accepted.",
+    ],
   },
   problem: {
     title: "Problem",
@@ -165,7 +167,9 @@ export const classroomInfo = {
     body: [
       "Ask a question, or reply to the tutor. While a question is waiting for you, this box is replaced by the answer area.",
     ],
-    tips: ["Enter sends, Shift+Enter starts a new line."],
+    tips: [
+      "Enter or Cmd/Ctrl+Enter sends; Shift+Enter starts a new line. Your draft is saved until the answer is accepted.",
+    ],
   },
   steer: {
     title: "Steer",

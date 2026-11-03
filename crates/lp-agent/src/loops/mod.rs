@@ -327,6 +327,8 @@ pub enum TurnError {
     StepLimit,
     #[error("teacher ended its turn twice without a quiz or explain call")]
     NoTeachingCall,
+    #[error("the model gave no text and no tool call, twice in a row")]
+    NoResponse,
 }
 
 #[derive(Debug, PartialEq)]
@@ -376,6 +378,50 @@ fn render_prompt(agent: &dyn Agent, s: &Session) -> String {
     out
 }
 
+/// Answers a learner message sent while a question is still pending (a clarifying question about
+/// the pending question or the lesson) without disturbing that question: records the steer, then
+/// asks the model to reply in plain text with no tools, so nothing else can be resolved or re-asked.
+pub async fn answer_pending_steer<E: LlmEngine>(
+    engine: &E,
+    root: &Path,
+    s: &mut Session,
+    steer_id: &str,
+    text: &str,
+    events: &mpsc::Sender<StreamDelta>,
+    cancel: &CancellationToken,
+) -> Result<(), TurnError> {
+    s.messages.push(Msg::Steer {
+        id: steer_id.to_owned(),
+        text: text.to_owned(),
+    });
+    let prompt = {
+        let agent = s.agent(root);
+        let mut prompt = render_prompt(agent.as_ref(), s);
+        prompt.push_str(
+            "\nThe learner sent the message above while a question of yours was still pending. \
+             Answer it now in a short, plain-text reply: you have no tools here, and the pending \
+             question stays open for them to answer next; do not re-ask it.\n",
+        );
+        prompt
+    };
+    let req = TurnRequest {
+        prompt,
+        model: None,
+        effort: None,
+        tools: Vec::new(),
+    };
+    let resp = engine
+        .stream_turn(req, events.clone(), cancel.clone())
+        .await?;
+    if !resp.text.trim().is_empty() {
+        s.messages.push(Msg::Assistant {
+            text: resp.text,
+            calls: Vec::new(),
+        });
+    }
+    Ok(())
+}
+
 /// Why the model is called again within one learner-visible turn, from what the transcript ends with.
 fn extra_turn_reason(s: &Session) -> &'static str {
     match s.messages.last() {
@@ -398,6 +444,7 @@ pub async fn run_turn<E: LlmEngine>(
 ) -> Result<TurnOutcome, TurnError> {
     let mut invalid = 0;
     let mut nudged = false;
+    let mut stalled = false;
     if s.kind == Kind::Teach
         && s.phase() == Phase::Probe
         && !s.pending_question()
@@ -452,12 +499,14 @@ pub async fn run_turn<E: LlmEngine>(
         let resp = engine
             .stream_turn(req, events.clone(), cancel.clone())
             .await?;
-        // Engine ids may repeat across steps; the index keeps them unique for answer matching.
+        // Engine ids may repeat across steps, and even within one step's parallel calls; the
+        // message index plus the call's position in the step keep every id unique.
         let mut calls: Vec<Call> = resp
             .tool_calls
             .into_iter()
-            .map(|c| Call {
-                id: format!("{}#{}", c.id, s.messages.len()),
+            .enumerate()
+            .map(|(i, c)| Call {
+                id: format!("{}#{}-{i}", c.id, s.messages.len()),
                 name: c.name,
                 args: heal_encoded_arguments(c.input),
             })
@@ -469,11 +518,26 @@ pub async fn run_turn<E: LlmEngine>(
             text: resp.text.clone(),
             calls: calls.clone(),
         });
+        let teach_needs_tool_call = s.kind == Kind::Teach && s.phase() != Phase::Probe;
         if calls.is_empty()
-            && s.kind == Kind::Teach
-            && s.phase() != Phase::Probe
             && !s.pending_question()
+            && resp.text.trim().is_empty()
+            && !teach_needs_tool_call
         {
+            // No text and no tool call at all: a true stall, not just a teaching turn that
+            // forgot its tool call (that case is handled below with its own, more specific nudge).
+            if stalled {
+                return Err(TurnError::NoResponse);
+            }
+            stalled = true;
+            tracing::info!(reason = "empty turn", "stalled turn re-prompted once");
+            s.messages.push(Msg::Steer {
+                id: format!("stall_retry#{}", s.messages.len()),
+                text: "Your last reply had no text and no tool call. Continue now.".to_string(),
+            });
+            continue;
+        }
+        if calls.is_empty() && teach_needs_tool_call && !s.pending_question() {
             // A teaching turn must end with a tool call, or nothing is assessed.
             if nudged {
                 return Err(TurnError::NoTeachingCall);
@@ -493,6 +557,7 @@ pub async fn run_turn<E: LlmEngine>(
             continue;
         }
         let mut stop = calls.is_empty();
+        let mut probe_done_ok = false;
         for c in &calls {
             let (ok, text) = match agent.exec(s, c) {
                 Ok(Effect::Await) => {
@@ -511,6 +576,9 @@ pub async fn run_turn<E: LlmEngine>(
             if !ok {
                 tracing::info!(tool = %c.name, consecutive = invalid, reason = %text, "tool call rejected, re-prompting the model");
             }
+            if ok && c.name == "probe_done" {
+                probe_done_ok = true;
+            }
             s.messages.push(Msg::ToolResult {
                 call_id: c.id.clone(),
                 name: c.name.clone(),
@@ -521,9 +589,25 @@ pub async fn run_turn<E: LlmEngine>(
                 return Err(TurnError::TooManyInvalid);
             }
         }
+        if probe_done_ok {
+            // The assessment card is the summary the learner sees; any prose the model wrote
+            // alongside the call would be a duplicate recap, so it is dropped here.
+            if let Some(Msg::Assistant { text, .. }) = s
+                .messages
+                .iter_mut()
+                .rev()
+                .find(|m| matches!(m, Msg::Assistant { .. }))
+            {
+                text.clear();
+            }
+        }
         if stop {
             return Ok(TurnOutcome {
-                text: resp.text,
+                text: if probe_done_ok {
+                    String::new()
+                } else {
+                    resp.text
+                },
                 pending_question: s.pending_question(),
                 compact_at: s.compaction_cut(),
             });

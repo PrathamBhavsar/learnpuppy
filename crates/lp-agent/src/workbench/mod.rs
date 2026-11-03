@@ -138,7 +138,25 @@ impl<E: LlmEngine + 'static, J: JobStore + 'static> Workbench<E, J> {
         };
         let done = match rec.kind {
             JobKind::Research => jobs::research(&run, self.web.as_ref(), &args).await,
-            JobKind::Pdf => jobs::pdf(&run, self.pdf.as_ref(), &args).await,
+            JobKind::Pdf => {
+                let jobs = self.jobs.clone();
+                let progress_rec = Arc::new(Mutex::new(rec.clone()));
+                let progress = Arc::new(move |pages: usize, total: usize| {
+                    let mut rec = progress_rec.lock();
+                    rec.result =
+                        Some(json!({ "progress": { "pagesRead": pages, "totalPages": total } }));
+                    if let Err(e) = jobs.update_job(&rec) {
+                        tracing::warn!("PDF progress not stored: {e}");
+                    }
+                });
+                tokio::select! {
+                    _ = cancel.cancelled() => Err("PDF reading cancelled".into()),
+                    result = tokio::time::timeout(std::time::Duration::from_secs(180),
+                        jobs::pdf(&run, self.pdf.clone(), &args, progress)) => {
+                        result.unwrap_or_else(|_| Err("PDF reading timed out after 3 minutes; request a smaller page range".into()))
+                    }
+                }
+            }
             JobKind::Visual => jobs::visual(&run, &args).await,
             JobKind::Demo => jobs::demo(&run, &args).await,
         };

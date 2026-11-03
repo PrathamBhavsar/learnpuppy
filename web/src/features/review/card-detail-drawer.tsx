@@ -21,6 +21,7 @@ import { useEndSide } from "@/hooks/use-end-side"
 import { REVIEW_COPY } from "./copy"
 import { useCardDetail } from "./api"
 import { formatRelativeDue, useNow } from "./time"
+import { PromptMarkdown } from "@/components/app/prompt-markdown"
 
 type Props = {
   ws: string
@@ -83,13 +84,12 @@ export function CardDetailDrawer({ ws, cardId, onClose }: Props) {
               </Badge>
             </div>
 
-            <p
-              dir="auto"
+            <div
               data-testid="review-card-drawer-front"
               className="text-[14px] leading-relaxed"
             >
-              {card.front}
-            </p>
+              <PromptMarkdown source={card.front} />
+            </div>
 
             {card.options?.length ? (
               <ul className="flex flex-col gap-1.5" aria-label="Choices">
@@ -102,15 +102,19 @@ export function CardDetailDrawer({ ws, cardId, onClose }: Props) {
                     <span className="flex size-5 shrink-0 items-center justify-center border text-[11px]">
                       {opt.key}
                     </span>
-                    <span dir="auto">{opt.text}</span>
+                    <PromptMarkdown
+                      source={opt.text}
+                      className="min-w-0 text-[13px]"
+                    />
                   </li>
                 ))}
               </ul>
             ) : null}
 
-            <p dir="auto" className="text-[13px] text-muted-foreground">
-              {card.rationale}
-            </p>
+            <PromptMarkdown
+              source={card.rationale}
+              className="text-[13px] text-muted-foreground"
+            />
 
             <section className="flex flex-col gap-2">
               <h3 className="text-[12px] text-muted-foreground">

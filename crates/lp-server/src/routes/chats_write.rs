@@ -902,6 +902,103 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn note_upload_validates_persists_and_rejects_busy_chat() {
+        let api = Api::new().await;
+        api.st.faux().faux_text("Ready for notes");
+        let chat = api.create("teach").await;
+        api.state(&chat, "idle").await;
+        let path = api.path(&format!("/sources/note?chat={chat}"));
+        for (filename, data, expected) in [
+            ("bad.pdf", b"hello".as_slice(), StatusCode::BAD_REQUEST),
+            ("bad.md", b"\xff".as_slice(), StatusCode::BAD_REQUEST),
+            ("empty.txt", b"  ".as_slice(), StatusCode::BAD_REQUEST),
+            ("binary.txt", b"a\0b".as_slice(), StatusCode::BAD_REQUEST),
+        ] {
+            let res = api
+                .raw(
+                    Method::POST,
+                    &path,
+                    "multipart/form-data; boundary=pdfboundary",
+                    Body::from(upload_body(filename, data)),
+                )
+                .await;
+            assert_eq!(res.status(), expected);
+        }
+        let oversized = vec![b'x'; 1024 * 1024 + 1];
+        let res = api
+            .raw(
+                Method::POST,
+                &path,
+                "multipart/form-data; boundary=pdfboundary",
+                Body::from(upload_body("large.md", &oversized)),
+            )
+            .await;
+        assert_eq!(res.status(), StatusCode::PAYLOAD_TOO_LARGE);
+        for name in ["notes.md", "NOTES.TXT"] {
+            let text = "# My notes\nOwnership means one owner. 🐶";
+            let res = api
+                .raw(
+                    Method::POST,
+                    &path,
+                    "multipart/form-data; boundary=pdfboundary",
+                    Body::from(upload_body(name, text.as_bytes())),
+                )
+                .await;
+            assert_eq!(res.status(), StatusCode::CREATED);
+            let uploaded: Value =
+                serde_json::from_slice(&res.into_body().collect().await.unwrap().to_bytes())
+                    .unwrap();
+            assert_eq!(uploaded["bytes"], text.len());
+            let artifact = api
+                .raw(
+                    Method::GET,
+                    &api.path(&format!(
+                        "/artifacts/{}",
+                        uploaded["artifactId"].as_str().unwrap()
+                    )),
+                    "application/json",
+                    Body::empty(),
+                )
+                .await;
+            assert_eq!(artifact.status(), StatusCode::OK);
+            assert_eq!(
+                artifact.into_body().collect().await.unwrap().to_bytes(),
+                text.as_bytes()
+            );
+            let view = api.state(&chat, "idle").await;
+            assert!(view["messages"].as_array().unwrap().iter().any(
+                |m| m["role"] == "user" && m["text"].as_str().is_some_and(|t| t.contains(text))
+            ));
+        }
+        let missing = api
+            .raw(
+                Method::POST,
+                &api.path("/sources/note?chat=missing"),
+                "multipart/form-data; boundary=pdfboundary",
+                Body::from(upload_body("note.md", b"notes")),
+            )
+            .await;
+        assert_eq!(missing.status(), StatusCode::NOT_FOUND);
+        let _hold = api.st.faux().faux_gated_turn(vec![
+            StreamDelta::Text("Thinking".into()),
+            StreamDelta::Text("still".into()),
+        ]);
+        let busy = api.create("teach").await;
+        api.state(&busy, "running").await;
+        let res = api
+            .raw(
+                Method::POST,
+                &api.path(&format!("/sources/note?chat={busy}")),
+                "multipart/form-data; boundary=pdfboundary",
+                Body::from(upload_body("note.md", b"notes")),
+            )
+            .await;
+        assert_eq!(res.status(), StatusCode::CONFLICT);
+        api.st.shutdown.cancel();
+        api.st.chats.wait_idle().await;
+    }
+
+    #[tokio::test]
     async fn pdf_upload_job_lifecycle_abort_and_artifact_sandbox() {
         let api = Api::new().await;
         api.st.faux().faux_text("Ready for a document");

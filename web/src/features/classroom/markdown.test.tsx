@@ -6,8 +6,31 @@ import { resolveLanguage } from "./markdown/highlight"
 import { LazyMarkdown } from "./markdown/LazyMarkdown"
 import Markdown from "./markdown/Markdown"
 import MarkdownMath from "./markdown/MarkdownMath"
+import { mathSource } from "./markdown/math-source"
+import { ThinkingBlock } from "./ThinkingBlock"
+import { StreamingText } from "./StreamingText"
 
 describe("Markdown", () => {
+  it.each(["c", "rust", "python"])(
+    "preserves %s indentation and long code lines",
+    async (lang) => {
+      const code = `if (ready) {\n    ${"long_identifier_".repeat(15)}\n\treturn 1;\n}`
+      const { container } = render(
+        <Markdown>{`\`\`\`${lang}\n${code}\n\`\`\``}</Markdown>
+      )
+      expect(container.querySelector("pre code")?.textContent).toBe(code)
+      await waitFor(() =>
+        expect(container.querySelector(".lp-shiki pre code")).not.toBeNull()
+      )
+      expect(container.querySelector("pre code")?.textContent).toBe(code)
+    }
+  )
+
+  it("does not normalize math or intervals inside fenced code", () => {
+    const source = "```python\n" + String.raw`value = "\(x\) [0, 1)"` + "\n```"
+    expect(mathSource(source)).toBe(source)
+  })
+
   it("opens links externally with noopener", () => {
     const { container } = render(
       <Markdown>{"[docs](https://example.com)"}</Markdown>
@@ -81,6 +104,26 @@ describe("Markdown", () => {
 })
 
 describe("LazyMarkdown", () => {
+  it("renders TeX delimiters without changing intervals, links or code", async () => {
+    const { container } = render(
+      <LazyMarkdown>
+        {String.raw`Inline \(x^2\), display \[x+1\], interval [0, 1), literal ](x), 96233x96233 and code \`\(raw\)\`.`.replaceAll(
+          "\\`",
+          "`"
+        )}
+      </LazyMarkdown>
+    )
+    await waitFor(() =>
+      expect(container.querySelectorAll(".katex")).toHaveLength(2)
+    )
+    expect(container.textContent).toContain("[0, 1)")
+    expect(container.textContent).toContain("](x)")
+    expect(container.textContent).toContain("96233x96233")
+    expect(container.querySelector("code")?.textContent).toBe(
+      String.raw`\(raw\)`
+    )
+  })
+
   it("only loads math rendering for messages that contain math", async () => {
     const { container, rerender } = render(
       <LazyMarkdown>{"cost is plain"}</LazyMarkdown>
@@ -111,5 +154,33 @@ describe("resolveLanguage", () => {
     expect(resolveLanguage("c++")).toBe("cpp")
     expect(resolveLanguage("cobol")).toBeNull()
     expect(resolveLanguage(undefined)).toBeNull()
+  })
+})
+
+describe("long and streaming messages", () => {
+  it("keeps the thought toggle outside the scrollable reasoning", async () => {
+    const user = userEvent.setup()
+    render(<ThinkingBlock text={"Reasoning\n".repeat(300)} />)
+    const toggle = screen.getByTestId("thinking-toggle")
+    await user.click(toggle)
+    const content = document.getElementById(
+      toggle.getAttribute("aria-controls") ?? ""
+    )
+    expect(content).toHaveClass("max-h-64", "overflow-y-auto")
+    expect(content?.contains(toggle)).toBe(false)
+    await user.click(toggle)
+    expect(toggle).toHaveAttribute("aria-expanded", "false")
+  })
+
+  it("updates streaming text while preserving existing slices", () => {
+    const { container, rerender } = render(
+      <StreamingText text={"x".repeat(32)} />
+    )
+    const first = container.querySelector("span")
+    rerender(<StreamingText text={"x".repeat(32) + "more"} />)
+    expect(container.querySelector("span")).toBe(first)
+    expect(screen.getByTestId("streaming-text")).toHaveTextContent(
+      "x".repeat(32) + "more"
+    )
   })
 })

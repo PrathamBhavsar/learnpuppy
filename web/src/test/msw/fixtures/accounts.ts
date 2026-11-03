@@ -14,6 +14,8 @@ export function accountFixtures(now: number): AccountDetail[] {
       tokensIn: 412_000,
       tokensOut: 96_000,
       reauthHint: null,
+      howToConnect: "login",
+      models: [],
     },
     {
       id: "claude:acc-2",
@@ -27,6 +29,8 @@ export function accountFixtures(now: number): AccountDetail[] {
       tokensIn: 198_000,
       tokensOut: 41_000,
       reauthHint: null,
+      howToConnect: "login",
+      models: [],
     },
     {
       id: "codex:acc-1",
@@ -40,6 +44,8 @@ export function accountFixtures(now: number): AccountDetail[] {
       tokensIn: 60_000,
       tokensOut: 12_000,
       reauthHint: null,
+      howToConnect: "login",
+      models: [],
     },
     {
       id: "agy:acc-1",
@@ -53,6 +59,8 @@ export function accountFixtures(now: number): AccountDetail[] {
       tokensIn: 3_000,
       tokensOut: 800,
       reauthHint: "agy auth login",
+      howToConnect: "login",
+      models: [],
     },
   ]
 }

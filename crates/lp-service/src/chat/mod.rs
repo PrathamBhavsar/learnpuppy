@@ -224,4 +224,84 @@ mod tests {
         assert_eq!(role(&Session::new("c", Kind::Teach)), "prober");
         assert_eq!(role(&Session::new("c", Kind::Practice)), "practice");
     }
+
+    /// Capped real-engine smoke run (K1-kiro-opencode brief): drives probe -> plan -> a few teach
+    /// turns in Spanish through a real, free `kiro-cli` model, and prints the transcript so a human
+    /// can check language adherence, letter-free explanations, no post-probe recap and no stall.
+    /// Needs a locally authenticated `kiro-cli`; run with
+    /// `cargo test -p lp-service --ignored real_engine_spanish_probe_plan_teach_smoke -- --nocapture`.
+    #[tokio::test]
+    #[ignore = "spawns a real kiro-cli subprocess"]
+    async fn real_engine_spanish_probe_plan_teach_smoke() {
+        use lp_cli_driver::engine::{CliKind, SubprocessEngine};
+
+        let mut engine = SubprocessEngine::new(CliKind::Kiro).expect("kiro-cli on PATH");
+        engine.model = Some("qwen3-coder-next".into());
+        let engine = Arc::new(engine);
+        let engines = {
+            let e = engine.clone();
+            move |_: &str| e.clone()
+        };
+        let (tx, mut rx) = mpsc::channel(512);
+        tokio::spawn(async move { while rx.recv().await.is_some() {} });
+        let home = tempfile::tempdir().unwrap();
+        // Keep this smoke run off the learner's real data even though nothing here persists.
+        std::env::set_var("LEARNPUPPY_HOME", home.path());
+        let root = home.path();
+
+        let mut s = Session::new("real_es_1", Kind::Teach);
+        s.push_user("Enseñame los fundamentos de la fotosíntesis.");
+        let cancel = CancellationToken::new();
+
+        const MAX_TURNS: usize = 12;
+        let mut saw_probe_done = false;
+        for turn in 1..=MAX_TURNS {
+            run_to_rest(&engines, root, &mut s, &tx, &cancel)
+                .await
+                .unwrap_or_else(|e| panic!("turn {turn} failed: {e}"));
+            let cl = classroom_view(&s, "");
+            println!("=== turn {turn} phase={:?} ===", cl.phase);
+            for line in &cl.transcript {
+                println!("{line}");
+            }
+            if cl.phase != Phase::Probe {
+                saw_probe_done = true;
+            }
+            match pending_call(&s).cloned() {
+                Some(call) if call.name == "quiz" || call.name == "probe" => {
+                    let input: QuizInput = serde_json::from_value(call.args.clone()).unwrap();
+                    let value = input.options[0].value.clone();
+                    s.answer(
+                        &call.id,
+                        render_answer(&Answer {
+                            value,
+                            confidence: 3,
+                            reading_thinking: String::new(),
+                            thinking: "No estoy del todo seguro, pero elijo esta opción.".into(),
+                        }),
+                    );
+                }
+                Some(call) => {
+                    s.answer(
+                        &call.id,
+                        render_answer(&Answer {
+                            value: String::new(),
+                            confidence: 3,
+                            reading_thinking: String::new(),
+                            thinking: "Creo que tiene que ver con la luz solar y las plantas."
+                                .into(),
+                        }),
+                    );
+                }
+                None => {
+                    println!("turn {turn}: no pending question, stopping early");
+                    break;
+                }
+            }
+            if saw_probe_done && cl.phase == Phase::Teach && turn >= 6 {
+                break;
+            }
+        }
+        assert!(saw_probe_done, "the probe never handed off to the teacher");
+    }
 }

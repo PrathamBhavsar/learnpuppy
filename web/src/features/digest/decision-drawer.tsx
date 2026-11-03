@@ -28,6 +28,8 @@ import { staggerDelay } from "@/lib/motion"
 import { toastError, toastSuccess } from "@/lib/toast"
 import { useState } from "react"
 
+import { PromptMarkdown } from "@/components/app/prompt-markdown"
+
 import { DIGEST_COPY } from "./copy"
 import { digestInfo } from "./info"
 import { useDecision, useRegenerateCards } from "./api"
@@ -152,23 +154,23 @@ export function DecisionDrawer({ ws, decisionId, onClose }: Props) {
             </div>
 
             <Field label={DIGEST_COPY.chosen}>
-              <p
+              <div
                 dir="auto"
                 className="text-[14px]"
                 data-testid="digest-drawer-chosen"
               >
-                {decision.chosen}
-              </p>
+                <PromptMarkdown source={decision.chosen} />
+              </div>
             </Field>
             <Field label={DIGEST_COPY.why}>
-              <p dir="auto" className="text-[13px] text-muted-foreground">
-                {decision.why}
-              </p>
+              <div dir="auto" className="text-[13px] text-muted-foreground">
+                <PromptMarkdown source={decision.why} />
+              </div>
             </Field>
             <Field label={DIGEST_COPY.risk}>
-              <p dir="auto" className="text-[13px] text-muted-foreground">
-                {decision.risk}
-              </p>
+              <div dir="auto" className="text-[13px] text-muted-foreground">
+                <PromptMarkdown source={decision.risk} />
+              </div>
             </Field>
 
             <Field
@@ -283,9 +285,12 @@ export function DecisionDrawer({ ws, decisionId, onClose }: Props) {
                         key={id}
                         className="flex items-center gap-2 text-[13px]"
                       >
-                        <span dir="auto" className="min-w-0 flex-1 truncate">
-                          {front ?? id}
-                        </span>
+                        <div
+                          dir="auto"
+                          className="line-clamp-2 min-w-0 flex-1"
+                        >
+                          <PromptMarkdown source={front ?? id} />
+                        </div>
                         <Button asChild variant="ghost" size="sm">
                           <Link
                             to="/w/$ws/review"

@@ -14,7 +14,7 @@ import {
   formatTokens,
   groupAccounts,
   reauthCommand,
-} from "./model"
+} from "@/lib/accounts-model"
 
 beforeEach(resetUi)
 
@@ -52,6 +52,8 @@ describe("model", () => {
         requests: 0,
         tokensIn: 0,
         tokensOut: 0,
+        howToConnect: "login",
+        models: [] as never[],
       }) as const
     const groups = groupAccounts([
       mk("agy", "a"),
@@ -73,6 +75,8 @@ describe("model", () => {
       requests: 0,
       tokensIn: 0,
       tokensOut: 0,
+      howToConnect: "claude login",
+      models: [],
     }
     expect(
       reauthCommand({
@@ -105,7 +109,7 @@ describe("Accounts: five states", () => {
       "Ready"
     )
     expect(screen.getByTestId("account-status-claude:acc-2")).toHaveTextContent(
-      "Cooling down"
+      "Limited"
     )
     expect(screen.getByTestId("account-tier-claude:acc-1")).toHaveTextContent(
       "max 5x"
@@ -274,6 +278,8 @@ describe("Accounts: add profile and rescan", () => {
       requests: 0,
       tokensIn: 0,
       tokensOut: 0,
+      howToConnect: "codex login",
+      models: [],
     })
     await user.click(screen.getByTestId("accounts-rescan"))
     expect(await screen.findByTestId("account-codex:acc-2")).toBeInTheDocument()

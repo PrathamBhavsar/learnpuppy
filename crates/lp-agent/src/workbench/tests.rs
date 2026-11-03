@@ -220,6 +220,54 @@ async fn pdf_tracks_pages_read_versus_consulted() {
 }
 
 #[tokio::test]
+async fn pdf_range_is_lazy_bounded_and_reports_progress() {
+    struct RangedPdf(Mutex<Vec<(usize, usize)>>);
+    impl Pdf for RangedPdf {
+        fn pages(&self, _: &str) -> Result<Vec<String>, String> {
+            panic!("must use bounded extraction");
+        }
+        fn page_count(&self, _: &str) -> Result<usize, String> {
+            Ok(500)
+        }
+        fn page_range(&self, _: &str, first: usize, last: usize) -> Result<Vec<String>, String> {
+            assert!((50..=65).contains(&first) && last <= 65 && last - first < 10);
+            self.0.lock().push((first, last));
+            Ok((first..=last)
+                .map(|p| format!("text on page {p}"))
+                .collect())
+        }
+    }
+    let engine = FauxEngine::new();
+    engine.faux_tool_call("read", json!({"page": 60, "end_page": 65}));
+    engine.faux_tool_call("submit", json!({"brief": "bounded answer"}));
+    let cancel = CancellationToken::new();
+    let permits = Semaphore::new(1);
+    let run = Run {
+        engine: &engine,
+        bg_llm: &permits,
+        cancel: &cancel,
+    };
+    let reader = Arc::new(RangedPdf(Mutex::default()));
+    let progress = Arc::new(Mutex::new(Vec::new()));
+    let seen = progress.clone();
+    let done = jobs::pdf(
+        &run,
+        reader.clone(),
+        &json!({"path":"large.pdf", "question":"q", "start_page":50, "end_page":65}),
+        Arc::new(move |read, total| seen.lock().push((read, total))),
+    )
+    .await
+    .unwrap();
+    assert_eq!(*reader.0.lock(), vec![(50, 52), (60, 65)]);
+    assert_eq!(*progress.lock(), vec![(0, 500), (3, 500), (9, 500)]);
+    assert_eq!(done.result["pagesRead"], json!([60, 61, 62, 63, 64, 65]));
+    assert_eq!(
+        done.result["progress"],
+        json!({"pagesRead":9,"totalPages":500})
+    );
+}
+
+#[tokio::test]
 async fn pdf_submit_without_reading_is_rejected() {
     let rig = Rig::new();
     submit(&rig, json!({"brief": "guess"}));

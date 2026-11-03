@@ -1,0 +1,13 @@
+{"type":"thread.started","thread_id":"01a19865-a741-7432-baf1-f9c0ee17c12d"}
+{"type":"item.completed","item":{"id":"item_0","type":"error","message":"loading hooks from both /Users/pratham/.codex/hooks.json and /Users/pratham/.codex/config.toml; prefer a single representation for this layer"}}
+{"type":"turn.started"}
+{"type":"error","message":"Reconnecting... 2/5 (stream disconnected before completion: Connection refused (os error 61))"}
+{"type":"error","message":"Reconnecting... 3/5 (stream disconnected before completion: Connection refused (os error 61))"}
+{"type":"error","message":"Reconnecting... 4/5 (stream disconnected before completion: Connection refused (os error 61))"}
+{"type":"error","message":"Reconnecting... 5/5 (stream disconnected before completion: Connection refused (os error 61))"}
+{"type":"item.completed","item":{"id":"item_1","type":"error","message":"Falling back from WebSockets to HTTPS transport. stream disconnected before completion: Connection refused (os error 61)"}}
+{"type":"error","message":"Reconnecting... waiting for network (Connection failed: error sending request)"}
+{"type":"error","message":"Reconnecting... waiting for network (Connection failed: error sending request)"}
+{"type":"error","message":"Reconnecting... waiting for network (Connection failed: error sending request)"}
+{"type":"error","message":"Reconnecting... waiting for network (Connection failed: error sending request)"}
+{"type":"error","message":"Reconnecting... waiting for network (Connection failed: error sending request)"}

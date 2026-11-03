@@ -13,8 +13,8 @@ use lp_service::settings::Settings;
 use super::common::{blocking, conditional_body, core};
 use crate::app::AppState;
 use crate::dto::settings::{
-    AccountDto, AccountsDto, AddClaudeProfile, CatalogDto, PatchAccount, ProfilePingBody,
-    ProfilePingResult, RescanDto, SettingsDto,
+    AccountDto, AccountsDto, AddClaudeProfile, CatalogDto, PatchAccount, PatchAccountModel,
+    ProfilePingBody, ProfilePingResult, RescanDto, SettingsDto,
 };
 use crate::error::{ApiError, ApiJson, ErrorEnvelope};
 
@@ -24,6 +24,8 @@ pub fn routes() -> Router<AppState> {
         .route("/accounts/rescan", post(rescan))
         .route("/accounts/claude", post(add_claude))
         .route("/accounts/{id}", patch(patch_account))
+        .route("/accounts/{id}/models", patch(patch_account_model))
+        .route("/settings/free-defaults", post(apply_free_defaults))
         .route("/settings", get(get_settings).put(put_settings))
         .route("/settings/catalog", get(catalog))
         .route("/settings/test", post(test_profile))
@@ -161,6 +163,73 @@ pub async fn patch_account(
         .ok_or_else(|| ApiError::not_found(format!("no account {id}")))
 }
 
+/// Switches one model of an account off, or back on (kiro and opencode list several).
+#[utoipa::path(
+    patch,
+    path = "/accounts/{id}/models",
+    tag = "accounts",
+    params(("id" = String, Path, description = "Account id, e.g. `opencode:opencode`")),
+    request_body = PatchAccountModel,
+    responses((status = 200, body = AccountDto), (status = 404, body = ErrorEnvelope))
+)]
+pub async fn patch_account_model(
+    State(st): State<AppState>,
+    Path(id): Path<String>,
+    ApiJson(body): ApiJson<PatchAccountModel>,
+) -> Result<Json<AccountDto>, ApiError> {
+    let core = core(&st);
+    let pool = st.pool.clone();
+    let (id2, model) = (id.clone(), body.model.clone());
+    let known = blocking(move || {
+        let _g = core.settings_lock.lock();
+        let mut settings = Settings::load(core.root())?;
+        Ok(svc::set_model_disabled(
+            &pool,
+            core.root(),
+            &mut settings,
+            &id2,
+            &model,
+            body.disabled,
+        )?)
+    })
+    .await?;
+    if !known {
+        return Err(ApiError::not_found(format!(
+            "no model {} on account {id}",
+            body.model
+        )));
+    }
+    changed(&st);
+    dtos(&st)
+        .into_iter()
+        .find(|a| a.id == id)
+        .map(Json)
+        .ok_or_else(|| ApiError::not_found(format!("no account {id}")))
+}
+
+/// "Use free models": every role runs on a free opencode or kiro model, with fallback across all
+/// of them. Never writes a paid model. Returns the new settings.
+#[utoipa::path(
+    post,
+    path = "/settings/free-defaults",
+    tag = "settings",
+    responses((status = 200, body = SettingsDto))
+)]
+pub async fn apply_free_defaults(
+    State(st): State<AppState>,
+) -> Result<Json<SettingsDto>, ApiError> {
+    let core = core(&st);
+    let free = svc::free_opencode_models(&st.pool);
+    blocking(move || {
+        let _g = core.settings_lock.lock();
+        let mut settings = Settings::load(core.root())?;
+        settings.apply_free_defaults(&free);
+        settings.save(core.root())?;
+        Ok(Json(SettingsDto::from(&settings)))
+    })
+    .await
+}
+
 /// Global settings: role profiles, pins, concurrency and UI preferences.
 #[utoipa::path(
     get,
@@ -194,11 +263,12 @@ pub async fn put_settings(
 ) -> Result<Json<SettingsDto>, ApiError> {
     let core = core(&st);
     let ids: Vec<String> = svc::list(&st.pool).into_iter().map(|a| a.id).collect();
+    let pool = st.pool.clone();
     blocking(move || {
         let _g = core.settings_lock.lock();
         let current = Settings::load(core.root())?;
         let next = body
-            .apply_to(&current, &ids)
+            .apply_to_with(&current, &ids, &|p| svc::discovered_models(&pool, p))
             .map_err(ApiError::validation)?;
         next.save(core.root())?;
         Ok(Json(SettingsDto::from(&next)))
@@ -215,11 +285,21 @@ pub async fn put_settings(
 )]
 pub async fn catalog(State(st): State<AppState>) -> Result<Json<CatalogDto>, ApiError> {
     let core = core(&st);
+    let pool = st.pool.clone();
     blocking(move || {
         let _g = core.settings_lock.lock();
-        Ok(Json(CatalogDto::from_settings(&Settings::load(
-            core.root(),
-        )?)))
+        let free = |p: &str| {
+            if p == "opencode" {
+                svc::free_opencode_models(&pool)
+            } else {
+                Vec::new()
+            }
+        };
+        Ok(Json(CatalogDto::from_settings_with(
+            &Settings::load(core.root())?,
+            &|p| svc::discovered_models(&pool, p),
+            &free,
+        )))
     })
     .await
 }

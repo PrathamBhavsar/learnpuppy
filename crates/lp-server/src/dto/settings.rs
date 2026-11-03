@@ -136,6 +136,17 @@ impl SettingsDto {
         current: &Settings,
         account_ids: &[String],
     ) -> Result<Settings, Vec<FieldError>> {
+        self.apply_to_with(current, account_ids, &|_| Vec::new())
+    }
+
+    /// [`apply_to`](Self::apply_to) where `discovered(provider)` lists the model ids the CLI
+    /// itself reported (kiro and opencode choices come from there).
+    pub fn apply_to_with(
+        self,
+        current: &Settings,
+        account_ids: &[String],
+        discovered: &dyn Fn(&str) -> Vec<String>,
+    ) -> Result<Settings, Vec<FieldError>> {
         let mut errors = Vec::new();
         let mut out = current.clone();
         out.profiles.clear();
@@ -155,7 +166,9 @@ impl SettingsDto {
                 }
                 Err(m) => errors.push(field(format!("{path}.model"), m)),
                 Ok(p) => {
-                    if !settings::catalog_models(&provider, current).contains(&model) {
+                    let known =
+                        settings::catalog_models_with(&provider, current, &discovered(&provider));
+                    if !known.contains(&model) {
                         errors.push(field(
                             format!("{path}.model"),
                             format!("`{model}` is not in the catalog for {provider}"),
@@ -218,9 +231,12 @@ fn valid_pin(pin: &str, account_ids: &[String]) -> bool {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
 pub struct CatalogProviderDto {
     pub id: String,
     pub models: Vec<String>,
+    /// The subset of `models` that costs nothing.
+    pub free_models: Vec<String>,
 }
 
 /// What the settings forms may offer.
@@ -240,13 +256,23 @@ pub struct CatalogDto {
 
 impl CatalogDto {
     pub fn from_settings(s: &Settings) -> Self {
+        Self::from_settings_with(s, &|_| Vec::new(), &|_| Vec::new())
+    }
+
+    /// `discovered(provider)` and `free(provider)` come from the live account pool.
+    pub fn from_settings_with(
+        s: &Settings,
+        discovered: &dyn Fn(&str) -> Vec<String>,
+        free: &dyn Fn(&str) -> Vec<String>,
+    ) -> Self {
         let strs = |v: &[&str]| v.iter().map(|s| (*s).to_owned()).collect::<Vec<_>>();
         Self {
             providers: settings::PROVIDERS
                 .iter()
                 .map(|p| CatalogProviderDto {
                     id: (*p).to_owned(),
-                    models: settings::catalog_models(p, s),
+                    models: settings::catalog_models_with(p, s, &discovered(p)),
+                    free_models: free(p),
                 })
                 .collect(),
             efforts: strs(&settings::EFFORTS),
@@ -260,24 +286,49 @@ impl CatalogDto {
 }
 
 /// One CLI account as the accounts screen shows it. Never carries tokens or credentials.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct AccountDto {
     pub id: String,
-    /// `claude`, `codex` or `agy`.
+    /// `claude`, `codex`, `agy`, `kiro` or `opencode`.
     pub provider: String,
     pub email: Option<String>,
+    /// The identity the CLI is logged in as (its email), when it has one.
+    pub logged_in_as: Option<String>,
     pub tier: Option<String>,
     pub status: AccountStatus,
     /// Epoch ms when a cooldown ends.
     pub cooldown_until: Option<i64>,
     pub cooldown_reason: Option<String>,
+    /// Epoch ms when the account's limit lifts, when the CLI said.
+    pub resets_at: Option<i64>,
+    /// Models the CLI lists for this account; empty for CLIs that pick their own.
+    pub models: Vec<AccountModelDto>,
+    /// The exact command the user runs themselves to connect or renew this login. Never run by
+    /// LearnPuppy.
+    pub how_to_connect: String,
     /// Requests in the current rate-limit window.
     pub requests: u32,
     pub tokens_in: u64,
     pub tokens_out: u64,
     /// The command that renews an expired login.
     pub reauth_hint: Option<String>,
+}
+
+/// One model of an account with its own state.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct AccountModelDto {
+    pub id: String,
+    /// Costs nothing (opencode free models).
+    pub free: bool,
+    /// Kiro: credits per unit of work relative to `auto` = 1.0.
+    pub credit_multiplier: Option<f64>,
+    pub status: AccountStatus,
+    /// Epoch ms when this model's limit lifts.
+    pub resets_at: Option<i64>,
+    /// The user switched this model off.
+    pub disabled: bool,
 }
 
 impl AccountDto {
@@ -289,19 +340,39 @@ impl AccountDto {
             ("claude", Some(dir)) => {
                 format!("CLAUDE_CONFIG_DIR={} claude login", dir.display())
             }
-            ("claude", None) => "claude login".to_owned(),
-            (p, _) => format!("{p} login"),
+            (p, _) => lp_service::accounts::how_to_connect(p).to_owned(),
         });
         let (requests, tokens_in, tokens_out) = (a.requests, a.tokens_in, a.tokens_out);
+        let resets_at = a.resets_at.and_then(|r| i64::try_from(r).ok());
+        // The profile directory only appears once a login is actually needed.
+        let how_to_connect = hint
+            .clone()
+            .unwrap_or_else(|| lp_service::accounts::how_to_connect(a.provider).to_owned());
+        let models: Vec<AccountModelDto> = a
+            .models
+            .iter()
+            .map(|m| AccountModelDto {
+                id: m.id.clone(),
+                free: m.free,
+                credit_multiplier: m.credit_multiplier,
+                status: super::system::AccountSummaryDto::status_of(&m.status, now_ms).0,
+                resets_at: m.resets_at.and_then(|r| i64::try_from(r).ok()),
+                disabled: m.disabled,
+            })
+            .collect();
         let summary = super::system::AccountSummaryDto::from_account(a, now_ms);
         Self {
             id: summary.id,
             provider: summary.provider,
+            logged_in_as: summary.email.clone(),
             email: summary.email,
             tier: summary.tier,
             status: summary.status,
             cooldown_until: summary.cooldown_until,
             cooldown_reason: summary.cooldown_reason,
+            resets_at,
+            models,
+            how_to_connect,
             requests,
             tokens_in,
             tokens_out,
@@ -310,12 +381,12 @@ impl AccountDto {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, ToSchema)]
 pub struct AccountsDto {
     pub items: Vec<AccountDto>,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct RescanDto {
     pub items: Vec<AccountDto>,
@@ -327,6 +398,14 @@ pub struct RescanDto {
 pub struct AddClaudeProfile {
     /// A `CLAUDE_CONFIG_DIR` holding `.claude.json`.
     pub path: String,
+}
+
+#[derive(Clone, Debug, Deserialize, ToSchema)]
+pub struct PatchAccountModel {
+    /// Model id as listed on the account, e.g. `opencode/big-pickle`.
+    pub model: String,
+    /// Switch the model off (or back on).
+    pub disabled: bool,
 }
 
 #[derive(Clone, Debug, Deserialize, ToSchema)]
@@ -415,7 +494,7 @@ mod tests {
     fn catalog_lists_every_provider_with_models() {
         let c = CatalogDto::from_settings(&Settings::default());
         let ids: Vec<_> = c.providers.iter().map(|p| p.id.as_str()).collect();
-        assert_eq!(ids, ["codex", "agy", "claude"]);
+        assert_eq!(ids, ["codex", "agy", "claude", "kiro", "opencode"]);
         assert!(c.providers[0].models.contains(&"gpt-6.1-sol".to_owned()));
         assert!(c.providers[2].models.contains(&"sonnet".to_owned()));
         assert!(c.efforts.contains(&"xhigh".to_owned()));
@@ -431,6 +510,8 @@ mod tests {
             tier: None,
             config_dir: Some("/home/me/.claude-work".into()),
             status: Status::AuthExpired,
+            resets_at: None,
+            models: vec![],
             requests: 3,
             tokens_in: 10,
             tokens_out: 20,
@@ -466,4 +547,73 @@ pub struct ProfilePingResult {
     pub ok: bool,
     pub latency_ms: u64,
     pub message: String,
+}
+
+#[cfg(test)]
+mod ai_tests {
+    use super::*;
+
+    #[test]
+    fn kiro_and_opencode_models_validate_against_discovery() {
+        let mut d = SettingsDto::from(&Settings::default());
+        let p = |provider: &str, model: &str| ProfileDto {
+            provider: provider.into(),
+            model: model.into(),
+            effort: None,
+            fallback: true,
+        };
+        d.profiles
+            .insert("teacher".into(), p("opencode", "opencode/x-free"));
+        d.profiles
+            .insert("prober".into(), p("kiro", "qwen3-coder-next"));
+        let found = |prov: &str| match prov {
+            "opencode" => vec!["opencode/x-free".to_owned()],
+            "kiro" => vec!["qwen3-coder-next".to_owned()],
+            _ => vec![],
+        };
+        let ok = d
+            .clone()
+            .apply_to_with(&Settings::default(), &[], &found)
+            .unwrap();
+        assert_eq!(ok.profiles["teacher"].provider, "opencode");
+        // Not discovered, not saved: rejected with the field path.
+        let errs = d.apply_to(&Settings::default(), &[]).unwrap_err();
+        let paths: Vec<_> = errs.iter().map(|e| e.path.as_str()).collect();
+        assert!(paths.contains(&"profiles.teacher.model"), "{paths:?}");
+    }
+
+    #[test]
+    fn account_dto_carries_models_resets_and_the_connect_command() {
+        use lp_service::accounts::ModelRow;
+        let a = Account {
+            id: "opencode:opencode".into(),
+            provider: "opencode",
+            email: None,
+            tier: None,
+            config_dir: None,
+            status: Status::Cooldown {
+                secs_left: 3600,
+                reason: "Free usage limit".into(),
+            },
+            resets_at: Some(1_900_000_000_000),
+            requests: 0,
+            tokens_in: 0,
+            tokens_out: 0,
+            models: vec![ModelRow {
+                id: "opencode/big-pickle".into(),
+                free: true,
+                credit_multiplier: Some(0.5),
+                status: Status::Ready,
+                disabled: false,
+                resets_at: None,
+            }],
+        };
+        let j = serde_json::to_value(AccountDto::new(a, 1000)).unwrap();
+        assert_eq!(j["status"], "cooldown");
+        assert_eq!(j["resetsAt"], 1_900_000_000_000_i64);
+        assert_eq!(j["howToConnect"], "opencode auth login");
+        assert_eq!(j["models"][0]["free"], true);
+        assert_eq!(j["models"][0]["creditMultiplier"], 0.5);
+        assert!(j.get("tokens").is_none());
+    }
 }

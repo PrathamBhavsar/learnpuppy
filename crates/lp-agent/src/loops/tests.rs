@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::path::Path;
 
-use lp_cli_driver::engine::{FauxEngine, StreamDelta};
+use lp_cli_driver::engine::{FauxEngine, StreamDelta, ToolCall as EngineToolCall};
 use lp_core::fsrs::TurnUsage;
 use lp_core::plan::Phase;
 use lp_core::ports::{ChatRecord, ChatStore, ChatSummary, StoreError, StoreResult};
@@ -457,6 +457,113 @@ fn teacher_prompt_tells_it_to_acknowledge_side_requests() {
     let role = TeacherAgent { root: ".".into() }.role_prompt(&s);
     assert!(role.contains("both answers your question and asks for something else"));
     assert!(role.contains("acknowledge that request"));
+}
+
+#[tokio::test]
+async fn parallel_calls_in_one_step_get_unique_ids_even_with_duplicate_engine_ids() {
+    let rig = Rig::new();
+    let mut s = Session::new("c10", Kind::Teach);
+    rig.engine.faux_turn(vec![
+        StreamDelta::ToolCall(EngineToolCall {
+            id: "dup".into(),
+            name: "ls".into(),
+            input: json!({}),
+        }),
+        StreamDelta::ToolCall(EngineToolCall {
+            id: "dup".into(),
+            name: "ls".into(),
+            input: json!({}),
+        }),
+    ]);
+    rig.engine.faux_tool_call("probe", quiz_args(json!({})));
+    rig.turn(&mut s).await.unwrap();
+    let ids: Vec<String> = s.calls().map(|c| c.id.clone()).collect();
+    assert_eq!(ids.len(), 3, "two ls calls plus the probe");
+    assert_ne!(ids[0], ids[1], "duplicate engine ids must not collide");
+}
+
+#[tokio::test]
+async fn probe_done_recap_prose_is_dropped() {
+    let rig = Rig::new();
+    let mut s = Session::new("c11", Kind::Teach);
+    rig.engine.faux_turn(vec![
+        StreamDelta::Text("You know ownership well but struggled with borrowing.".into()),
+        StreamDelta::ToolCall(EngineToolCall {
+            id: "faux_probe_done".into(),
+            name: "probe_done".into(),
+            input: json!({}),
+        }),
+    ]);
+    let out = rig.turn(&mut s).await.unwrap();
+    assert!(!out.pending_question);
+    assert_eq!(out.text, "");
+    let last_assistant = s.messages.iter().rev().find_map(|m| match m {
+        Msg::Assistant { text, .. } => Some(text.as_str()),
+        _ => None,
+    });
+    assert_eq!(last_assistant, Some(""));
+}
+
+#[tokio::test]
+async fn stalled_turn_is_nudged_once_then_fails_clearly() {
+    let rig = Rig::new();
+    let mut s = Session::new("c12", Kind::Practice);
+    rig.engine.faux_turn(vec![]);
+    rig.engine.faux_turn(vec![]);
+    assert!(matches!(rig.turn(&mut s).await, Err(TurnError::NoResponse)));
+    assert!(s.messages.iter().any(
+        |m| matches!(m, Msg::Steer { text, .. } if text.contains("no text and no tool call"))
+    ));
+}
+
+#[tokio::test]
+async fn stalled_turn_recovers_after_one_nudge() {
+    let rig = Rig::new();
+    let mut s = Session::new("c13", Kind::Practice);
+    rig.engine.faux_turn(vec![]);
+    rig.engine.faux_tool_call(
+        "problem",
+        json!({"statement": "Why?", "mode": "recall", "modelSolution": "because"}),
+    );
+    let out = rig.turn(&mut s).await.unwrap();
+    assert!(out.pending_question);
+}
+
+#[tokio::test]
+async fn answer_pending_steer_replies_without_disturbing_the_pending_question() {
+    let rig = Rig::new();
+    let mut s = Session::new("c14", Kind::Teach);
+    s.push_user("teach me ownership");
+    rig.engine.faux_tool_call("probe", quiz_args(json!({})));
+    rig.turn(&mut s).await.unwrap();
+    let pending_id = last_call_id(&s);
+
+    rig.engine.faux_text("It's about who can free a value.");
+    answer_pending_steer(
+        &rig.engine,
+        Path::new("."),
+        &mut s,
+        "steer_user_c1",
+        "what's ownership again?",
+        &rig.tx,
+        &CancellationToken::new(),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        last_call_id(&s),
+        pending_id,
+        "the pending question is unchanged"
+    );
+    assert!(s.pending_question());
+    assert!(matches!(
+        s.messages.last(),
+        Some(Msg::Assistant { text, calls }) if text.contains("free a value") && calls.is_empty()
+    ));
+    assert!(s.messages.iter().any(
+        |m| matches!(m, Msg::Steer { id, text } if id == "steer_user_c1" && text.contains("ownership again"))
+    ));
 }
 
 #[test]

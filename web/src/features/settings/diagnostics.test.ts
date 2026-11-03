@@ -42,6 +42,8 @@ describe("buildDiagnostics", () => {
     requests: 1,
     tokensIn: 1,
     tokensOut: 1,
+    howToConnect: "claude login",
+    models: [],
     ...over,
   })
 

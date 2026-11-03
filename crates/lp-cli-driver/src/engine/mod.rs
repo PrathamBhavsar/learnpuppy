@@ -1,5 +1,6 @@
 //! `LlmEngine` port, its request/response types, and the engines behind it.
 
+mod failure;
 mod faux;
 mod http;
 mod subprocess;
@@ -13,6 +14,7 @@ use serde_json::Value;
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 
+pub use failure::{classify, parse_resets_at, parse_wait, FailureKind, MAX_PARSED_WAIT};
 pub use faux::{FauxEngine, FauxStreamControl};
 pub use http::HttpApiEngine;
 pub use subprocess::{account_label, CliKind, SubprocessEngine};
@@ -81,6 +83,13 @@ pub enum DriverError {
     EmptyResponse,
     #[error("cli reported failure: {0}")]
     Failed(String),
+    /// The CLI said why it failed (an error event on stdout, not a plain non-zero exit). Classify with
+    /// `DriverError::failure`.
+    #[error("cli reported an error: {message}")]
+    Cli { message: String },
+    /// Claude ended a turn without a stop reason and produced nothing; the engine retries this once.
+    #[error("claude ended the turn without a stop reason")]
+    NoStopReason,
     #[error("faux engine has no scripted response left")]
     FauxExhausted,
 }
