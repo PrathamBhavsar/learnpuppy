@@ -17,6 +17,7 @@ import { Route as ShellReviewAllRouteImport } from './routes/_shell.review-all'
 import { Route as ShellSettingsRouteImport } from './routes/_shell.settings'
 import { Route as ShellTrashRouteImport } from './routes/_shell.trash'
 import { Route as ShellWWsRouteImport } from './routes/_shell.w.$ws'
+import { Route as ShellWWsCourseRouteImport } from './routes/_shell.w.$ws.course'
 import { Route as ShellWWsDigestRouteImport } from './routes/_shell.w.$ws.digest'
 import { Route as ShellWWsGraphRouteImport } from './routes/_shell.w.$ws.graph'
 import { Route as ShellWWsIngestRouteImport } from './routes/_shell.w.$ws.ingest'
@@ -64,6 +65,11 @@ const ShellWWsRoute = ShellWWsRouteImport.update({
   id: '/w/$ws',
   path: '/w/$ws',
   getParentRoute: () => ShellRoute,
+} as any)
+const ShellWWsCourseRoute = ShellWWsCourseRouteImport.update({
+  id: '/course',
+  path: '/course',
+  getParentRoute: () => ShellWWsRoute,
 } as any)
 const ShellWWsDigestRoute = ShellWWsDigestRouteImport.update({
   id: '/digest',
@@ -114,6 +120,7 @@ export interface FileRoutesByFullPath {
   '/settings': typeof ShellSettingsRoute
   '/trash': typeof ShellTrashRoute
   '/w/$ws': typeof ShellWWsRouteWithChildren
+  '/w/$ws/course': typeof ShellWWsCourseRoute
   '/w/$ws/digest': typeof ShellWWsDigestRoute
   '/w/$ws/graph': typeof ShellWWsGraphRoute
   '/w/$ws/ingest': typeof ShellWWsIngestRoute
@@ -131,6 +138,7 @@ export interface FileRoutesByTo {
   '/settings': typeof ShellSettingsRoute
   '/trash': typeof ShellTrashRoute
   '/w/$ws': typeof ShellWWsRouteWithChildren
+  '/w/$ws/course': typeof ShellWWsCourseRoute
   '/w/$ws/digest': typeof ShellWWsDigestRoute
   '/w/$ws/graph': typeof ShellWWsGraphRoute
   '/w/$ws/ingest': typeof ShellWWsIngestRoute
@@ -149,6 +157,7 @@ export interface FileRoutesById {
   '/_shell/settings': typeof ShellSettingsRoute
   '/_shell/trash': typeof ShellTrashRoute
   '/_shell/w/$ws': typeof ShellWWsRouteWithChildren
+  '/_shell/w/$ws/course': typeof ShellWWsCourseRoute
   '/_shell/w/$ws/digest': typeof ShellWWsDigestRoute
   '/_shell/w/$ws/graph': typeof ShellWWsGraphRoute
   '/_shell/w/$ws/ingest': typeof ShellWWsIngestRoute
@@ -168,6 +177,7 @@ export interface FileRouteTypes {
     | '/settings'
     | '/trash'
     | '/w/$ws'
+    | '/w/$ws/course'
     | '/w/$ws/digest'
     | '/w/$ws/graph'
     | '/w/$ws/ingest'
@@ -185,6 +195,7 @@ export interface FileRouteTypes {
     | '/settings'
     | '/trash'
     | '/w/$ws'
+    | '/w/$ws/course'
     | '/w/$ws/digest'
     | '/w/$ws/graph'
     | '/w/$ws/ingest'
@@ -202,6 +213,7 @@ export interface FileRouteTypes {
     | '/_shell/settings'
     | '/_shell/trash'
     | '/_shell/w/$ws'
+    | '/_shell/w/$ws/course'
     | '/_shell/w/$ws/digest'
     | '/_shell/w/$ws/graph'
     | '/_shell/w/$ws/ingest'
@@ -274,6 +286,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/w/$ws'
       preLoaderRoute: typeof ShellWWsRouteImport
       parentRoute: typeof ShellRoute
+    }
+    '/_shell/w/$ws/course': {
+      id: '/_shell/w/$ws/course'
+      path: '/course'
+      fullPath: '/w/$ws/course'
+      preLoaderRoute: typeof ShellWWsCourseRouteImport
+      parentRoute: typeof ShellWWsRoute
     }
     '/_shell/w/$ws/digest': {
       id: '/_shell/w/$ws/digest'
@@ -349,6 +368,7 @@ const ShellWWsLearnRouteWithChildren = ShellWWsLearnRoute._addFileChildren(
 )
 
 interface ShellWWsRouteChildren {
+  ShellWWsCourseRoute: typeof ShellWWsCourseRoute
   ShellWWsDigestRoute: typeof ShellWWsDigestRoute
   ShellWWsGraphRoute: typeof ShellWWsGraphRoute
   ShellWWsIngestRoute: typeof ShellWWsIngestRoute
@@ -358,6 +378,7 @@ interface ShellWWsRouteChildren {
 }
 
 const ShellWWsRouteChildren: ShellWWsRouteChildren = {
+  ShellWWsCourseRoute: ShellWWsCourseRoute,
   ShellWWsDigestRoute: ShellWWsDigestRoute,
   ShellWWsGraphRoute: ShellWWsGraphRoute,
   ShellWWsIngestRoute: ShellWWsIngestRoute,

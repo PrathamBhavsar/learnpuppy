@@ -69,6 +69,12 @@ Two-pane: **ChatList** (280 px; new chat button; each item: title, kind badge Te
 - **CardBrowser tab:** table with search, filter (state new/learning/review/relearning, due), card detail drawer (history of reviews with ratings/dates, stability/difficulty values in a "Details" disclosure).
 - `/review-all`: walks workspaces sequentially with a workspace separator interstitial.
 
+## Courses `/w/:ws/course` (`?id=` opens one)
+- List plus "create from goal". Create runs placement (can take seconds; button shows pending, `503 engine_unavailable` toasts and stores nothing). Placement is one form of mcq/recall items, graded by the server in one `placement` call.
+- **The wait:** while `status` is `writing` (polled every 2 s) the screen shows `misses` (question, answer, why) as a first mini lesson, plus "You got N of M right". `failed` shows the reason and Try again (`retry`). `ready` offers Start lesson.
+- **Lesson loop:** each `next` returns a stored step. `explain` card (Got it -> `seen`), `ask` question (Answer -> feedback with answer and why; four self-grade buttons or Continue; "This looks wrong" -> `flag`; "Check my answer" -> `check` for missed recall), `waiting` (looks again every 4 s), `done` (summary with `usage` tokens). Ask-a-question (`ask`) sits under every step.
+- Only `create`, `ask` and `check` need a model. Refused calls toast and leave the lesson as it was; explain/ask/answer/done keep working. No grading, shuffling or scheduling in TypeScript.
+
 ## Digest `/w/:ws/digest`
 - Controls: date range (presets Today/7d/30d + custom), source filter chips, search.
 - Day groups (sticky headers with counts) → SessionCard (source icon, project, time, one-line summary, decisions count, cards count) → expands to decisions list; click decision → **DecisionDrawer**: chosen option, basis (`DecisionBasis` rendered as chip + explanation), alternatives considered, related git commits, generated cards (open in Review browser), "Regenerate cards" with validation errors shown.
