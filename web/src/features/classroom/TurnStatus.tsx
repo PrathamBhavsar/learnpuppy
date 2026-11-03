@@ -180,7 +180,7 @@ function describe(
     case "rate_limited": {
       const at = e.resetsAt ?? (e.retryAfterMs ? now + e.retryAfterMs : null)
       return {
-        title: "All your AIs are limited",
+        title: "Your AI is limited",
         body: (
           <>
             {who} is back first
@@ -190,8 +190,7 @@ function describe(
                 <span data-testid="limit-resets">{formatResets(at, now)}</span>
               </>
             ) : null}
-            . LearnPuppy already tried your other AIs and switches back by
-            itself. You can retry once any of them returns.
+            . Retry once it returns, or pick another AI in Role slots.
           </>
         ),
       }

@@ -386,6 +386,7 @@ pub async fn ping<E: LlmEngine>(
     cancel: CancellationToken,
 ) -> PingOutcome {
     let req = TurnRequest {
+        system: None,
         prompt: "Reply with the single word: pong".into(),
         model: Some(model.into()),
         effort: effort.map(Into::into),

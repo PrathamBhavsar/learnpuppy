@@ -1,7 +1,7 @@
 //! `FsChatStore`: one atomically-replaced `chats/<id>.json` per chat.
 use crate::jsonl::{be, check_id, create_dir, lock, read_json, write_atomic, write_json};
 use lp_core::fsrs::TurnUsage;
-use lp_core::ports::{ChatRecord, ChatStore, ChatSummary, StoreResult};
+use lp_core::ports::{epoch_ms, ChatRecord, ChatStore, ChatSummary, StoreResult};
 use std::path::PathBuf;
 use std::sync::Mutex;
 
@@ -9,6 +9,13 @@ pub struct FsChatStore {
     dir: PathBuf,
     /// Serialises read-modify-write appends.
     lock: Mutex<()>,
+}
+
+/// Records written when timestamps were seconds read back as milliseconds.
+fn normalize(mut c: ChatRecord) -> ChatRecord {
+    c.created_at = epoch_ms(c.created_at);
+    c.updated_at = epoch_ms(c.updated_at);
+    c
 }
 
 impl FsChatStore {
@@ -38,7 +45,7 @@ impl FsChatStore {
 
 impl ChatStore for FsChatStore {
     fn load_chat(&self, id: &str) -> StoreResult<ChatRecord> {
-        read_json(&self.path(id)?, id)
+        read_json(&self.path(id)?, id).map(normalize)
     }
     fn save_chat(&self, chat: &ChatRecord) -> StoreResult<()> {
         let _guard = self.lock.lock().map_err(be)?;
@@ -68,7 +75,7 @@ impl FsChatStore {
             let path = entry.map_err(be)?.path();
             if path.extension().is_some_and(|e| e == "json") {
                 // One unreadable chat must not hide the rest.
-                let Ok(c) = read_json::<ChatRecord>(&path, "") else {
+                let Ok(c) = read_json::<ChatRecord>(&path, "").map(normalize) else {
                     skipped.push(path.display().to_string());
                     continue;
                 };

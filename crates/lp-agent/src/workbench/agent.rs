@@ -67,6 +67,7 @@ pub async fn run_submit_agent<E: LlmEngine, T>(
             let (tx, mut rx) = mpsc::channel(EVENT_CAP);
             let drain = tokio::spawn(async move { while rx.recv().await.is_some() {} });
             let req = TurnRequest {
+                system: None,
                 prompt: prompt.clone(),
                 model: None,
                 effort: None,

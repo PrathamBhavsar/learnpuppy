@@ -27,12 +27,13 @@ fn chain(id: &str) -> GraphChain {
     }
 }
 
+/// `updated_at` is an offset from a realistic epoch-ms base (small values would read as seconds).
 fn chat(id: &str, updated_at: i64) -> ChatRecord {
     ChatRecord {
         id: id.into(),
         title: id.into(),
-        created_at: 1,
-        updated_at,
+        created_at: 1_700_000_000_000,
+        updated_at: 1_700_000_000_000 + updated_at,
         body: serde_json::json!({"messages": []}),
         turns: vec![],
         extractions: vec![],
@@ -104,7 +105,7 @@ fn atomic_write_survives_crash_before_rename() {
     assert_eq!(s.load_chat("c1").unwrap(), chat("c1", 1));
     assert_eq!(s.list_chats().unwrap().len(), 1);
     s.save_chat(&chat("c1", 2)).unwrap();
-    assert_eq!(s.load_chat("c1").unwrap().updated_at, 2);
+    assert_eq!(s.load_chat("c1").unwrap().updated_at, 1_700_000_000_002);
 }
 
 #[test]
@@ -678,4 +679,66 @@ mod course_store {
         }
         assert_eq!(s.events("c1").unwrap().len(), 3000);
     }
+#[test]
+fn second_based_timestamps_read_back_as_milliseconds() {
+    let dir = tempfile::tempdir().unwrap();
+    let s = FsChatStore::open(dir.path()).unwrap();
+    let mut old = chat("old", 0);
+    old.created_at = 1_793_131_000;
+    old.updated_at = 1_793_131_171;
+    s.save_chat(&old).unwrap();
+    let mut new = chat("new", 0);
+    new.updated_at = 1_793_131_171_000;
+    s.save_chat(&new).unwrap();
+    let loaded = s.load_chat("old").unwrap();
+    assert_eq!(
+        (loaded.created_at, loaded.updated_at),
+        (1_793_131_000_000, 1_793_131_171_000)
+    );
+    let listed = s.list_chats().unwrap();
+    assert!(listed.iter().all(|c| c.updated_at == 1_793_131_171_000));
+    assert_eq!(epoch_ms(0), 0);
+    let ws = tempfile::tempdir().unwrap();
+    let jobs = FsJobStore::open(ws.path().join("jobs")).unwrap();
+    let mut j = job("j1", JobStatus::Done);
+    j.created_at = 1_793_131_171;
+    jobs.create_job(&j).unwrap();
+    assert_eq!(
+        jobs.all_report().unwrap().0[0].created_at,
+        1_793_131_171_000
+    );
+}
+
+#[test]
+fn migrated_job_artifact_path_resolves_inside_the_workspace_only() {
+    let ws = tempfile::tempdir().unwrap();
+    let arts = ws.path().join("artifacts");
+    std::fs::create_dir_all(&arts).unwrap();
+    std::fs::write(arts.join("job_1.svg"), "<svg/>").unwrap();
+    let jobs = FsJobStore::open(ws.path().join("jobs")).unwrap();
+    let mut j = job("j1", JobStatus::Done);
+    j.result = Some(serde_json::json!({"artifact": "/old/home/.learnpuppy/artifacts/job_1.svg"}));
+    jobs.create_job(&j).unwrap();
+    let mut other = job("j2", JobStatus::Done);
+    other.result =
+        Some(serde_json::json!({"artifact": "/old/home/.learnpuppy/artifacts/gone.svg"}));
+    jobs.create_job(&other).unwrap();
+    let mut esc = job("j3", JobStatus::Done);
+    esc.result = Some(serde_json::json!({"artifact": "/old/../../etc/job_1.svg/.."}));
+    jobs.create_job(&esc).unwrap();
+    let got = jobs.all_report().unwrap().0;
+    let art = |id: &str| {
+        got.iter()
+            .find(|j| j.id == id)
+            .unwrap()
+            .result
+            .as_ref()
+            .unwrap()["artifact"]
+            .as_str()
+            .unwrap()
+            .to_owned()
+    };
+    assert_eq!(art("j1"), arts.join("job_1.svg").display().to_string());
+    assert_eq!(art("j2"), "/old/home/.learnpuppy/artifacts/gone.svg");
+    assert!(!art("j3").starts_with(ws.path().to_str().unwrap()));
 }
