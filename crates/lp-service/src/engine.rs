@@ -54,6 +54,8 @@ pub struct CliPoolEngine {
     profile: Option<Profile>,
     visual: bool,
     role: String,
+    /// Tokens (in, out) of the successful calls so far.
+    tokens: [std::sync::atomic::AtomicU64; 2],
     /// Longest single wait while the network is down (tests shrink it).
     offline_wait_cap: Duration,
 }
@@ -94,6 +96,7 @@ impl CliPoolEngine {
             profile: None,
             visual: false,
             role: String::new(),
+            tokens: Default::default(),
             offline_wait_cap: Duration::from_secs(120),
         }
     }
@@ -230,6 +233,8 @@ impl CliPoolEngine {
                         usage[0].load(Ordering::Relaxed),
                         usage[1].load(Ordering::Relaxed),
                     );
+                    self.tokens[0].fetch_add(i, Ordering::Relaxed);
+                    self.tokens[1].fetch_add(o, Ordering::Relaxed);
                     self.pool.report_success(&acct.id, i, o);
                     return Ok(v);
                 }
@@ -475,6 +480,13 @@ impl LlmEngine for CliPoolEngine {
             async move { e.complete_structured::<T>(req, cancel).await }
         })
         .await
+    }
+
+    fn usage(&self) -> (u64, u64) {
+        (
+            self.tokens[0].load(Ordering::Relaxed),
+            self.tokens[1].load(Ordering::Relaxed),
+        )
     }
 }
 

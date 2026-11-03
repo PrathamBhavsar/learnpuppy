@@ -113,4 +113,10 @@ pub trait LlmEngine: Send + Sync {
         req: StructuredRequest,
         cancel: CancellationToken,
     ) -> Result<StructuredOutput<T>, DriverError>;
+
+    /// Input and output tokens the CLIs reported for the calls made through this engine so far;
+    /// engines that cannot tell report zero.
+    fn usage(&self) -> (u64, u64) {
+        (0, 0)
+    }
 }
