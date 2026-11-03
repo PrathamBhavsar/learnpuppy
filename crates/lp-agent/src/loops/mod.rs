@@ -405,6 +405,7 @@ pub async fn answer_pending_steer<E: LlmEngine>(
         prompt
     };
     let req = TurnRequest {
+        system: None,
         prompt,
         model: None,
         effort: None,
@@ -484,6 +485,7 @@ pub async fn run_turn<E: LlmEngine>(
         }
         let agent = s.agent(root);
         let req = TurnRequest {
+            system: None,
             prompt: render_prompt(agent.as_ref(), s),
             model: None,
             effort: None,

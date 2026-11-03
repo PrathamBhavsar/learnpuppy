@@ -41,6 +41,9 @@ pub struct TurnRequest {
     pub effort: Option<String>,
     /// Tools the model may call; rendered into the prompt as a text/JSON protocol.
     pub tools: Vec<ToolDecl>,
+    /// System instructions. Claude: `--system-prompt`; Codex: `model_instructions_file`; the other CLIs
+    /// have no such flag, so the text leads their prompt.
+    pub system: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq)]

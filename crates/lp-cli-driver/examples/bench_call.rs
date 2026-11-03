@@ -1,5 +1,5 @@
 //! One real CLI call through the production driver, for `bench/cheap_tutor`.
-//! stdin: `{"provider","model","effort","prompt"}`; stdout: one JSON line with text, usage and time.
+//! stdin: `{"provider","model","effort","prompt","system"}` (system optional); stdout: one JSON line with text, usage and time.
 use lp_cli_driver::engine::{CliKind, LlmEngine, SubprocessEngine, TurnRequest};
 use serde_json::{json, Value};
 use std::io::Read;
@@ -22,6 +22,7 @@ async fn main() -> anyhow::Result<()> {
     let mut e = SubprocessEngine::new(kind)?;
     e.timeout = std::time::Duration::from_secs(300);
     let req = TurnRequest {
+        system: s("system"),
         prompt: s("prompt").unwrap_or_default(),
         model: s("model"),
         effort: s("effort"),
