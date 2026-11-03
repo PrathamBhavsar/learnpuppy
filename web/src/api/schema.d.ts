@@ -460,6 +460,240 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/workspaces/{ws}/courses": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Courses, newest first. */
+        get: operations["get_workspaces_ws_courses"];
+        put?: never;
+        /**
+         * Starts a course: runs placement on a cheap model (can take many seconds). Nothing is stored when
+         *     no AI can answer (503 `engine_unavailable`).
+         */
+        post: operations["post_workspaces_ws_courses"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{ws}/courses/{id}/answer": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Grades an answer with code. Mcq: send the option text; recall: the typed answer. */
+        post: operations["post_workspaces_ws_courses_id_answer"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{ws}/courses/{id}/ask": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * A short answer to a learner question (cheap model). The question is kept even when no AI can
+         *     answer now (503 `engine_unavailable`).
+         */
+        post: operations["post_workspaces_ws_courses_id_ask"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{ws}/courses/{id}/check": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** "Check my answer": a cheap model judges a typed answer. */
+        post: operations["post_workspaces_ws_courses_id_check"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{ws}/courses/{id}/flag": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** "This looks wrong": flags an item. */
+        post: operations["post_workspaces_ws_courses_id_flag"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{ws}/courses/{id}/misses": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The questions the learner missed in placement, with answers: a mini lesson while the course is
+         *     written.
+         */
+        get: operations["get_workspaces_ws_courses_id_misses"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{ws}/courses/{id}/next": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * The next step of the session from stored content (no model call). A POST because it advances
+         *     the session.
+         */
+        post: operations["post_workspaces_ws_courses_id_next"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{ws}/courses/{id}/placement": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Grades placement with code and starts writing the course in the background; poll `status`. */
+        post: operations["post_workspaces_ws_courses_id_placement"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{ws}/courses/{id}/retry": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Starts writing a failed course again. */
+        post: operations["post_workspaces_ws_courses_id_retry"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{ws}/courses/{id}/seen": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Marks a lesson explanation as read. */
+        post: operations["post_workspaces_ws_courses_id_seen"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{ws}/courses/{id}/self-grade": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** The learner's own grade for a recall item (`again`, `hard`, `good`, `easy`). */
+        post: operations["post_workspaces_ws_courses_id_self_grade"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{ws}/courses/{id}/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** `writing`, `ready`, `failed` (with a reason) or `refilling`. Poll this while waiting. */
+        get: operations["get_workspaces_ws_courses_id_status"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{ws}/courses/{id}/usage": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Tokens spent by tier and the strong-call budget. */
+        get: operations["get_workspaces_ws_courses_id_usage"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/workspaces/{ws}/digest": {
         parameters: {
             query?: never;
@@ -1105,6 +1339,14 @@ export interface components {
              */
             latencyMs?: number | null;
         };
+        /** @enum {string} */
+        AskKindDto: "new" | "retry" | "interleave" | "review";
+        AskQuestionRequest: {
+            question: string;
+        };
+        AskReplyDto: {
+            reply: string;
+        };
         BannerDto: {
             id: string;
             level: components["schemas"]["BannerLevelDto"];
@@ -1275,6 +1517,14 @@ export interface components {
             chatId: string;
             turnId: string;
         };
+        CheckDto: {
+            correct: boolean;
+            note: string;
+        };
+        CheckRequest: {
+            item: string;
+            text: string;
+        };
         /** @description An answer choice. `key` is `a`..`d` and is what `answer` takes. */
         ChoiceDto: {
             key: string;
@@ -1313,6 +1563,41 @@ export interface components {
             sha: string;
             subject: string;
         };
+        CourseAnswerRequest: {
+            /**
+             * Format: int32
+             * @description 1..=5.
+             */
+            confidence?: number | null;
+            item: string;
+            /**
+             * Format: int64
+             * @description How long the learner took, measured by the client.
+             */
+            ms?: number | null;
+            text: string;
+        };
+        CourseListDto: {
+            courses: components["schemas"]["CourseSummaryDto"][];
+        };
+        /** @enum {string} */
+        CourseState: "writing" | "ready" | "failed" | "refilling";
+        CourseStatusDto: {
+            /** @description Why the course failed (`failed` only). */
+            reason?: string | null;
+            state: components["schemas"]["CourseState"];
+        };
+        CourseSummaryDto: {
+            id: string;
+            title: string;
+            /**
+             * Format: int64
+             * @description Epoch ms.
+             */
+            updatedAt: number;
+            /** Format: int32 */
+            version: number;
+        };
         /** @description `POST …/chats`. */
         CreateChat: {
             kind: components["schemas"]["ChatKind"];
@@ -1321,10 +1606,17 @@ export interface components {
             /** @description What to learn (teach; required) or an optional focus (practice). */
             topic?: string;
         };
+        CreateCourseRequest: {
+            goal: string;
+        };
         CreatedChatDto: {
             chatId: string;
             /** @description The first turn, already running. */
             turnId: string;
+        };
+        CreatedCourseDto: {
+            id: string;
+            items: components["schemas"]["PlacementItemDto"][];
         };
         CreateWorkspace: {
             description?: string | null;
@@ -1436,10 +1728,31 @@ export interface components {
         ExportStarted: {
             jobId: string;
         };
+        FeedbackDto: {
+            answer: string;
+            /** @description Near the right answer: the learner confirms with a self-grade. */
+            close: boolean;
+            correct: boolean;
+            why: string;
+        };
         /** @description One invalid input field; `path` is dotted (`profiles.teacher.model`, `items[2].id`). */
         FieldError: {
             message: string;
             path: string;
+        };
+        FlagRequest: {
+            item: string;
+            reason: string;
+        };
+        /** @description A graded placement answer. The answer is revealed because the learner has now answered. */
+        GradedDto: {
+            answer: string;
+            correct: boolean;
+            item: string;
+            why: string;
+        };
+        GradedListDto: {
+            graded: components["schemas"]["GradedDto"][];
         };
         GradeDto: {
             card: components["schemas"]["CardBriefDto"];
@@ -1583,6 +1896,17 @@ export interface components {
         IngestStarted: {
             runId: string;
         };
+        /** @description A question: never the answer, the accepted forms or the explanation. */
+        ItemDto: {
+            ask: components["schemas"]["AskKindDto"];
+            id: string;
+            kind: components["schemas"]["ItemKindDto"];
+            lesson: string;
+            options: string[];
+            q: string;
+        };
+        /** @enum {string} */
+        ItemKindDto: "mcq" | "recall";
         Job: {
             artifactId?: string | null;
             id: string;
@@ -1631,6 +1955,13 @@ export interface components {
         JobUpdatedData: {
             job: components["schemas"]["Job"];
         };
+        LessonDto: {
+            explain: string;
+            id: string;
+            keyFacts: string[];
+            objective: string;
+            title: string;
+        };
         MessageDto: {
             /** @description For an answer: the question call it answers. */
             answersCallId?: string | null;
@@ -1651,6 +1982,14 @@ export interface components {
         };
         /** @enum {string} */
         MessageRole: "user" | "assistant" | "tool" | "steer" | "compaction";
+        MissDto: {
+            answer: string;
+            q: string;
+            why: string;
+        };
+        MissListDto: {
+            misses: components["schemas"]["MissDto"][];
+        };
         NextDto: {
             /** Format: int64 */
             due: number;
@@ -1759,6 +2098,16 @@ export interface components {
             prompt: string;
             /** @description `probe`, `recall`, `quiz`, `explain`, `ask_user_question` or `problem`. */
             tool: string;
+        };
+        PlacementAnswerDto: {
+            item: string;
+            text: string;
+        };
+        PlacementItemDto: {
+            id: string;
+            kind: components["schemas"]["ItemKindDto"];
+            options: string[];
+            q: string;
         };
         PlanDto: {
             currentId?: string | null;
@@ -1918,6 +2267,14 @@ export interface components {
             workspaceId: string;
             workspaceName: string;
         };
+        SeenRequest: {
+            lesson: string;
+        };
+        SelfGradeRequest: {
+            /** @description `again`, `hard`, `good` or `easy`. */
+            grade: string;
+            item: string;
+        };
         /** @description One server-sent event. */
         ServerEvent: {
             data: components["schemas"]["HelloData"];
@@ -2057,6 +2414,25 @@ export interface components {
             /** Format: int32 */
             streak: number;
         };
+        /** @description The next thing to show. */
+        StepDto: {
+            lesson: components["schemas"]["LessonDto"];
+            /** @enum {string} */
+            step: "explain";
+        } | {
+            item: components["schemas"]["ItemDto"];
+            /** @enum {string} */
+            step: "ask";
+        } | {
+            /** @enum {string} */
+            step: "waiting";
+        } | {
+            /** @enum {string} */
+            step: "done";
+        };
+        SubmitPlacementRequest: {
+            answers: components["schemas"]["PlacementAnswerDto"][];
+        };
         SyncDto: {
             cards: number;
             reviews: number;
@@ -2176,6 +2552,23 @@ export interface components {
             reduceMotion: boolean;
             /** @description `dark`, `light` or `system`. */
             theme: string;
+        };
+        UsageDto: {
+            /** Format: int64 */
+            cheapIn: number;
+            /** Format: int64 */
+            cheapOut: number;
+            /**
+             * Format: int64
+             * @description While a refill waits for a strong slot: when one frees up (epoch ms).
+             */
+            refillWaitingUntil?: number | null;
+            /** Format: int32 */
+            strongCallsThisHour: number;
+            /** Format: int64 */
+            strongIn: number;
+            /** Format: int64 */
+            strongOut: number;
         };
         /** @description The grade of an answered quiz or probe. Exists only after the answer. */
         VerdictDto: {
@@ -3339,6 +3732,656 @@ export interface operations {
             };
             /** @description `turn_in_progress`; `stale_question` with the fresh view in `details.view`; `conflict` while a question is pending or nothing to resume; `workspace_archived` */
             409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    get_workspaces_ws_courses: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Workspace id */
+                ws: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CourseListDto"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    post_workspaces_ws_courses: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Workspace id */
+                ws: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateCourseRequest"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreatedCourseDto"];
+                };
+            };
+            /** @description Bad goal */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Workspace archived */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description No AI available */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    post_workspaces_ws_courses_id_answer: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Course id */
+                id: string;
+                /** @description Workspace id */
+                ws: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CourseAnswerRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FeedbackDto"];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Workspace archived */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    post_workspaces_ws_courses_id_ask: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Course id */
+                id: string;
+                /** @description Workspace id */
+                ws: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AskQuestionRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AskReplyDto"];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Workspace archived */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description No AI available */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    post_workspaces_ws_courses_id_check: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Course id */
+                id: string;
+                /** @description Workspace id */
+                ws: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CheckRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CheckDto"];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Workspace archived */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description No AI available */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    post_workspaces_ws_courses_id_flag: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Course id */
+                id: string;
+                /** @description Workspace id */
+                ws: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FlagRequest"];
+            };
+        };
+        responses: {
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Workspace archived */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    get_workspaces_ws_courses_id_misses: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Course id */
+                id: string;
+                /** @description Workspace id */
+                ws: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MissListDto"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    post_workspaces_ws_courses_id_next: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Course id */
+                id: string;
+                /** @description Workspace id */
+                ws: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StepDto"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Workspace archived */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    post_workspaces_ws_courses_id_placement: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Course id */
+                id: string;
+                /** @description Workspace id */
+                ws: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SubmitPlacementRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GradedListDto"];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Workspace archived */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    post_workspaces_ws_courses_id_retry: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Course id */
+                id: string;
+                /** @description Workspace id */
+                ws: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Workspace archived */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    post_workspaces_ws_courses_id_seen: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Course id */
+                id: string;
+                /** @description Workspace id */
+                ws: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SeenRequest"];
+            };
+        };
+        responses: {
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Workspace archived */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    post_workspaces_ws_courses_id_self_grade: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Course id */
+                id: string;
+                /** @description Workspace id */
+                ws: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SelfGradeRequest"];
+            };
+        };
+        responses: {
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Workspace archived */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    get_workspaces_ws_courses_id_status: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Course id */
+                id: string;
+                /** @description Workspace id */
+                ws: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CourseStatusDto"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    get_workspaces_ws_courses_id_usage: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Course id */
+                id: string;
+                /** @description Workspace id */
+                ws: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UsageDto"];
+                };
+            };
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };

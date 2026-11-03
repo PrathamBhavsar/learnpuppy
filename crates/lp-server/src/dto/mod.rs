@@ -2,6 +2,7 @@
 //! `From` impls. Service and core types are never serialized directly.
 
 pub mod chat;
+pub mod course;
 pub mod digest;
 pub mod events;
 pub mod graph;

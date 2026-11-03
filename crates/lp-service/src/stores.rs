@@ -5,6 +5,7 @@ use std::sync::Arc;
 
 use lp_store::{FsChatStore, FsCourseStore, FsGraphStore, FsJobStore, SqliteTrackerStore};
 
+#[derive(Clone)]
 pub struct Stores {
     pub graph: Arc<FsGraphStore>,
     pub chats: Arc<FsChatStore>,
