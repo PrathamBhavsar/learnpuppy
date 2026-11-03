@@ -400,7 +400,17 @@ impl<E: LlmEngine + 'static> CourseService<E> {
     /// Readable courses, newest first.
     pub async fn list(&self) -> Res<Vec<lp_store::CourseSummary>> {
         let me = self.inner.clone();
-        blk(move || Ok(me.stores.courses.list()?)).await
+        blk(move || {
+            let mut out = me.stores.courses.list()?;
+            out.extend(me.unwritten_courses());
+            out.sort_by(|a, b| {
+                b.updated_at
+                    .cmp(&a.updated_at)
+                    .then_with(|| a.id.cmp(&b.id))
+            });
+            Ok(out)
+        })
+        .await
     }
 
     // -------------------------------------------------------------- placement
@@ -999,6 +1009,34 @@ impl<E> Inner<E> {
         } else {
             Err(CourseError::NotFound(id.into()))
         }
+    }
+
+    /// Courses with a placement but no `course.json` yet (placing, writing or failed), titled by
+    /// their goal. The store cannot list them, and the learner must still be able to get back.
+    fn unwritten_courses(&self) -> Vec<lp_store::CourseSummary> {
+        let Ok(entries) = std::fs::read_dir(self.root.join("courses")) else {
+            return vec![];
+        };
+        entries
+            .flatten()
+            .filter(|e| !e.path().join("course.json").exists())
+            .filter_map(|e| {
+                let id = e.file_name().to_str()?.to_string();
+                let p: Placement = self.read_json(&id, "placement.json").ok()?;
+                let modified = e.path().join("placement.json").metadata().ok()?.modified();
+                let updated_at = modified
+                    .ok()?
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .ok()?
+                    .as_millis() as i64;
+                Some(lp_store::CourseSummary {
+                    title: p.goal.chars().take(120).collect(),
+                    version: 0,
+                    updated_at,
+                    id,
+                })
+            })
+            .collect()
     }
 
     fn lock_for(&self, id: &str) -> Arc<Mutex<()>> {
