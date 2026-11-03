@@ -5,6 +5,7 @@
 
 pub mod accounts;
 pub mod chat;
+pub mod course;
 pub mod digest;
 pub mod engine;
 pub mod events;
