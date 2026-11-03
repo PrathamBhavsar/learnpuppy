@@ -1,7 +1,8 @@
 //! Course agents: placement, the Author (one strong call, or a cheap two-stage fallback), refill,
 //! follow-up answers, answer checking and re-teaching. Each function is one or a few single-shot
-//! `stream_turn` calls with a short static system text and no tools. All learner text is redacted and
-//! fenced as data with a per-prompt random nonce.
+//! `stream_turn` calls with a short static system text. Claude, kiro and opencode run with no tools;
+//! Codex and agy can still read files (`docs/web/12-cli-isolation-and-failures.md`, #414). All learner
+//! text is redacted and fenced as data with a per-prompt random nonce.
 //!
 //! Model and effort come from the engine (its role profile); usage is read from the engine by the
 //! service layer, since `LlmEngine` exposes none.
@@ -110,7 +111,25 @@ impl Fence {
     }
 
     fn wrap(&self, text: &str) -> String {
-        let text = redact(text.trim()).replace(&self.0, "");
+        self.seal(&redact(text.trim()))
+    }
+
+    /// Redacts string values only: `redact` on raw JSON would eat the `[` after `"key_facts":`.
+    fn wrap_json(&self, mut value: serde_json::Value) -> String {
+        fn walk(v: &mut serde_json::Value) {
+            match v {
+                serde_json::Value::String(s) => *s = redact(s),
+                serde_json::Value::Array(a) => a.iter_mut().for_each(walk),
+                serde_json::Value::Object(o) => o.values_mut().for_each(walk),
+                _ => {}
+            }
+        }
+        walk(&mut value);
+        self.seal(&value.to_string())
+    }
+
+    fn seal(&self, text: &str) -> String {
+        let text = text.replace(&self.0, "");
         format!("\n<<{0}>>\n{text}\n<<{0}>>", self.0)
     }
 }
@@ -369,14 +388,21 @@ async fn repair<E: LlmEngine>(
         .filter(|l| broken.is_empty() || broken.contains(l.id.as_str()))
         .collect();
     let fence = Fence::new();
-    let lessons = serde_json::to_string(&shown).ok()?;
+    let lessons = serde_json::to_value(&shown).ok()?;
     let prompt = render(
         REPAIR,
         &[
             ("n", &ITEMS_PER_LESSON.to_string()),
-            ("rules", &rules.join("\n")),
+            // Rules quote must_fix, which holds the learner's own placement text.
+            (
+                "rules",
+                &format!("{PACKET_NOTE}{}", fence.wrap(&rules.join("\n"))),
+            ),
             ("topic", topic),
-            ("lessons", &format!("{PACKET_NOTE}{}", fence.wrap(&lessons))),
+            (
+                "lessons",
+                &format!("{PACKET_NOTE}{}", fence.wrap_json(lessons)),
+            ),
         ],
     );
     let fixed: Raw = parse(&ask(engine, prompt).await.ok()?).ok()?;
@@ -455,15 +481,14 @@ async fn two_stage_brief<E: LlmEngine>(
         let fence = Fence::new();
         let spec = serde_json::json!({
             "title": l.title, "objective": l.objective, "key_facts": l.key_facts,
-        })
-        .to_string();
+        });
         let learner = format!("{PACKET_NOTE}{}", fence.wrap(&outline.learner));
         let prompt = render(
             LESSON,
             &[
                 ("n", &ITEMS_PER_LESSON.to_string()),
                 ("learner", &learner),
-                ("lesson", &fence.wrap(&spec)),
+                ("lesson", &fence.wrap_json(spec)),
                 ("used", &fence.wrap(&used.join(" | "))),
             ],
         );
