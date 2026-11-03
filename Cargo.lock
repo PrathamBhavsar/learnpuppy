@@ -1299,6 +1299,7 @@ dependencies = [
  "lp-core",
  "lp-store",
  "parking_lot",
+ "rand 0.8.8",
  "reqwest",
  "schemars",
  "scraper",
