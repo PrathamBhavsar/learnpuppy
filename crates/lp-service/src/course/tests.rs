@@ -672,6 +672,15 @@ async fn a_course_stays_listed_before_it_is_written() {
 }
 
 #[tokio::test]
+async fn a_written_course_is_listed_by_its_goal() {
+    let w = world();
+    let id = w.ready().await;
+    let listed = w.svc.list().await.unwrap();
+    assert_eq!(listed[0].id, id);
+    assert_eq!(listed[0].title, "learn spanish");
+}
+
+#[tokio::test]
 async fn pending_placement_survives_a_reload_and_empties_once_submitted() {
     let w = world_with(true);
     let created = w.svc.create("learn spanish").await.unwrap();
