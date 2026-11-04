@@ -1800,6 +1800,26 @@ export interface components {
              */
             rating: number;
         };
+        /**
+         * @description A question the learner already answered, kept in the transcript so the prompt does not vanish
+         *     after the verdict: what was asked, what they picked, what was right (docs/web/06 §Learn).
+         */
+        AnswerRecapDto: {
+            /** @description The `quiz`/`probe` call this answer replies to (matches `MessageDto::answers_call_id`). */
+            callId: string;
+            /** Format: int32 */
+            confidence?: number | null;
+            /** @description The learner's own words, when the answer carried any. */
+            freeText?: string | null;
+            multiSelect: boolean;
+            /** @description The options in the order the learner saw them (shuffled per call, as in the dock). */
+            options: components["schemas"]["RecapOptionDto"][];
+            /** @description Display labels of the picked options (`B. the label`), empty for a free-form answer. */
+            picked: string[];
+            question: string;
+            /** @description Display labels of the right answers. */
+            right: string[];
+        };
         AnswerRequest: {
             /** @description `a`..`d`. */
             choiceKey: string;
@@ -2047,6 +2067,8 @@ export interface components {
         };
         /** @description Everything the Classroom renders, derived server-side from the stored session. */
         ClassroomViewDto: {
+            /** @description Answered `quiz`/`probe` questions, so the prompt stays readable after the verdict. */
+            answers: components["schemas"]["AnswerRecapDto"][];
             id: string;
             jobs: components["schemas"]["JobDto"][];
             kind: components["schemas"]["ChatKind"];
@@ -2919,6 +2941,18 @@ export interface components {
             focusSeconds: number;
             phoneAway: boolean;
             tabsClosed: boolean;
+        };
+        /**
+         * @description One option of an answered question, lettered and flagged as the learner saw it. The grade lives
+         *     in `picked`/`right`, so the SPA renders it without re-deriving anything (CLAUDE.md).
+         */
+        RecapOptionDto: {
+            letter: string;
+            /** @description The learner picked this option. */
+            picked: boolean;
+            /** @description This option is right. */
+            right: boolean;
+            text: string;
         };
         RegenerateDto: {
             cardIds: string[];

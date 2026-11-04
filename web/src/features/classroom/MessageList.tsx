@@ -24,6 +24,7 @@ export function MessageList({ chatId, view }: MessageListProps) {
     () => new Set(view.messages.map((message) => message.id))
   )
   const verdicts = new Map(view.verdicts.map((v) => [v.callId, v]))
+  const recaps = new Map(view.answers.map((a) => [a.callId, a]))
   const streaming = view.turn.state === "running"
   const liveText = live?.text ?? ""
   const liveThinking = live?.thinking ?? ""
@@ -59,6 +60,11 @@ export function MessageList({ chatId, view }: MessageListProps) {
               verdict={
                 message.answersCallId
                   ? verdicts.get(message.answersCallId)
+                  : undefined
+              }
+              recap={
+                message.answersCallId
+                  ? recaps.get(message.answersCallId)
                   : undefined
               }
             />

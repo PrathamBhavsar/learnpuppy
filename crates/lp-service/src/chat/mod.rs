@@ -11,7 +11,10 @@ pub mod script;
 pub mod turn;
 pub mod view;
 
-pub use answer::{option_lines, render_answer, resolve_option, verdict, Answer, IDK};
+pub use answer::{
+    confidence_in, grade, letter, option_label, option_lines, render_answer, resolve_option,
+    verdict, Answer, Grade, IDK,
+};
 pub use export::export_markdown;
 pub use jobs::{job_artifact, job_title, kind_name};
 pub use meta::ChatMeta;

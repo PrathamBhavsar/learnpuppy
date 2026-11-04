@@ -100,6 +100,7 @@ export const chatHandlers = [
       title: topic.slice(0, 60) || "Practice",
       phase: body.kind === "teach" ? "probe" : "practice",
       viewVersion: 1,
+      answers: [],
       messages: topic
         ? [
             {
