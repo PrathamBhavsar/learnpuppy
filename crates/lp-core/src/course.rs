@@ -249,6 +249,40 @@ pub enum CourseEvent {
         ts: i64,
         lesson: String,
     },
+    /// Notes gate answered: "all clear" or a typed thought/question (F11).
+    NoteWritten {
+        #[serde(default)]
+        ts: i64,
+        lesson: String,
+        #[serde(default)]
+        text: String,
+    },
+    /// Feynman pass submitted, wording kept verbatim (F18). `correct` is whether the mechanism
+    /// survived; the gate itself is passed by submitting, not by passing.
+    FeynmanGraded {
+        #[serde(default)]
+        ts: i64,
+        lesson: String,
+        #[serde(default)]
+        correct: bool,
+        #[serde(default)]
+        explanation: String,
+    },
+    /// A break was offered after two straight misses on one lesson, at most once per lesson
+    /// (F21). A nudge: the learner decides, this just records the offer was made.
+    BreakOffered {
+        #[serde(default)]
+        ts: i64,
+        lesson: String,
+    },
+    /// A short prerequisite lesson was inserted before `before` into a frozen plan (F20). The
+    /// new lesson is already in `course.lessons` by the time this is written; this is the log.
+    PrereqInserted {
+        #[serde(default)]
+        ts: i64,
+        lesson: String,
+        before: String,
+    },
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]

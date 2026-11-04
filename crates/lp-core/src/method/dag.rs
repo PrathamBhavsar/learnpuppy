@@ -12,6 +12,64 @@ pub enum DagError {
     Cycle,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, thiserror::Error)]
+pub enum PrereqError {
+    #[error("inserting this prerequisite would create a cycle")]
+    Cycle,
+    #[error("inserting this prerequisite would reorder an already visited lesson")]
+    ReordersVisited,
+}
+
+/// F20: insert a short prerequisite lesson before `before` into an already-confirmed plan.
+/// `before` gains `prereq.id` as an extra dependency. Re-runs the cycle check on the resulting
+/// plan and rejects a result that would reorder any lesson in `visited` relative to its
+/// position in the plan before insertion (visited lessons must keep their order; only the
+/// unvisited tail may move).
+pub fn insert_prereq(
+    lessons: &[Lesson],
+    mut prereq: Lesson,
+    before: &str,
+    visited: &[String],
+) -> Result<Vec<Lesson>, PrereqError> {
+    let old_order = topo_order(lessons).map_err(|_| PrereqError::Cycle)?;
+    let old_pos: HashMap<&str, usize> = old_order
+        .iter()
+        .enumerate()
+        .map(|(i, id)| (id.as_str(), i))
+        .collect();
+
+    let mut new_lessons: Vec<Lesson> = lessons.to_vec();
+    if let Some(target) = new_lessons.iter_mut().find(|l| l.id == before) {
+        if !target.depends_on.iter().any(|d| d == &prereq.id) {
+            target.depends_on.push(prereq.id.clone());
+        }
+    }
+    // The prereq must not itself depend on the lesson it precedes, or on anything after it.
+    prereq.depends_on.retain(|d| d != before);
+    new_lessons.push(prereq);
+
+    let new_order = topo_order(&new_lessons).map_err(|_| PrereqError::Cycle)?;
+    let new_pos: HashMap<&str, usize> = new_order
+        .iter()
+        .enumerate()
+        .map(|(i, id)| (id.as_str(), i))
+        .collect();
+
+    let visited_old: Vec<usize> = visited
+        .iter()
+        .filter_map(|id| old_pos.get(id.as_str()).copied())
+        .collect();
+    let mut visited_in_old_order = visited.to_vec();
+    visited_in_old_order.sort_by_key(|id| old_pos.get(id.as_str()).copied().unwrap_or(usize::MAX));
+    let mut visited_in_new_order = visited.to_vec();
+    visited_in_new_order.sort_by_key(|id| new_pos.get(id.as_str()).copied().unwrap_or(usize::MAX));
+    if visited_old.len() == visited.len() && visited_in_old_order != visited_in_new_order {
+        return Err(PrereqError::ReordersVisited);
+    }
+
+    Ok(new_lessons)
+}
+
 /// Topological order of lesson ids, or `Err` if `depends_on` forms a cycle. Unknown dependency
 /// ids are ignored (treated as already satisfied), since a dangling id is a content bug for the
 /// gate above this, not a graph-shape one.
@@ -162,5 +220,44 @@ mod tests {
         let m = to_mermaid(&ls);
         assert!(m.contains("a[\"T a\"]"));
         assert!(m.contains("a --> b"));
+    }
+
+    #[test]
+    fn insert_prereq_adds_the_dependency_and_keeps_visited_order() {
+        let ls = vec![lesson("a", &[]), lesson("b", &["a"]), lesson("c", &["b"])];
+        let visited = vec!["a".to_string()];
+        let out = insert_prereq(&ls, lesson("p", &[]), "b", &visited).unwrap();
+        assert_eq!(topo_order(&out).unwrap(), vec!["a", "p", "b", "c"]);
+    }
+
+    #[test]
+    fn insert_prereq_rejects_a_cycle() {
+        let ls = vec![lesson("a", &[]), lesson("b", &["a"])];
+        // A "prerequisite" that depends on the lesson it precedes would cycle.
+        let bad = lesson("p", &["b"]);
+        assert_eq!(insert_prereq(&ls, bad, "a", &[]), Err(PrereqError::Cycle));
+    }
+
+    #[test]
+    fn insert_prereq_rejects_reordering_a_visited_lesson() {
+        // b and c are both visited, b before c. Inserting a prereq of c that also depends on
+        // nothing would not reorder them, but forcing c ahead of b would.
+        let ls = vec![lesson("a", &[]), lesson("b", &["a"]), lesson("c", &["a"])];
+        let visited = vec!["b".to_string(), "c".to_string()];
+        // A prereq inserted before b that itself depends on c would push c before b.
+        let bad = lesson("p", &["c"]);
+        assert_eq!(
+            insert_prereq(&ls, bad, "b", &visited),
+            Err(PrereqError::ReordersVisited)
+        );
+    }
+
+    #[test]
+    fn insert_prereq_is_rejected_on_an_already_cyclic_plan() {
+        let ls = vec![lesson("a", &["b"]), lesson("b", &["a"])];
+        assert_eq!(
+            insert_prereq(&ls, lesson("p", &[]), "a", &[]),
+            Err(PrereqError::Cycle)
+        );
     }
 }
