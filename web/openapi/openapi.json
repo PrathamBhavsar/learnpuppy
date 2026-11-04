@@ -281,6 +281,66 @@
         ],
         "type": "object"
       },
+      "AnswerRecapDto": {
+        "description": "A question the learner already answered, kept in the transcript so the prompt does not vanish\nafter the verdict: what was asked, what they picked, what was right (docs/web/06 §Learn).",
+        "properties": {
+          "callId": {
+            "description": "The `quiz`/`probe` call this answer replies to (matches `MessageDto::answers_call_id`).",
+            "type": "string"
+          },
+          "confidence": {
+            "format": "int32",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "freeText": {
+            "description": "The learner's own words, when the answer carried any.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "multiSelect": {
+            "type": "boolean"
+          },
+          "options": {
+            "description": "The options in the order the learner saw them (shuffled per call, as in the dock).",
+            "items": {
+              "$ref": "#/components/schemas/RecapOptionDto"
+            },
+            "type": "array"
+          },
+          "picked": {
+            "description": "Display labels of the picked options (`B. the label`), empty for a free-form answer.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "question": {
+            "type": "string"
+          },
+          "right": {
+            "description": "Display labels of the right answers.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "callId",
+          "question",
+          "options",
+          "picked",
+          "right",
+          "multiSelect"
+        ],
+        "type": "object"
+      },
       "AnswerRequest": {
         "properties": {
           "choiceKey": {
@@ -968,6 +1028,13 @@
       "ClassroomViewDto": {
         "description": "Everything the Classroom renders, derived server-side from the stored session.",
         "properties": {
+          "answers": {
+            "description": "Answered `quiz`/`probe` questions, so the prompt stays readable after the verdict.",
+            "items": {
+              "$ref": "#/components/schemas/AnswerRecapDto"
+            },
+            "type": "array"
+          },
           "id": {
             "type": "string"
           },
@@ -1050,6 +1117,7 @@
           "messages",
           "probeProgress",
           "verdicts",
+          "answers",
           "jobs",
           "turn"
         ],
@@ -3082,6 +3150,32 @@
           "items",
           "dueNow",
           "now"
+        ],
+        "type": "object"
+      },
+      "RecapOptionDto": {
+        "description": "One option of an answered question, lettered and flagged as the learner saw it. The grade lives\nin `picked`/`right`, so the SPA renders it without re-deriving anything (CLAUDE.md).",
+        "properties": {
+          "letter": {
+            "type": "string"
+          },
+          "picked": {
+            "description": "The learner picked this option.",
+            "type": "boolean"
+          },
+          "right": {
+            "description": "This option is right.",
+            "type": "boolean"
+          },
+          "text": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "letter",
+          "text",
+          "picked",
+          "right"
         ],
         "type": "object"
       },

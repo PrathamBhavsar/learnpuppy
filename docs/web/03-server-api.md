@@ -80,6 +80,8 @@ Base: `/api/v1`. JSON, camelCase on the wire (serde `rename_all = "camelCase"` i
   plan: null | { nodes[{id,title,status:"current"|"visited"|"upcoming"}], edges[{from,to}], currentId },
   probeProgress: {asked, max},   // MAX_PROBE_QUESTIONS = 8
   verdicts: [{callId, correct, explanation?}],   // from core `verdict`
+  answers: [{callId, question, options[{letter,text,picked,right}],   // one per answered probe/quiz,
+             picked[], right[], confidence?, multiSelect, freeText?}], // so the prompt survives the verdict
   jobs[{id,kind,status,title,artifactId?}],
   turn: {state:"idle"|"running"|"queued"|"error", turnId?, startedAt?} }
 ```

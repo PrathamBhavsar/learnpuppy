@@ -71,6 +71,7 @@ export function chatFixtures(now: number): ClassroomView[] {
   const base = {
     viewVersion: 3,
     verdicts: [],
+    answers: [],
     jobs: [],
     turn: { state: "idle" as const },
   }
@@ -226,6 +227,43 @@ export function chatFixtures(now: number): ClassroomView[] {
           callId: "call_quiz_1",
           correct: true,
           explanation: "Right: futures are lazy.",
+        },
+      ],
+      answers: [
+        {
+          callId: "call_quiz_1",
+          question: "Is a future eager or lazy?",
+          options: [
+            {
+              letter: "A",
+              text: "Eager: it starts the moment it is created",
+              picked: false,
+              right: false,
+            },
+            {
+              letter: "B",
+              text: "Lazy: nothing runs until polled",
+              picked: true,
+              right: true,
+            },
+            {
+              letter: "C",
+              text: "Neither: the executor decides",
+              picked: false,
+              right: false,
+            },
+            {
+              letter: "D",
+              text: "Both, depending on the runtime",
+              picked: false,
+              right: false,
+            },
+          ],
+          picked: ["B. Lazy: nothing runs until polled"],
+          right: ["B. Lazy: nothing runs until polled"],
+          confidence: 5,
+          multiSelect: false,
+          freeText: null,
         },
       ],
     },
@@ -486,6 +524,7 @@ export function chatsForOtherWorkspaces(
     plan: PLAN(["current", "upcoming", "upcoming", "upcoming"]),
     probeProgress: { asked: 8, max: 8 },
     verdicts: [],
+    answers: [],
     jobs: [],
     turn: { state: "idle" },
   })

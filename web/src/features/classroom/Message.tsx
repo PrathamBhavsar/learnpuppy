@@ -7,7 +7,7 @@ import {
 } from "lucide-react"
 import { useState } from "react"
 
-import type { ClassroomMessage } from "@/api/pending-types"
+import type { AnswerRecap, ClassroomMessage } from "@/api/pending-types"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
@@ -15,6 +15,7 @@ import { cn } from "@/lib/utils"
 import { AnswerVerdict } from "./AnswerVerdict"
 import { COPY, formatTime, toolLabel } from "./copy"
 import { LazyMarkdown } from "./markdown/LazyMarkdown"
+import { QuestionRecap } from "./QuestionRecap"
 import { ThinkingBlock } from "./ThinkingBlock"
 
 type Verdict = {
@@ -26,6 +27,8 @@ type Verdict = {
 type MessageProps = {
   message: ClassroomMessage
   verdict?: Verdict
+  /** The answered question this message replies to, kept above the verdict (docs/web/06). */
+  recap?: AnswerRecap
   /** Animate in (messages that arrive after the list first rendered). */
   animate: boolean
 }
@@ -75,7 +78,7 @@ function CallChips({ calls }: { calls: ClassroomMessage["calls"] }) {
   )
 }
 
-export function Message({ message, verdict, animate }: MessageProps) {
+export function Message({ message, verdict, recap, animate }: MessageProps) {
   const rise = animate ? "lp-rise" : undefined
   const { role } = message
   const when =
@@ -124,23 +127,27 @@ export function Message({ message, verdict, animate }: MessageProps) {
         data-message-id={message.id}
         className={cn("group/message flex flex-col items-end gap-1", rise)}
       >
-        <div className="flex max-w-[85%] items-start gap-1">
-          <div className="order-last">
-            <CopyButton text={message.text} />
+        {recap ? (
+          <QuestionRecap recap={recap} />
+        ) : (
+          <div className="flex max-w-[85%] items-start gap-1">
+            <div className="order-last">
+              <CopyButton text={message.text} />
+            </div>
+            <div
+              title={when}
+              className="min-w-0 border bg-secondary px-3 py-2 text-secondary-foreground"
+            >
+              {role === "steer" ? (
+                <Badge variant="outline" className="mb-1 font-normal">
+                  <MessageSquareQuoteIcon aria-hidden />
+                  Steer
+                </Badge>
+              ) : null}
+              <LazyMarkdown>{message.text}</LazyMarkdown>
+            </div>
           </div>
-          <div
-            title={when}
-            className="min-w-0 border bg-secondary px-3 py-2 text-secondary-foreground"
-          >
-            {role === "steer" ? (
-              <Badge variant="outline" className="mb-1 font-normal">
-                <MessageSquareQuoteIcon aria-hidden />
-                Steer
-              </Badge>
-            ) : null}
-            <LazyMarkdown>{message.text}</LazyMarkdown>
-          </div>
-        </div>
+        )}
         {verdict ? (
           <AnswerVerdict
             callId={verdict.callId}

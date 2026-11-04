@@ -36,8 +36,30 @@ pub fn render_answer(a: &Answer) -> String {
     format!("{out}; confidence: {}/5", a.confidence)
 }
 
-fn letter(i: usize) -> char {
+/// A, B, C… for option `i`, the letter the dock and the transcript recap show.
+pub fn letter(i: usize) -> char {
     char::from(b'A' + i as u8)
+}
+
+/// How one option value reads to the learner on the wire: `B. the label`, `I don't know`, or the
+/// raw value when the call no longer names it.
+pub fn option_label(shown: &[QuizOption], value: &str) -> String {
+    if value == IDK || value == "I don't know" {
+        return "I don't know".to_owned();
+    }
+    shown.iter().position(|o| o.value == value).map_or_else(
+        || value.to_owned(),
+        |i| format!("{}. {}", letter(i), shown[i].label),
+    )
+}
+
+/// The confidence the learner attached to an answer, `N` of `N/5`.
+pub fn confidence_in(answer: &str) -> Option<u8> {
+    answer
+        .rsplit("confidence: ")
+        .next()
+        .and_then(|c| c.split('/').next())
+        .and_then(|c| c.trim().parse::<u8>().ok())
 }
 
 /// The options as the learner sees them (shuffled per call, as in the dock), one `A. label` per line.
@@ -90,42 +112,61 @@ pub fn resolve_option(q: &QuizInput, call_id: &str, input: &str) -> Option<Strin
     }
 }
 
+/// The machine-readable grade behind [`verdict`]: what the learner picked, what was right and how
+/// sure they were. The transcript recap (docs/web/03 `answers`) renders from this, so option
+/// shuffling and grading stay in Rust (CLAUDE.md).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Grade {
+    pub correct: bool,
+    /// Option values the learner picked, in the order they were sent.
+    pub picked: Vec<String>,
+    /// The option values that are right.
+    pub right: Vec<String>,
+    pub confidence: Option<u8>,
+}
+
+/// Grade a quiz answer. `None` when the answer carries no selected option (free-form probes).
+pub fn grade(q: &QuizInput, answer: &str) -> Option<Grade> {
+    let picked = answer.strip_prefix("selected: ")?.split(';').next()?.trim();
+    let picks: Vec<String> = picked
+        .split(',')
+        .map(str::trim)
+        .filter(|v| !v.is_empty())
+        .map(str::to_owned)
+        .collect();
+    let right: Vec<String> = q.correct_answer.values().to_vec();
+    let sorted = |mut v: Vec<String>| {
+        v.sort_unstable();
+        v
+    };
+    let correct = sorted(picks.clone()) == sorted(right.clone());
+    Some(Grade {
+        correct,
+        picked: picks,
+        right,
+        confidence: confidence_in(answer),
+    })
+}
+
 /// The graded answer to a quiz: correct or not, the right option, the call's rationale and the
 /// confidence calibration. `None` when the answer carries no selected option.
 pub fn verdict(q: &QuizInput, call_id: &str, answer: &str) -> Option<String> {
-    let picked = answer.strip_prefix("selected: ")?.split(';').next()?.trim();
-    let right = q.correct_answer.values();
+    let g = grade(q, answer)?;
     let shown = shuffle_options(&q.options, call_id);
-    let label = |v: &str| {
-        shown.iter().position(|o| o.value == v).map_or_else(
-            || v.to_owned(),
-            |i| format!("{}. {}", letter(i), shown[i].label),
-        )
-    };
-    let mut picks: Vec<&str> = picked.split(',').map(str::trim).collect();
-    picks.sort_unstable();
-    let mut want: Vec<&str> = right.iter().map(String::as_str).collect();
-    want.sort_unstable();
-    let correct = picks == want;
-    let mut out = if correct {
+    let mut out = if g.correct {
         "**Correct.**".to_owned()
     } else {
         "**Incorrect.**".to_owned()
     };
-    if !correct {
-        let right: Vec<String> = right.iter().map(|v| label(v)).collect();
+    if !g.correct {
+        let right: Vec<String> = g.right.iter().map(|v| option_label(&shown, v)).collect();
         out.push_str(&format!(" The right answer: {}.", right.join(", ")));
     }
     if !q.explanation.trim().is_empty() {
         out.push_str(&format!(" {}", q.explanation.trim()));
     }
-    let conf = answer
-        .rsplit("confidence: ")
-        .next()
-        .and_then(|c| c.split('/').next())
-        .and_then(|c| c.trim().parse::<u8>().ok());
-    if let Some(c) = conf {
-        let note = match (correct, c) {
+    if let Some(c) = g.confidence {
+        let note = match (g.correct, c) {
             (true, 4..) => "well calibrated",
             (true, ..=2) => "underconfident",
             (false, 4..) => "overconfident",
