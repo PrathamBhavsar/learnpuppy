@@ -1,8 +1,10 @@
-//! Course agents: placement, the Author (one strong call, or a cheap two-stage fallback), refill,
-//! follow-up answers, answer checking and re-teaching. Each function is one or a few single-shot
-//! `stream_turn` calls with a short static system text. Claude, kiro and opencode run with no tools;
-//! Codex and agy can still read files (`docs/web/12-cli-isolation-and-failures.md`, #414). All learner
-//! text is redacted and fenced as data with a per-prompt random nonce.
+//! Course agents: placement and the strand probe (F06), the Author (one strong call, or a cheap
+//! two-stage fallback), refill, follow-up answers, answer checking, re-teaching, batched recall
+//! grading (F15), the Feynman pass (F18), the prerequisite insert (F20), and fact-check (F08, in
+//! `verify`). Each function is one or a few single-shot `stream_turn` calls with a short static
+//! system text. Claude, kiro and opencode run with no tools; Codex and agy can still read files
+//! (`docs/web/12-cli-isolation-and-failures.md`, #414). All learner text is redacted and fenced
+//! as data with a per-prompt random nonce.
 //!
 //! Model and effort come from the engine (its role profile); usage is read from the engine by the
 //! service layer, since `LlmEngine` exposes none.
@@ -11,8 +13,8 @@ use std::collections::HashSet;
 
 use lp_cli_driver::engine::{DriverError, LlmEngine, TurnRequest};
 use lp_core::course::{
-    gate_course, gate_item, render_digest, render_packet, Course, GateReport, Item, LearnerState,
-    Lesson, Level, PACKET_NOTE,
+    gate_course, gate_item, render_digest, render_packet, Claim, Course, GateReport, Item,
+    LearnerState, Lesson, Level, Prediction, Rung, PACKET_NOTE,
 };
 use lp_core::redact::redact;
 use rand::Rng;
@@ -20,15 +22,21 @@ use serde::Deserialize;
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 
+pub mod verify;
+
 const AUTHOR: &str = include_str!("prompts/author.md");
 const OUTLINE: &str = include_str!("prompts/outline.md");
 const LESSON: &str = include_str!("prompts/lesson.md");
 const PLACE: &str = include_str!("prompts/place.md");
+const PLACE_STRANDS: &str = include_str!("prompts/place_strands.md");
 const REPAIR: &str = include_str!("prompts/repair.md");
 const FOLLOW_UP: &str = include_str!("prompts/follow_up.md");
 const CHECK: &str = include_str!("prompts/check.md");
 const RETEACH: &str = include_str!("prompts/reteach.md");
 const SYSTEM: &str = include_str!("prompts/system.md");
+const GRADE_BATCH: &str = include_str!("prompts/grade_batch.md");
+const FEYNMAN: &str = include_str!("prompts/feynman.md");
+const PREREQ: &str = include_str!("prompts/prereq.md");
 
 /// Items per lesson, matching the tested prompts.
 const ITEMS_PER_LESSON: usize = 6;
@@ -291,6 +299,74 @@ pub async fn place<E: LlmEngine>(engine: &E, goal: &str) -> Result<Vec<Item>, Co
     .await
 }
 
+/// One strand's item bank for F06: one item at each level, 1 (easiest) to 3 (hardest).
+#[derive(Clone, Debug, PartialEq)]
+pub struct StrandBank {
+    pub name: String,
+    pub levels: [Item; 3],
+}
+
+/// F06 strand probe: one call writes 3 strands, each with an item at every level, so code can
+/// binary-search each strand afterwards (`lp_core::method::probe`) with no further model calls.
+pub async fn place_strands<E: LlmEngine>(
+    engine: &E,
+    goal: &str,
+) -> Result<Vec<StrandBank>, CourseAgentError> {
+    #[derive(Deserialize)]
+    struct RawStrand {
+        #[serde(default)]
+        name: String,
+        #[serde(default)]
+        items: Vec<Item>,
+    }
+    #[derive(Deserialize, Default)]
+    #[serde(default)]
+    struct Raw {
+        strands: Vec<RawStrand>,
+    }
+    let fence = Fence::new();
+    let prompt = render(
+        PLACE_STRANDS,
+        &[("topic", &format!("{PACKET_NOTE}{}", fence.wrap(goal)))],
+    );
+    ask_parsed(engine, &prompt, |s| {
+        let raw: Raw = parse(s)?;
+        let mut strands = Vec::new();
+        for rs in raw.strands {
+            if rs.name.trim().is_empty() {
+                continue;
+            }
+            let mut items: Vec<Item> = rs
+                .items
+                .into_iter()
+                .filter(|i| !gate_item(i).iter().any(|f| f.level == Level::Drop))
+                .collect();
+            items.sort_by_key(|i| i.level);
+            if items.len() != 3 || items.iter().map(|i| i.level).collect::<Vec<_>>() != [1, 2, 3] {
+                continue;
+            }
+            let mut it = items.into_iter();
+            strands.push(StrandBank {
+                name: rs.name,
+                levels: [it.next().unwrap(), it.next().unwrap(), it.next().unwrap()],
+            });
+        }
+        if strands.len() != 3 {
+            return Err(CourseAgentError::Parse(format!(
+                "only {} usable strands",
+                strands.len()
+            )));
+        }
+        for (si, sb) in strands.iter_mut().enumerate() {
+            for (li, it) in sb.levels.iter_mut().enumerate() {
+                it.id = format!("s{si}-l{}", li + 1);
+            }
+        }
+        Ok(strands)
+    })
+    .await
+}
+
 // ------------------------------------------------------------------ Author
 
 fn brief_for(goal: &str, results: &[PlacementResult], profile: &str) -> Brief {
@@ -434,6 +510,12 @@ struct Outline {
 struct Pack {
     explain: String,
     items: Vec<Item>,
+    hook: String,
+    aside: Option<String>,
+    predict: Option<Prediction>,
+    angles: Vec<String>,
+    rungs: Vec<Rung>,
+    claims: Vec<Claim>,
 }
 
 /// The cheap path: an outline call, then one call per lesson. A lesson call that fails retries once,
@@ -480,7 +562,7 @@ async fn two_stage_brief<E: LlmEngine>(
     for mut l in outline.lessons.into_iter().take(k) {
         let fence = Fence::new();
         let spec = serde_json::json!({
-            "title": l.title, "objective": l.objective, "key_facts": l.key_facts,
+            "title": l.title, "objective": l.objective, "key_facts": l.key_facts, "kind": l.kind,
         });
         let learner = format!("{PACKET_NOTE}{}", fence.wrap(&outline.learner));
         let prompt = render(
@@ -506,6 +588,12 @@ async fn two_stage_brief<E: LlmEngine>(
         used.extend(pack.items.iter().map(|i| i.q.clone()));
         l.explain = pack.explain;
         l.items = pack.items;
+        l.hook = pack.hook;
+        l.aside = pack.aside;
+        l.predict = pack.predict;
+        l.angles = pack.angles;
+        l.rungs = pack.rungs;
+        l.claims = pack.claims;
         lessons.push(l);
     }
     // Ids: keep the outline's slug when unique, else position; items by position.
@@ -689,6 +777,152 @@ pub async fn reteach<E: LlmEngine>(
         return Err(CourseAgentError::Parse("empty explanation".into()));
     }
     Ok(text.to_string())
+}
+
+/// One graded recall row from a batched call.
+#[derive(Clone, Debug, PartialEq)]
+pub struct GradedRecall {
+    pub item_id: String,
+    pub correct: bool,
+    pub note: String,
+}
+
+/// F15 fallback: one cheap call grades every recall answer in a lesson that the code rubric
+/// (`lp_core::method::recall::rubric_check`) did not match. Rows with no id in `pairs` are
+/// dropped, so a hallucinated row can never grade the wrong item.
+pub async fn grade_batch<E: LlmEngine>(
+    engine: &E,
+    pairs: &[(Item, String)],
+) -> Result<Vec<GradedRecall>, CourseAgentError> {
+    #[derive(Deserialize, Default)]
+    #[serde(default)]
+    struct Raw {
+        id: String,
+        correct: bool,
+        note: String,
+    }
+    #[derive(Deserialize, Default)]
+    #[serde(default)]
+    struct Wrap {
+        grades: Vec<Raw>,
+    }
+    if pairs.is_empty() {
+        return Ok(Vec::new());
+    }
+    let fence = Fence::new();
+    let rows: Vec<serde_json::Value> = pairs
+        .iter()
+        .map(|(it, given)| {
+            serde_json::json!({
+                "id": it.id, "q": it.q, "answer": it.answer, "accept": it.accept, "given": given,
+            })
+        })
+        .collect();
+    let prompt = render(
+        GRADE_BATCH,
+        &[(
+            "rows",
+            &format!("{PACKET_NOTE}{}", fence.wrap_json(serde_json::json!(rows))),
+        )],
+    );
+    let wrap: Wrap = ask_parsed(engine, &prompt, parse::<Wrap>).await?;
+    let ids: HashSet<&str> = pairs.iter().map(|(it, _)| it.id.as_str()).collect();
+    Ok(wrap
+        .grades
+        .into_iter()
+        .filter(|g| ids.contains(g.id.as_str()))
+        .map(|g| GradedRecall {
+            item_id: g.id,
+            correct: g.correct,
+            note: g.note,
+        })
+        .collect())
+}
+
+/// F18 Feynman pass: graded only on whether the mechanism survives, in the learner's own
+/// verbatim wording.
+pub async fn feynman<E: LlmEngine>(
+    engine: &E,
+    lesson: &Lesson,
+    explanation: &str,
+) -> Result<Check, CourseAgentError> {
+    #[derive(Deserialize)]
+    struct Raw {
+        correct: bool,
+        #[serde(default)]
+        note: String,
+    }
+    let fence = Fence::new();
+    let prompt = render(
+        FEYNMAN,
+        &[
+            ("key_facts", &fence.wrap(&lesson.key_facts.join("; "))),
+            ("explanation", &fence.wrap(explanation)),
+        ],
+    );
+    let prompt = format!("{PACKET_NOTE}\n{prompt}");
+    let r: Raw = ask_parsed(engine, &prompt, parse::<Raw>).await?;
+    Ok(Check {
+        correct: r.correct,
+        note: r.note,
+    })
+}
+
+/// F20: repeated failure on `lesson` reveals a missing foundation; writes one short prerequisite
+/// lesson to be inserted before it in the frozen plan. The caller assigns the lesson and item ids
+/// when splicing it in, same as any other authored lesson.
+pub async fn prereq<E: LlmEngine>(
+    engine: &E,
+    lesson: &Lesson,
+    missing: &str,
+) -> Result<Lesson, CourseAgentError> {
+    #[derive(Deserialize, Default)]
+    #[serde(default)]
+    struct Raw {
+        title: String,
+        objective: String,
+        hook: String,
+        explain: String,
+        key_facts: Vec<String>,
+        items: Vec<Item>,
+    }
+    let fence = Fence::new();
+    let spec = serde_json::json!({
+        "title": lesson.title, "objective": lesson.objective, "key_facts": lesson.key_facts,
+    });
+    let prompt = render(
+        PREREQ,
+        &[
+            ("lesson", &fence.wrap_json(spec)),
+            ("missing", &fence.wrap(missing)),
+        ],
+    );
+    let prompt = format!("{PACKET_NOTE}\n{prompt}");
+    let raw: Raw = ask_parsed(engine, &prompt, |s| {
+        let r: Raw = parse(s)?;
+        if r.title.trim().is_empty() || r.explain.trim().is_empty() || r.items.is_empty() {
+            return Err(CourseAgentError::Parse("empty prerequisite lesson".into()));
+        }
+        Ok(r)
+    })
+    .await?;
+    let items: Vec<Item> = raw
+        .items
+        .into_iter()
+        .filter(|i| !gate_item(i).iter().any(|f| f.level == Level::Drop))
+        .collect();
+    if items.is_empty() {
+        return Err(CourseAgentError::NoUsableLesson);
+    }
+    Ok(Lesson {
+        title: raw.title,
+        objective: raw.objective,
+        hook: raw.hook,
+        explain: raw.explain,
+        key_facts: raw.key_facts,
+        items,
+        ..Lesson::default()
+    })
 }
 
 #[cfg(test)]
