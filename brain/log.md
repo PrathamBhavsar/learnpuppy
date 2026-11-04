@@ -33,5 +33,18 @@ Back to [Brain Index](/index.md). Related: [Overview](/overview.md), [Task DAG](
 - Added [Web UI](/architecture/web-ui.md) and [Server API](/architecture/server-api.md) specs, root `README.md`, superseded note on `docs/PLAN.md`, archived pointer on `docs/DESIGN_SYSTEM_PLAN.md`; marked `D60` done in the [Task DAG](/tasks/index.md).
 
 
-## 2026-11-03 — Cheap Tutor Plan
-- Measured per-call CLI overhead and ran a local benchmark (`bench/cheap_tutor/`). Added the [Cheap Tutor Plan](/cheap-tutor/index.md) and proposed [ADR-0007](/decisions/0007-course-as-data.md): a rare strong call writes a course, code runs the session.
+## 2026-11-04 — Alvar Method Brain Section
+- Watched Eero Alvar's *How I Use AI to Learn Things* (youtu.be/kzcI5F4tGiU, 2026-08-14, 18:58) via oembed metadata + cleaned auto-caption transcript from the Alvarmethod repo.
+- Identified companion video *How I Learn Difficult Things* (youtu.be/ciC6ffUqI8k) — "Start from facts the brain can accept without hedging, then build by motivated discovery at the edge of what you already hold."
+- Surveyed 5 community implementations: Alvarmethod (vasanthsreeram), agentic-learning (pacchio1), EmilioFarias/teach, Mathesis (tdsiar), learning-with-copilot (MMostafa-Hub). Fetched all skill files (SKILL.md, protocols.md, textbook-mode.md, quiz-ui.md, learner-files.md, philosophy.md, process.md) and the LEARNER.md template.
+- Created [Alvar Method](/alvar-method/index.md) brain section with 8 documents: index, philosophy (one-to-one teaching), process (Probe → Plan → Teach → Close), teaching protocols (mastery bar, graded quizzes, prediction-before-reveal, faded examples, interleaving, Feynman pass, spaced review, misconception register, confidence tracking, no-reveal rule, notes gate), visual & verify skills (self-reviewed SVG loop, fact-check subagent), skills reference (5 skills + quiz UI mapping per harness + file structures), community implementations (comparison table + LearnPuppy mapping), and full transcript.
+- Cross-referenced the Alvar Method concepts to LearnPuppy's crate architecture (`lp-core` 3-phase fold, `lp-agent` ProberAgent/TeacherAgent/subagents, `lp-store` FSRS v5, `lp-service` profiles, `lp-server` SSE → React SPA).
+
+
+## 2026-11-04 — Huberman Learning Brain Section
+- Watched Andrew Huberman's *Optimal Protocols for Studying & Learning* (youtu.be/ddq8JIMhz7c, Huberman Lab Podcast) via oembed metadata + full episode transcript from hubermanlab.com (105,393 bytes).
+- Also fetched the *Essentials: Optimize Your Learning & Creativity* episode transcript (35,435 bytes) covering daily routine, circadian mechanisms, go/no-go circuits, and creativity.
+- Fetched the *Neuroplasticity Super-Protocol* newsletter (7,514 bytes) with the condensed 9-step protocol.
+- Cross-referenced with ai.hubermanlab.com summaries for structured study habit data.
+- Created [Huberman Learning](/huberman-learning/index.md) brain section with 8 documents: index, neuroplasticity fundamentals (3 mechanisms, two-step process, sleep, NSDR), self-testing protocol (1917 study, SSSS/SSST/STTT, familiarity vs mastery, timing, 50% rule, test format), study habits (~700 med students: schedule/alone/phone-away/3-4hrs/teach-peers/aspirational), neuroplasticity super-protocol (9 steps), circadian optimization (autonomic arousal, go/no-go D1/D2, two daily bouts, creativity two-stage, morning/evening routines), advanced tools (gap effects, interleaving, emotion, ~15% error rate, cold exposure, skill levels), and transcript excerpts.
+- Cross-referenced Huberman concepts to both LearnPuppy's crate architecture and the Alvar Method (e.g., self-testing ↔ quiz-after-every-step, gap effects ↔ potential lp-agent feature, interleaving ↔ mixed pass every third quiz, familiarity vs mastery ↔ mastery bar MC + free recall).
