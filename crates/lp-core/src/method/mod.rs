@@ -2,8 +2,11 @@
 //! No IO, no async, no clock — every function here takes `now` and any randomness as plain
 //! arguments from its caller.
 
+pub mod bout;
 pub mod dag;
+pub mod difficulty;
 pub mod mastery;
+pub mod pacing;
 pub mod probe;
 pub mod recall;
 pub mod register;
