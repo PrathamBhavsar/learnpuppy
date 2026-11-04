@@ -554,6 +554,7 @@ mod course_store {
             lessons: vec![],
             must_fix: vec![],
             version: 1,
+            ..Course::default()
         }
     }
 

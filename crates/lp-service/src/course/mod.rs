@@ -1398,6 +1398,8 @@ impl<E> Inner<E> {
             chosen: keep(text),
             confidence,
             ms,
+            gap: false,
+            reasoning: String::new(),
         };
         // A typed answer that is not an exact hit waits for the learner's own grade before it is
         // scheduled, so one answer makes one FSRS review.

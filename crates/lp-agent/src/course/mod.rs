@@ -516,6 +516,7 @@ async fn two_stage_brief<E: LlmEngine>(
         lessons: Vec::new(),
         must_fix: brief.must_fix(),
         version: 1,
+        ..Course::default()
     };
     for mut l in lessons {
         let n = course.lessons.len();
