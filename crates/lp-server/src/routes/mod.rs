@@ -13,6 +13,7 @@ pub mod graph;
 pub mod graph_write;
 pub mod ingest;
 pub mod jobs;
+pub mod learning;
 pub mod review;
 pub mod search;
 pub mod sources;
@@ -41,6 +42,7 @@ pub fn api() -> Router<AppState> {
         .merge(sources::routes())
         .merge(review::routes())
         .merge(courses::routes())
+        .merge(learning::routes())
         .merge(digest::routes())
         .merge(accounts::routes())
         .merge(search::routes())

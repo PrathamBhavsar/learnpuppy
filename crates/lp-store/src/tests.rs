@@ -554,6 +554,7 @@ mod course_store {
             lessons: vec![],
             must_fix: vec![],
             version: 1,
+            ..Course::default()
         }
     }
 
@@ -743,4 +744,119 @@ fn migrated_job_artifact_path_resolves_inside_the_workspace_only() {
     assert_eq!(art("j1"), arts.join("job_1.svg").display().to_string());
     assert_eq!(art("j2"), "/old/home/.learnpuppy/artifacts/gone.svg");
     assert!(!art("j3").starts_with(ws.path().to_str().unwrap()));
+}
+
+mod learning_store {
+    use super::*;
+    use lp_core::method::register::{RegisterRow, RegisterStatus};
+
+    fn hb(n: i64) -> BoutEvent {
+        BoutEvent::Heartbeat {
+            ts: n,
+            bout: "b1".into(),
+        }
+    }
+
+    #[test]
+    fn round_trip_and_defaults() {
+        let d = tempfile::tempdir().unwrap();
+        let s = FsLearningStore::new(d.path());
+        assert!(s.bouts().unwrap().is_empty());
+        assert_eq!(s.load_schedule().unwrap(), Schedule::default());
+        s.append_bout(&hb(1)).unwrap();
+        s.append_checkin(&CheckIn {
+            ts: 1,
+            sleep_hours: 7.5,
+            note: String::new(),
+        })
+        .unwrap();
+        let rec = RegisterRecord {
+            ts: 2,
+            course: "c1".into(),
+            row: RegisterRow {
+                item: "i1".into(),
+                belief: "b".into(),
+                status: RegisterStatus::Open,
+                misses: 1,
+            },
+        };
+        s.append_register(&rec).unwrap();
+        assert_eq!(s.bouts().unwrap(), vec![hb(1)]);
+        assert_eq!(s.checkins().unwrap()[0].sleep_hours, 7.5);
+        assert_eq!(s.register().unwrap(), vec![rec]);
+        let sched = Schedule {
+            wake_time: "07:00".into(),
+            slots: vec!["09:00".into()],
+            ..Default::default()
+        };
+        s.save_schedule(&sched).unwrap();
+        assert_eq!(s.load_schedule().unwrap(), sched);
+    }
+
+    #[test]
+    fn profile_latest_wins() {
+        let d = tempfile::tempdir().unwrap();
+        let s = FsLearningStore::new(d.path());
+        for (ts, v) in [(1, "a"), (3, "c"), (2, "b")] {
+            s.append_profile(&ProfileEntry {
+                ts,
+                key: "k".into(),
+                value: v.into(),
+            })
+            .unwrap();
+        }
+        let p = s.profile().unwrap();
+        assert_eq!((p.len(), p[0].value.as_str()), (1, "c"));
+    }
+
+    #[test]
+    fn torn_tail_recovery() {
+        let d = tempfile::tempdir().unwrap();
+        let s = FsLearningStore::new(d.path());
+        s.append_bout(&hb(1)).unwrap();
+        let p = d.path().join("learning/bouts.jsonl");
+        let mut f = std::fs::OpenOptions::new().append(true).open(&p).unwrap();
+        f.write_all(b"deadbeef\t{\"kind\":\"Hea").unwrap();
+        assert_eq!(s.bouts().unwrap(), vec![hb(1)]);
+        s.append_bout(&hb(2)).unwrap();
+        assert_eq!(s.bouts().unwrap(), vec![hb(1), hb(2)]);
+    }
+
+    #[test]
+    fn concurrent_append() {
+        let d = tempfile::tempdir().unwrap();
+        let s = Arc::new(FsLearningStore::new(d.path()));
+        let hs: Vec<_> = (0..8)
+            .map(|t| {
+                let s = s.clone();
+                std::thread::spawn(move || {
+                    for i in 0..25 {
+                        s.append_bout(&hb(t * 100 + i)).unwrap();
+                    }
+                })
+            })
+            .collect();
+        for h in hs {
+            h.join().unwrap();
+        }
+        assert_eq!(s.bouts().unwrap().len(), 200);
+    }
+
+    #[test]
+    fn workspaces_isolated() {
+        let a = tempfile::tempdir().unwrap();
+        let b = tempfile::tempdir().unwrap();
+        let (sa, sb) = (
+            FsLearningStore::new(a.path()),
+            FsLearningStore::new(b.path()),
+        );
+        sa.append_bout(&hb(1)).unwrap();
+        assert!(sb.bouts().unwrap().is_empty());
+        let (ca, cb) = (FsCourseStore::new(a.path()), FsCourseStore::new(b.path()));
+        ca.append_session_log("c1", "2026-11-05", 1, "hi\n")
+            .unwrap();
+        assert_eq!(cb.read_session_log("c1", "2026-11-05", 1).unwrap(), "");
+        assert_eq!(ca.read_session_log("c1", "2026-11-05", 1).unwrap(), "hi\n");
+        assert!(ca.append_session_log("c1", "../x", 1, "").is_err());
+    }
 }

@@ -1,15 +1,24 @@
 import {
   BookOpenIcon,
+  CalendarIcon,
   DownloadIcon,
   GraduationCapIcon,
   LayersIcon,
   NetworkIcon,
   NewspaperIcon,
+  UserRoundIcon,
   type LucideIcon,
 } from "lucide-react"
 
 export type SectionKey =
-  "graph" | "learn" | "review" | "course" | "digest" | "ingest"
+  | "graph"
+  | "learn"
+  | "review"
+  | "course"
+  | "digest"
+  | "ingest"
+  | "schedule"
+  | "profile"
 
 export const SECTIONS: readonly {
   key: SectionKey
@@ -20,6 +29,8 @@ export const SECTIONS: readonly {
   { key: "learn", label: "Learn", icon: GraduationCapIcon },
   { key: "review", label: "Review", icon: LayersIcon },
   { key: "course", label: "Courses", icon: BookOpenIcon },
+  { key: "schedule", label: "Schedule", icon: CalendarIcon },
+  { key: "profile", label: "Profile", icon: UserRoundIcon },
   { key: "digest", label: "Digest", icon: NewspaperIcon },
   { key: "ingest", label: "Ingest", icon: DownloadIcon },
 ]
@@ -29,6 +40,8 @@ export const SECTION_LABELS: Record<string, string> = {
   learn: "Learn",
   review: "Review",
   course: "Courses",
+  schedule: "Schedule",
+  profile: "Profile",
   digest: "Digest",
   ingest: "Ingest",
   settings: "Settings",

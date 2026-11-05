@@ -121,6 +121,21 @@ Model-backed calls (`create`, `placement`, `ask`, `check`) are plain awaited POS
 
 A step's `item` and a placement item never carry `answer`, `accept` or `why` (tested on the serialized JSON). The answer comes back only in the feedback after the learner answered.
 
+### Learning method (M8)
+All under `/workspaces/{ws}`; thin layer over `lp_service::course`. A gate rejection is `409 conflict` with `details.gate` set to a stable machine-readable code (one per gate); the UI branches on it, never on the message.
+
+| | |
+|---|---|
+| `GET …/courses/{id}/plan` · `POST …/plan/confirm` · `POST …/plan/prereq` | plan view, confirm, prerequisite choice |
+| `POST …/courses/{id}/step` · `predict` · `explain-seen` · `note` · `quiz-answer` · `feynman` | lesson step loop |
+| `POST …/courses/{id}/break` · `close` · `braindump` · `review-dates` | break, session close, brain dump, review dates |
+| `GET …/courses/{id}/register` · `mastery` | register and mastery views |
+| `GET …/learning/clock` | session clock |
+| `POST …/learning/bout/start` · `heartbeat` · `end` · `focus-lost` · `override` | study bout lifecycle |
+| `GET …/learning/checkin/needed` · `POST …/learning/checkin` | check-in |
+| `GET/PUT …/learning/schedule` · `POST …/schedule/suggest` · `track` | schedule |
+| `GET/PUT …/learning/profile` | learner profile |
+
 ### Digest
 | | |
 |---|---|

@@ -113,6 +113,39 @@ impl FsCourseStore {
         read_all(&self.dir(id)?.join("events.jsonl"))
     }
 
+    /// Append markdown to `sessions/<date>-<n>.md`; `date` and `n` are validated so the path
+    /// stays inside the course dir.
+    pub fn append_session_log(&self, id: &str, date: &str, n: u32, md: &str) -> StoreResult<()> {
+        let ok = !date.is_empty() && date.bytes().all(|b| b.is_ascii_digit() || b == b'-');
+        if !ok {
+            return Err(StoreError::Backend(format!("invalid date: {date:?}")));
+        }
+        let dir = self.dir(id)?.join("sessions");
+        create_dir(&dir)?;
+        let mut f = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(dir.join(format!("{date}-{n}.md")))
+            .map_err(be)?;
+        std::io::Write::write_all(&mut f, md.as_bytes()).map_err(be)
+    }
+
+    pub fn read_session_log(&self, id: &str, date: &str, n: u32) -> StoreResult<String> {
+        let ok = !date.is_empty() && date.bytes().all(|b| b.is_ascii_digit() || b == b'-');
+        if !ok {
+            return Err(StoreError::Backend(format!("invalid date: {date:?}")));
+        }
+        match std::fs::read_to_string(
+            self.dir(id)?
+                .join("sessions")
+                .join(format!("{date}-{n}.md")),
+        ) {
+            Ok(s) => Ok(s),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(String::new()),
+            Err(e) => Err(be(e)),
+        }
+    }
+
     pub fn delete_course(&self, id: &str) -> StoreResult<()> {
         match std::fs::remove_dir_all(self.dir(id)?) {
             Ok(()) => Ok(()),

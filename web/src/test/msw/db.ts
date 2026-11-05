@@ -15,6 +15,7 @@ import type { MockCourse } from "./fixtures/courses"
 import { digestFixtures } from "./fixtures/digest"
 import { type GraphFixture, buildGraph } from "./fixtures/graph"
 import { ingestFixtures } from "./fixtures/ingest"
+import type { MockLearning } from "./fixtures/learning"
 import { type CardFixture, cardFixtures, statsFor } from "./fixtures/review"
 import { settingsFixture } from "./fixtures/settings"
 import {
@@ -37,6 +38,7 @@ export type MockDb = {
   chats: Map<string, ClassroomView[]>
   cards: Map<string, CardFixture[]>
   courses: Map<string, MockCourse[]>
+  learning: Map<string, MockLearning>
   digest: { days: DigestDay[]; details: Map<string, DecisionDetail> }
   accounts: AccountDetail[]
   settings: SettingsDoc
@@ -75,6 +77,7 @@ function createDb(now = Date.now()): MockDb {
     chats,
     cards,
     courses: new Map(),
+    learning: new Map(),
     digest: digestFixtures(now),
     accounts: accountFixtures(now),
     settings: settingsFixture(),
