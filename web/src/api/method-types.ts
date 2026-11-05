@@ -134,6 +134,9 @@ type Path<M extends object> = {
 type Get<R> = Path<{ get: Bodyless<Res<R>> }>
 type Send<B> = Path<{ post: WithBody<Done, B> }>
 type Call<R, B> = Path<{ post: WithBody<Res<R>, B> }>
+/** A GET and a POST on the same path with different response shapes; declared as one `Path<M>`
+ * (not two intersected) so neither method's `Omit<NoMethods, ...>` collapses the other to `never`. */
+type GetAndSend<R, B> = Path<{ get: Bodyless<Res<R>>; post: WithBody<Done, B> }>
 
 export interface MethodPaths {
   "/workspaces/{ws}/courses/{id}/plan": Get<CoursePlan>
@@ -161,8 +164,10 @@ export interface MethodPaths {
     BrainDumpResult,
     { text: string }
   >
-  "/workspaces/{ws}/courses/{id}/review-dates": Get<{ dates: ReviewDate[] }> &
-    Path<{ post: WithBody<Done, ReviewDatesRequest> }>
+  "/workspaces/{ws}/courses/{id}/review-dates": GetAndSend<
+    { dates: ReviewDate[] },
+    ReviewDatesRequest
+  >
   "/workspaces/{ws}/courses/{id}/register": Get<{ rows: RegisterRow[] }>
   "/workspaces/{ws}/courses/{id}/mastery": Get<MasteryCount>
 }

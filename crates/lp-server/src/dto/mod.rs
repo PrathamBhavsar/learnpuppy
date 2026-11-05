@@ -6,6 +6,7 @@ pub mod course;
 pub mod digest;
 pub mod events;
 pub mod graph;
+pub mod learning;
 pub mod review;
 pub mod search;
 pub mod settings;

@@ -12,6 +12,7 @@ use axum::response::Response;
 use axum::Router;
 use http_body_util::BodyExt;
 use lp_cli_driver::accounts::DiscoverRoots;
+use lp_core::course::{Course, Item, ItemKind, Lesson};
 use lp_core::ports::{GraphStore, TrackerStore};
 use lp_server::app::{router, AppState, EngineMode, ServerConfig};
 use lp_server::assets::Assets;
@@ -1712,4 +1713,225 @@ async fn course_inputs_are_length_checked_at_the_boundary() {
         )
         .await;
     assert_eq!(r.status, StatusCode::BAD_REQUEST, "{}", r.text);
+}
+
+// ------------------------------------------------------------------ learning method (M8)
+
+fn method_course(id: &str) -> Course {
+    Course {
+        id: id.into(),
+        method_version: 1,
+        lessons: vec![Lesson {
+            id: "l00".into(),
+            title: "Intro".into(),
+            key_facts: vec!["dogs bark loudly".into()],
+            items: vec![
+                Item {
+                    id: "l00-i0".into(),
+                    kind: ItemKind::Mcq,
+                    q: "q0?".into(),
+                    answer: "a".into(),
+                    options: vec!["a".into(), "b".into(), "c".into(), "d".into()],
+                    why: "because".into(),
+                    tests: Some(0),
+                    ..Item::default()
+                },
+                Item {
+                    id: "l00-i1".into(),
+                    kind: ItemKind::Recall,
+                    q: "q1?".into(),
+                    answer: "a".into(),
+                    must_name: vec!["dog".into()],
+                    tests: Some(0),
+                    ..Item::default()
+                },
+            ],
+            ..Lesson::default()
+        }],
+        ..Course::default()
+    }
+}
+
+fn gate_of(r: &Reply) -> String {
+    r.json()["error"]["details"]["gate"]
+        .as_str()
+        .unwrap_or_default()
+        .to_owned()
+}
+
+/// Every gate rejection the HTTP contract can actually reach is `409 conflict` with a stable
+/// `details.gate` code (docs/web/03 §Conventions); F07's order gate and F20's cycle gate are
+/// each exercised at least once here.
+#[tokio::test]
+async fn method_course_runs_from_plan_to_close_with_gated_steps() {
+    let a = api();
+    let c = method_course("mc1");
+    a.stores(MAIN_WS).courses.save_course(&c).unwrap();
+
+    // F07: no teaching before the plan is confirmed.
+    let r = a
+        .post(
+            &ws("/courses/mc1/predict"),
+            json!({"lesson": "l00", "guess": "x"}),
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::CONFLICT, "{}", r.text);
+    assert_eq!(r.code(), "conflict");
+    assert_eq!(gate_of(&r), "out_of_order");
+
+    let plan = a.get(&ws("/courses/mc1/plan")).await;
+    assert_eq!(plan.status, StatusCode::OK, "{}", plan.text);
+    assert_eq!(plan.json()["confirmed"], false);
+    assert_eq!(plan.json()["lessons"][0]["id"], "l00");
+
+    assert_eq!(
+        a.post_empty(&ws("/courses/mc1/plan/confirm")).await.status,
+        StatusCode::NO_CONTENT
+    );
+    assert_eq!(
+        a.get(&ws("/courses/mc1/plan")).await.json()["confirmed"],
+        true
+    );
+
+    let step = a.post_empty(&ws("/courses/mc1/step")).await.json();
+    assert_eq!(step["step"], "explain", "{step}");
+
+    // Out of order: answering before the explanation is marked seen.
+    let r = a
+        .post(
+            &ws("/courses/mc1/quiz-answer"),
+            json!({"item": "l00-i0", "lesson": "l00", "text": "a", "reasoning": "", "gap": false}),
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::CONFLICT, "{}", r.text);
+    assert_eq!(gate_of(&r), "out_of_order");
+
+    assert_eq!(
+        a.post(&ws("/courses/mc1/explain-seen"), json!({"lesson": "l00"}))
+            .await
+            .status,
+        StatusCode::NO_CONTENT
+    );
+
+    let step = a.post_empty(&ws("/courses/mc1/step")).await.json();
+    assert_eq!(step["step"], "notes", "{step}");
+
+    assert_eq!(
+        a.post(
+            &ws("/courses/mc1/note"),
+            json!({"lesson": "l00", "text": ""})
+        )
+        .await
+        .status,
+        StatusCode::NO_CONTENT
+    );
+
+    let step = a.post_empty(&ws("/courses/mc1/step")).await.json();
+    assert_eq!(step["step"], "ask", "{step}");
+    assert_eq!(step["id"], "l00-i0");
+    assert_eq!(step["kind"], "mcq");
+    assert_eq!(step["ask"], "new");
+    no_secret_keys(&step);
+
+    let r = a
+        .post(
+            &ws("/courses/mc1/quiz-answer"),
+            json!({"item": "l00-i0", "lesson": "l00", "text": "a", "reasoning": "", "gap": false}),
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::OK, "{}", r.text);
+    assert_eq!(r.json(), json!({"status": "graded", "correct": true}));
+
+    // A single correct mcq already clears F14's mastery bar; the lesson is a goal lesson, so a
+    // Feynman pass is required before Close.
+    let step = a.post_empty(&ws("/courses/mc1/step")).await.json();
+    assert_eq!(step["step"], "feynman", "{step}");
+
+    let m = a.get(&ws("/courses/mc1/mastery")).await;
+    assert_eq!(m.status, StatusCode::OK, "{}", m.text);
+    assert!(m.json()["countLine"]
+        .as_str()
+        .unwrap()
+        .contains("confirmed"));
+
+    a.state
+        .faux()
+        .faux_text(r#"{"correct":true,"note":"nice"}"#);
+    let r = a
+        .post(
+            &ws("/courses/mc1/feynman"),
+            json!({"lesson": "l00", "explanation": "it just does"}),
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::OK, "{}", r.text);
+    assert_eq!(r.json()["correct"], true);
+
+    let step = a.post_empty(&ws("/courses/mc1/step")).await.json();
+    assert_eq!(step["step"], "close", "{step}");
+
+    let r = a
+        .post(
+            &ws("/courses/mc1/braindump"),
+            json!({"text": "dogs often bark loudly at night"}),
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::OK, "{}", r.text);
+    assert_eq!(r.json()["missed"], json!([]));
+
+    let r = a.post_empty(&ws("/courses/mc1/close")).await;
+    assert_eq!(r.status, StatusCode::OK, "{}", r.text);
+    assert!(r.json()["countLine"]
+        .as_str()
+        .unwrap()
+        .contains("confirmed"));
+
+    let r = a.get(&ws("/courses/mc1/register")).await;
+    assert_eq!(r.status, StatusCode::OK, "{}", r.text);
+    assert_eq!(r.json()["rows"], json!([]));
+}
+
+/// F07: a plan that (still) has a cycle can never be confirmed.
+#[tokio::test]
+async fn plan_confirm_rejects_a_cyclic_plan() {
+    let a = api();
+    let mut c = method_course("mc2");
+    c.lessons.push(Lesson {
+        id: "l01".into(),
+        depends_on: vec!["l00".into()],
+        ..Lesson::default()
+    });
+    c.lessons[0].depends_on = vec!["l01".into()];
+    a.stores(MAIN_WS).courses.save_course(&c).unwrap();
+
+    let r = a.post_empty(&ws("/courses/mc2/plan/confirm")).await;
+    assert_eq!(r.status, StatusCode::CONFLICT, "{}", r.text);
+    assert_eq!(gate_of(&r), "plan_has_cycle");
+}
+
+/// F20: a prerequisite is rejected rather than spliced into a plan that is already cyclic.
+#[tokio::test]
+async fn insert_prereq_rejects_a_cyclic_plan() {
+    let a = api();
+    let mut c = method_course("mc3");
+    c.plan_confirmed_at = Some(1);
+    c.lessons.push(Lesson {
+        id: "l01".into(),
+        depends_on: vec!["l00".into()],
+        ..Lesson::default()
+    });
+    c.lessons[0].depends_on = vec!["l01".into()];
+    a.stores(MAIN_WS).courses.save_course(&c).unwrap();
+
+    a.state.faux().faux_text(
+        r#"{"title":"Basics","objective":"o","explain":"e","key_facts":["f"],
+           "items":[{"type":"mcq","q":"q?","options":["a","b","c","d"],"answer":"a"}]}"#,
+    );
+    let r = a
+        .post(
+            &ws("/courses/mc3/plan/prereq"),
+            json!({"before": "l00", "missing": "basics"}),
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::CONFLICT, "{}", r.text);
+    assert_eq!(gate_of(&r), "prereq_cycle");
 }

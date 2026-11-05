@@ -11,7 +11,7 @@ use lp_core::method::{next_step, Settings, Step};
 use lp_core::ports::{GraphStore, StoreResult, TrackerStore};
 use lp_store::FsCourseStore;
 
-use super::card_id;
+use super::{card_id, flash_card};
 use crate::review;
 
 const DAY_MS: i64 = 86_400_000;
@@ -56,18 +56,32 @@ pub struct CloseReport {
     pub resume: Option<String>,
 }
 
-pub fn close_report(course: &Course, events: &[CourseEvent], settings: &Settings) -> CloseReport {
-    let mastery = fold_mastery(course, events);
+/// The mastery bar's counts summed across every lesson in the course.
+fn total_counts(mastery: &lp_core::method::mastery::MasteryState, course: &Course) -> StatusCounts {
     let mut total = StatusCounts::default();
-    let mut takeaways = Vec::new();
-    let mut focus = Vec::new();
     for l in &course.lessons {
-        let c = counts_for_lesson(&mastery, l);
+        let c = counts_for_lesson(mastery, l);
         total.open += c.open;
         total.taught += c.taught;
         total.mc_passed += c.mc_passed;
         total.confirmed += c.confirmed;
         total.parked += c.parked;
+    }
+    total
+}
+
+/// The mastery bar's count line across the whole course, e.g. "11 of 14 confirmed, 3 open, 1
+/// parked" (`close_report`'s own `count_line`, without the rest of the report).
+pub fn mastery_count_line(course: &Course, events: &[CourseEvent]) -> String {
+    count_line(&total_counts(&fold_mastery(course, events), course))
+}
+
+pub fn close_report(course: &Course, events: &[CourseEvent], settings: &Settings) -> CloseReport {
+    let mastery = fold_mastery(course, events);
+    let total = total_counts(&mastery, course);
+    let mut takeaways = Vec::new();
+    let mut focus = Vec::new();
+    for l in &course.lessons {
         for (i, f) in l.key_facts.iter().enumerate() {
             match mastery.status(&l.id, i) {
                 FactStatus::Confirmed => takeaways.push(format!("{}: {f}", l.title)),
@@ -146,6 +160,53 @@ pub fn write_session_log(
     let md = session_log_md(&report, date);
     store.append_session_log(id, date, n, &md)?;
     Ok(report)
+}
+
+/// Gives a brand-new FSRS card to every item testing a fact confirmed just now that has none
+/// yet, so F32's date proposal has a card to set a due date on. Returns how many were made.
+pub fn ensure_cards(
+    tracker: &dyn TrackerStore,
+    course: &Course,
+    events: &[CourseEvent],
+) -> StoreResult<usize> {
+    let mastery = fold_mastery(course, events);
+    let mut n = 0;
+    for l in &course.lessons {
+        for it in &l.items {
+            let Some(fact) = it.tests else { continue };
+            if mastery.status(&l.id, fact) != FactStatus::Confirmed {
+                continue;
+            }
+            if tracker.card(&card_id(&course.id, &it.id))?.is_some() {
+                continue;
+            }
+            if let Some(card) = flash_card(course, l, it) {
+                tracker.upsert_card(&card)?;
+                n += 1;
+            }
+        }
+    }
+    Ok(n)
+}
+
+/// Ends the session: makes an FSRS card for every fact confirmed just now (F32 needs one to
+/// propose a date for), writes F35's confirmed-fact nodes to the Knowledge Graph, then builds and
+/// appends the F29-F31 report. The brain-dump diff (`missed_facts`) is computed separately,
+/// before this is called, since it never touches the store.
+pub fn run_close(
+    store: &FsCourseStore,
+    graph: &dyn GraphStore,
+    tracker: &dyn TrackerStore,
+    id: &str,
+    settings: &Settings,
+    date: &str,
+    now: i64,
+) -> StoreResult<CloseReport> {
+    let course = store.load_course(id)?;
+    let events = store.events(id)?;
+    ensure_cards(tracker, &course, &events)?;
+    write_confirmed(graph, &course, &events, now)?;
+    write_session_log(store, id, &course, &events, settings, date, 1)
 }
 
 /// A Knowledge Graph node id for one confirmed key fact: stable, so closing twice never
@@ -337,6 +398,16 @@ mod tests {
     }
 
     #[test]
+    fn mastery_count_line_matches_the_report_s_own_count_line() {
+        let c = course();
+        let events = [ans("l00-i0", true, 3)];
+        assert_eq!(
+            mastery_count_line(&c, &events),
+            close_report(&c, &events, &Settings::default()).count_line
+        );
+    }
+
+    #[test]
     fn close_report_counts_sure_and_wrong_and_proposes_a_resume_step() {
         let c = course();
         let events = [ans("l00-i0", false, 5), ans("l00-i0", false, 2)];
@@ -477,5 +548,101 @@ mod tests {
         assert_eq!(n, 1);
         assert_eq!(t.card("new").unwrap().unwrap().card.due, now + DAY_MS);
         assert_eq!(t.card("old").unwrap().unwrap().card.due, i64::MAX / 2);
+    }
+
+    /// A fact confirms only with a correct Mcq pass and a correct Recall on the *same* fact
+    /// (`mastery::mc_then_teaching_then_recall_confirms`); this fixture's own `course()` never
+    /// reaches that (its mcq and recall test different facts), so this builds its own.
+    fn confirmable() -> (Course, Vec<CourseEvent>) {
+        let c = Course {
+            id: "c".into(),
+            method_version: 1,
+            plan_confirmed_at: Some(1),
+            lessons: vec![Lesson {
+                id: "l00".into(),
+                key_facts: vec!["f0".into()],
+                items: vec![
+                    Item {
+                        id: "l00-mcq".into(),
+                        kind: ItemKind::Mcq,
+                        q: "mc?".into(),
+                        answer: "a".into(),
+                        options: vec!["a".into(), "b".into(), "c".into(), "d".into()],
+                        tests: Some(0),
+                        ..Item::default()
+                    },
+                    Item {
+                        id: "l00-recall".into(),
+                        kind: ItemKind::Recall,
+                        q: "recall?".into(),
+                        answer: "a".into(),
+                        tests: Some(0),
+                        ..Item::default()
+                    },
+                ],
+                ..Lesson::default()
+            }],
+            ..Course::default()
+        };
+        let events = vec![
+            CourseEvent::Answered {
+                ts: 0,
+                item: "l00-mcq".into(),
+                correct: true,
+                chosen: "a".into(),
+                confidence: None,
+                ms: None,
+                gap: false,
+                reasoning: String::new(),
+            },
+            CourseEvent::Shown {
+                ts: 0,
+                lesson: "l00".into(),
+            },
+            CourseEvent::RecallGraded {
+                ts: 0,
+                item: "l00-recall".into(),
+                correct: true,
+                source: String::new(),
+            },
+        ];
+        (c, events)
+    }
+
+    #[test]
+    fn ensure_cards_makes_a_card_only_where_one_can_be_built_and_is_idempotent() {
+        let (c, events) = confirmable();
+        assert_eq!(
+            fold_mastery(&c, &events).status("l00", 0),
+            FactStatus::Confirmed
+        );
+        let d = tempfile::tempdir().unwrap();
+        let t = lp_store::SqliteTrackerStore::open(d.path()).unwrap();
+        // The recall item has too few distinct answers in this tiny course to build a 4-option
+        // card (`flash_card`'s rule, same as the cheap-tutor path); only the mcq item gets one.
+        assert_eq!(ensure_cards(&t, &c, &events).unwrap(), 1);
+        assert!(t.card(&card_id(&c.id, "l00-mcq")).unwrap().is_some());
+        assert!(t.card(&card_id(&c.id, "l00-recall")).unwrap().is_none());
+        assert_eq!(ensure_cards(&t, &c, &events).unwrap(), 0);
+    }
+
+    #[test]
+    fn run_close_makes_cards_writes_graph_nodes_and_appends_the_session_log() {
+        let (c, events) = confirmable();
+        let d = tempfile::tempdir().unwrap();
+        let store = FsCourseStore::new(d.path());
+        store.save_course(&c).unwrap();
+        for ev in &events {
+            store.append_event("c", ev).unwrap();
+        }
+        let g = lp_store::FsGraphStore::open(d.path().join("g")).unwrap();
+        let t = lp_store::SqliteTrackerStore::open(d.path().join("t")).unwrap();
+        let settings = Settings::default();
+        let report = run_close(&store, &g, &t, "c", &settings, "2026-11-05", 0).unwrap();
+        assert!(report.takeaways.iter().any(|s| s.contains("f0")));
+        assert!(t.card(&card_id("c", "l00-mcq")).unwrap().is_some());
+        assert_eq!(g.nodes().unwrap().len(), 1);
+        let log = store.read_session_log("c", "2026-11-05", 1).unwrap();
+        assert!(log.contains("## 2026-11-05"));
     }
 }
