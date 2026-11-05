@@ -1096,3 +1096,133 @@ async fn options_are_shuffled_by_item_id_and_stable() {
         );
     }
 }
+
+// ------------------------------------------------------------------ M13: simulated bout
+
+const MIN: i64 = 60_000;
+const READY_GATE: crate::learning::bout::Ready = crate::learning::bout::Ready {
+    phone_away: true,
+    tabs_closed: true,
+    focus_seconds: 30,
+};
+
+/// A 90-minute bout from the ready gate to Close with injected misses (placement misses plus a
+/// wrong answer every tenth question). `limited` limits every provider once the course is ready.
+async fn simulated_bout(limited: bool) {
+    use crate::learning::{LearningError, LearningService, Refusal};
+    let w = world();
+    let learn = LearningService::open(w.dir.path());
+    let id = w.start(2).await;
+    w.wait_ready(&id).await;
+    if limited {
+        w.shared.limit("*", true);
+    }
+    let calls_before = w.shared.total();
+
+    // Ready gate first: an unfinished gate cannot open a bout.
+    let not_ready = crate::learning::bout::Ready {
+        phone_away: false,
+        ..READY_GATE
+    };
+    assert_eq!(
+        learn.start_bout(w.now(), &id, not_ready),
+        Err(LearningError::Refused(Refusal::NotReady))
+    );
+    let start = w.now();
+    let bout = learn.start_bout(start, &id, READY_GATE).unwrap();
+
+    let (mut order, mut asked, mut wrong) = (Vec::new(), 0, 0);
+    let mut explained: HashSet<String> = HashSet::new();
+    for n in 0..60 {
+        let v = w.svc.next(&id).await.unwrap();
+        match &v {
+            StepView::Explain(l) => {
+                explained.insert(l.id.clone());
+                order.push("explain");
+                w.svc.seen(&id, &l.id).await.unwrap();
+            }
+            StepView::Ask(a) => {
+                order.push("ask");
+                // An item is never asked before its lesson was explained (reviews excepted).
+                assert!(
+                    a.ask == AskKind::Review || explained.contains(&a.lesson),
+                    "step {n}: {} asked before its explanation",
+                    a.lesson
+                );
+                asked += 1;
+                let miss = asked % 10 == 0;
+                let text = if miss {
+                    "wrong".to_string()
+                } else {
+                    w.item(&id, &a.id).answer
+                };
+                let fb = w
+                    .svc
+                    .answer(&id, &a.id, &text, Some(3), Some(900))
+                    .await
+                    .unwrap();
+                assert_eq!(fb.correct, !miss);
+                wrong += usize::from(miss);
+            }
+            StepView::Waiting | StepView::Done => {
+                assert!(limited, "step {n}: unexpected {v:?}");
+                order.push("wait");
+            }
+        }
+        w.advance(90_000);
+        learn.heartbeat(w.now(), &bout).unwrap();
+        if matches!(v, StepView::Waiting | StepView::Done) {
+            break;
+        }
+    }
+    w.settle_refill(&id).await;
+    w.settle_reteach(&id).await;
+    assert_eq!(order[0], "explain", "a bout opens with teaching: {order:?}");
+    assert!(asked >= 5 && wrong >= 1, "asked {asked}, wrong {wrong}");
+    if !limited {
+        assert_eq!(order.len(), 60);
+    }
+
+    // Close, then the bout ends at 90 minutes and the lock follows.
+    let report = super::close::close_report(
+        &w.course(&id),
+        &w.events(&id),
+        &lp_core::method::Settings::default(),
+    );
+    assert!(!report.count_line.is_empty());
+    let end = start + 90 * MIN;
+    w.now.store(end, Ordering::Relaxed);
+    let clock = learn.end_bout(end, &bout).unwrap();
+    assert!(clock.bout.is_none());
+    assert_eq!(
+        learn.start_bout(end + 60 * MIN, &id, READY_GATE),
+        Err(LearningError::Refused(Refusal::Gap {
+            remaining_minutes: 60
+        }))
+    );
+    assert!(learn.start_bout(end + 120 * MIN, &id, READY_GATE).is_ok());
+
+    // Budget: at most 2 strong calls and 22 cheap synchronous calls, under 100k tokens.
+    let strong = w.shared.count("author");
+    let cheap = w.shared.total() - strong;
+    assert!(strong <= 2, "strong {strong}: {:?}", w.shared.calls.lock());
+    assert!(cheap <= 22, "cheap {cheap}: {:?}", w.shared.calls.lock());
+    if limited {
+        // Only failed attempts; the course keeps studying from stored lessons.
+        assert!(w.shared.total() - calls_before <= 8);
+        assert_eq!(w.svc.status(&id).await.unwrap(), CourseStatus::Ready);
+    }
+    let u = w.svc.usage(&id).await.unwrap();
+    assert!(u.strong_in + u.strong_out + u.cheap_in + u.cheap_out < 100_000);
+    assert!(u.strong_calls_this_hour <= 2);
+}
+
+#[tokio::test]
+async fn a_simulated_ninety_minute_bout_runs_in_order_within_budget_and_locks_afterwards() {
+    simulated_bout(false).await;
+}
+
+#[tokio::test]
+async fn a_simulated_bout_with_every_provider_limited_still_studies_and_locks() {
+    simulated_bout(true).await;
+}
