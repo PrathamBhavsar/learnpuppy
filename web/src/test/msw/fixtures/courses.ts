@@ -1,3 +1,4 @@
+import type { CoursePlan, MethodStep } from "@/api/method-types"
 import type { components } from "@/api/schema"
 
 type Dto = components["schemas"]
@@ -12,6 +13,8 @@ export type MockCourse = {
   cursor: number
   state: Dto["CourseState"]
   graded: boolean
+  /** Set for a learning-method course: the stored steps `step` hands out, one per learner action. */
+  method?: { steps: MethodStep[]; cursor: number }
 }
 
 export const placementItems: Dto["PlacementItemDto"][] = [
@@ -95,5 +98,66 @@ export function newCourse(id: string, goal: string): MockCourse {
     cursor: 0,
     state: "writing",
     graded: false,
+  }
+}
+
+/** The answer the mock "server" holds back until grading; it must never reach a payload or the DOM before. */
+export const SECRET_ANSWER = "Pending-under-lock"
+
+const methodSteps: MethodStep[] = [
+  { step: "confirm_plan" },
+  {
+    step: "predict",
+    lesson: "l1",
+    title: "Polling",
+    q: "What will poll give back?",
+    options: ["A value", "A status"],
+  },
+  {
+    step: "explain",
+    id: "l1",
+    title: "Polling",
+    hook: "Futures do nothing until asked.",
+    explain: "A future is polled until it returns `Ready`.",
+    keyFacts: ["poll returns Pending or Ready"],
+  },
+  { step: "notes", lesson: "l1", title: "Polling" },
+  {
+    step: "ask",
+    id: "m1",
+    lesson: "l1",
+    kind: "mcq",
+    q: "Which claim is true?",
+    options: ["poll blocks", "poll returns a status", "poll allocates"],
+    ask: "new",
+  },
+  {
+    step: "ask",
+    id: "m2",
+    lesson: "l1",
+    kind: "recall",
+    q: "What does poll return when unfinished?",
+    options: [],
+    ask: "retry",
+    angle: "Think of a kettle: not boiled yet means not ready.",
+  },
+  { step: "feynman", lesson: "l1", title: "Polling", keyFacts: ["Pending"] },
+  { step: "break", lesson: "l1", title: "Polling" },
+  { step: "close" },
+]
+
+export const methodPlan: CoursePlan = {
+  confirmed: false,
+  lessons: [
+    { id: "l0", title: "Futures", kind: "definitional", dependsOn: [] },
+    { id: "l1", title: "Polling", kind: "conceptual", dependsOn: ["l0"] },
+  ],
+}
+
+export function newMethodCourse(id: string, goal: string): MockCourse {
+  return {
+    ...newCourse(id, goal),
+    graded: true,
+    method: { steps: methodSteps, cursor: 0 },
   }
 }

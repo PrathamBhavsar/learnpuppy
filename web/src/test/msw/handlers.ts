@@ -4,6 +4,7 @@ import { accountHandlers } from "./handlers/accounts"
 import { chatHandlers } from "./handlers/chats"
 import { courseHandlers } from "./handlers/courses"
 import { digestHandlers } from "./handlers/digest"
+import { methodHandlers } from "./handlers/method"
 import { graphHandlers } from "./handlers/graph"
 import { ingestHandlers } from "./handlers/ingest"
 import { reviewHandlers } from "./handlers/review"
@@ -23,6 +24,7 @@ export const handlers: RequestHandler[] = [
   ...workspaceHandlers,
   ...graphHandlers,
   ...chatHandlers,
+  ...methodHandlers,
   ...courseHandlers,
   ...reviewHandlers,
   ...digestHandlers,

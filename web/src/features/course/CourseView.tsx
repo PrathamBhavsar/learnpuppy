@@ -15,6 +15,8 @@ import {
   usePlacementItems,
 } from "./api"
 import { Lesson } from "./Lesson"
+import { useCoursePlan, useMethodActions } from "./method-api"
+import { MethodLesson } from "./MethodLesson"
 import { Placement } from "./Placement"
 
 type Dto = components["schemas"]
@@ -29,6 +31,8 @@ type Props = {
 /** Placement, the wait while the course is written, then the lesson loop. */
 export function CourseView({ ws, id, onBack }: Props) {
   const actions = useCourseActions(ws, id)
+  const methodActions = useMethodActions(ws, id)
+  const plan = useCoursePlan(ws, id)
   const [graded, setGraded] = useState<Graded[] | null>(null)
   const items = usePlacementItems(ws, id)
   const placement = items.data
@@ -81,7 +85,18 @@ export function CourseView({ ws, id, onBack }: Props) {
     return (
       <Shell>
         {back}
-        <Lesson ws={ws} id={id} actions={actions} />
+        {plan.isPending ? (
+          <Spinner />
+        ) : plan.data ? (
+          <MethodLesson
+            ws={ws}
+            id={id}
+            plan={plan.data}
+            actions={methodActions}
+          />
+        ) : (
+          <Lesson ws={ws} id={id} actions={actions} />
+        )}
       </Shell>
     )
 
