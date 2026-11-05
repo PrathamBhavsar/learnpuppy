@@ -7,7 +7,13 @@ import type {
   CheckinResult,
   Clock,
   OverrideRequest,
+  ProfileResult,
   ReadyAnswers,
+  Schedule,
+  SetProfileRequest,
+  SetScheduleRequest,
+  SuggestSlotsResult,
+  TrackSlotsResult,
 } from "@/api/learning-types"
 
 const base = (ws: string) => [...keys.ws(ws).all, "learning"] as const
@@ -42,6 +48,47 @@ export function useCheckinNeeded(ws: string) {
           signal,
         })
       ).needed,
+  })
+}
+
+/** F01: saved wake time and slots, kept and missed tracking. `.ics` export is deferred past G4. */
+export function useSchedule(ws: string) {
+  return useQuery({
+    queryKey: [...base(ws), "schedule"],
+    queryFn: async ({ signal }): Promise<Schedule> =>
+      unwrap(
+        await learningApi.GET("/workspaces/{ws}/learning/schedule", {
+          params: { path: { ws } },
+          signal,
+        })
+      ),
+  })
+}
+
+export function useTrackSlots(ws: string) {
+  return useQuery({
+    queryKey: [...base(ws), "schedule", "track"],
+    queryFn: async ({ signal }): Promise<TrackSlotsResult> =>
+      unwrap(
+        await learningApi.GET("/workspaces/{ws}/learning/schedule/track", {
+          params: { path: { ws } },
+          signal,
+        })
+      ),
+  })
+}
+
+/** F34: dated profile entries; the latest per key wins, older ones stay in the log. */
+export function useProfile(ws: string) {
+  return useQuery({
+    queryKey: [...base(ws), "profile"],
+    queryFn: async ({ signal }): Promise<ProfileResult> =>
+      unwrap(
+        await learningApi.GET("/workspaces/{ws}/learning/profile", {
+          params: { path: { ws } },
+          signal,
+        })
+      ),
   })
 }
 
@@ -110,6 +157,37 @@ export function useLearningActions(ws: string) {
         ),
       onSuccess: () =>
         qc.invalidateQueries({ queryKey: [...base(ws), "checkin-needed"] }),
+    }),
+    setSchedule: useMutation({
+      mutationFn: async (body: SetScheduleRequest): Promise<Schedule> =>
+        unwrap(
+          await learningApi.POST("/workspaces/{ws}/learning/schedule", {
+            params: { path },
+            body,
+          })
+        ),
+      onSuccess: (schedule) =>
+        qc.setQueryData([...base(ws), "schedule"], schedule),
+    }),
+    suggestSlots: useMutation({
+      mutationFn: async (wakeTime: string): Promise<SuggestSlotsResult> =>
+        unwrap(
+          await learningApi.POST(
+            "/workspaces/{ws}/learning/schedule/suggest",
+            { params: { path }, body: { wakeTime } }
+          )
+        ),
+    }),
+    setProfile: useMutation({
+      mutationFn: async (body: SetProfileRequest): Promise<ProfileResult> =>
+        unwrap(
+          await learningApi.POST("/workspaces/{ws}/learning/profile", {
+            params: { path },
+            body,
+          })
+        ),
+      onSuccess: (profile) =>
+        qc.setQueryData([...base(ws), "profile"], profile),
     }),
   }
 }

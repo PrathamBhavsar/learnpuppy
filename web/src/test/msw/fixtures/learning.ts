@@ -1,8 +1,16 @@
-import type { Clock } from "@/api/learning-types"
+import type {
+  Clock,
+  ProfileEntry,
+  Schedule,
+  SlotRecord,
+} from "@/api/learning-types"
 
 export type MockLearning = {
   clock: Clock
   checkinNeeded: boolean
+  schedule: Schedule
+  slots: SlotRecord[]
+  profile: ProfileEntry[]
 }
 
 export function learningFixture(): MockLearning {
@@ -18,5 +26,8 @@ export function learningFixture(): MockLearning {
       dailyLimitMinutes: 270,
     },
     checkinNeeded: true,
+    schedule: { wakeTime: "", slots: [] },
+    slots: [],
+    profile: [],
   }
 }

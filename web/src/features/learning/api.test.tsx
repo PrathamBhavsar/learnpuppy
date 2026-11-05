@@ -4,6 +4,7 @@ import type { ReactNode } from "react"
 import { describe, expect, it } from "vitest"
 
 import { state } from "@/test/msw/db"
+import { learningFixture } from "@/test/msw/fixtures/learning"
 
 import { useClock, useLearningActions } from "./api"
 import { LockedScreen } from "./LockedScreen"
@@ -30,6 +31,7 @@ function ClockGate() {
 describe("learning clock (F23) is refresh-proof", () => {
   it("a brand-new mount with a brand-new query client still shows the server's gap", async () => {
     state.db.learning.set(WS, {
+      ...learningFixture(),
       clock: {
         bout: null,
         status: { status: "gap", remainingMinutes: 42 },
@@ -129,6 +131,7 @@ describe("useLearningActions (F23)", () => {
 
   it("an override lifts the gap and is recorded on the clock", async () => {
     state.db.learning.set(WS, {
+      ...learningFixture(),
       clock: {
         bout: null,
         status: { status: "gap", remainingMinutes: 100 },

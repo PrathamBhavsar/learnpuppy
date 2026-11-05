@@ -4,7 +4,10 @@ import type {
   CheckinRequest,
   CheckinResult,
   OverrideRequest,
+  SetProfileRequest,
+  SetScheduleRequest,
   StartBoutRequest,
+  SuggestSlotsRequest,
 } from "@/api/learning-types"
 
 import { state } from "../db"
@@ -108,5 +111,45 @@ export const learningHandlers = [
     e.checkinNeeded = false
     const result: CheckinResult = { reviewOnlySuggested: body.sleepHours < 6 }
     return HttpResponse.json(result)
+  }),
+
+  http.get(`${API}/schedule`, ({ params }) =>
+    HttpResponse.json(entry(params["ws"]).schedule)
+  ),
+
+  http.post(`${API}/schedule`, async ({ params, request }) => {
+    const e = entry(params["ws"])
+    const body = (await request.json()) as SetScheduleRequest
+    e.schedule = { wakeTime: body.wakeTime, slots: [...body.slots].sort() }
+    return HttpResponse.json(e.schedule)
+  }),
+
+  http.post(`${API}/schedule/suggest`, async ({ request }) => {
+    const { wakeTime } = (await request.json()) as SuggestSlotsRequest
+    const [h = 0, m = 0] = wakeTime.split(":").map(Number)
+    const first = h * 60 + m + 180
+    const slots = [0, 1, 2].map((i) => {
+      const min = (first + i * 210) % (24 * 60)
+      return `${String(Math.floor(min / 60)).padStart(2, "0")}:${String(min % 60).padStart(2, "0")}`
+    })
+    return HttpResponse.json({ slots })
+  }),
+
+  http.get(`${API}/schedule/track`, ({ params }) =>
+    HttpResponse.json({ slots: entry(params["ws"]).slots })
+  ),
+
+  http.get(`${API}/profile`, ({ params }) =>
+    HttpResponse.json({ entries: entry(params["ws"]).profile })
+  ),
+
+  http.post(`${API}/profile`, async ({ params, request }) => {
+    const e = entry(params["ws"])
+    const body = (await request.json()) as SetProfileRequest
+    e.profile = [
+      ...e.profile.filter((p) => p.key !== body.key),
+      { ts: Date.now(), key: body.key, value: body.value },
+    ]
+    return HttpResponse.json({ entries: e.profile })
   }),
 ]

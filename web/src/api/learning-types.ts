@@ -42,6 +42,21 @@ export type CheckinRequest = { sleepHours: number; note?: string }
 /** `reviewOnlySuggested`: self-reported sleep came in under the poor-sleep threshold (F04). */
 export type CheckinResult = { reviewOnlySuggested: boolean }
 
+/** F01: weekly slots and wake time. `.ics` export is deferred past G4. */
+export type Schedule = { wakeTime: string; slots: string[] }
+export type SetScheduleRequest = { wakeTime: string; slots: string[] }
+export type SuggestSlotsRequest = { wakeTime: string }
+export type SuggestSlotsResult = { slots: string[] }
+
+export type SlotState = "kept" | "missed" | "upcoming"
+export type SlotRecord = { day: number; slot: string; state: SlotState }
+export type TrackSlotsResult = { slots: SlotRecord[] }
+
+/** F34: dated profile entries; the latest per key wins. */
+export type ProfileEntry = { ts: number; key: string; value: string }
+export type SetProfileRequest = { key: string; value: string }
+export type ProfileResult = { entries: ProfileEntry[] }
+
 type Ws = { ws: string }
 type Res<T> = {
   200: { headers: Record<string, unknown>; content: { "application/json": T } }
@@ -76,6 +91,10 @@ type Path<M extends object> = {
 type Get<R> = Path<{ get: Bodyless<Res<R>> }>
 type Send<B> = Path<{ post: WithBody<Done, B> }>
 type Call<R, B> = Path<{ post: WithBody<Res<R>, B> }>
+type GetAndCall<R, B> = Path<{
+  get: Bodyless<Res<R>>
+  post: WithBody<Res<R>, B>
+}>
 
 export interface LearningPaths {
   "/workspaces/{ws}/learning/clock": Get<Clock>
@@ -86,4 +105,14 @@ export interface LearningPaths {
   "/workspaces/{ws}/learning/bout/override": Send<OverrideRequest>
   "/workspaces/{ws}/learning/checkin/needed": Get<CheckinNeeded>
   "/workspaces/{ws}/learning/checkin": Call<CheckinResult, CheckinRequest>
+  "/workspaces/{ws}/learning/schedule": GetAndCall<Schedule, SetScheduleRequest>
+  "/workspaces/{ws}/learning/schedule/suggest": Call<
+    SuggestSlotsResult,
+    SuggestSlotsRequest
+  >
+  "/workspaces/{ws}/learning/schedule/track": Get<TrackSlotsResult>
+  "/workspaces/{ws}/learning/profile": GetAndCall<
+    ProfileResult,
+    SetProfileRequest
+  >
 }
