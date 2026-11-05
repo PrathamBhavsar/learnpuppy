@@ -86,6 +86,11 @@ export type CloseReport = {
   resume?: string | null
 }
 
+export type BrainDumpResult = { missed: string[] }
+/** F32: a proposed first test for one review card; `due` is epoch ms. */
+export type ReviewDate = { cardId: string; label: string; due: number }
+export type ReviewDatesRequest = { dates: { cardId: string; due: number }[] }
+
 export type RegisterRow = {
   item: string
   belief: string
@@ -152,6 +157,12 @@ export interface MethodPaths {
   "/workspaces/{ws}/courses/{id}/close": Path<{
     post: Bodyless<Res<CloseReport>>
   }>
+  "/workspaces/{ws}/courses/{id}/braindump": Call<
+    BrainDumpResult,
+    { text: string }
+  >
+  "/workspaces/{ws}/courses/{id}/review-dates": Get<{ dates: ReviewDate[] }> &
+    Path<{ post: WithBody<Done, ReviewDatesRequest> }>
   "/workspaces/{ws}/courses/{id}/register": Get<{ rows: RegisterRow[] }>
   "/workspaces/{ws}/courses/{id}/mastery": Get<MasteryCount>
 }

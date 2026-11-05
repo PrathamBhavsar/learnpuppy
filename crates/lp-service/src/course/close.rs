@@ -1,14 +1,20 @@
 //! F29-F31: the Close screen's own numbers — a brain-dump diff, the close report, and the
-//! session log. All code, no model call. FSRS card creation and the Knowledge Graph write are
-//! M11's (`features/graph/`, `close.rs`'s own next layer); this only reports and logs what
-//! happened in the course's stored event log.
+//! session log, plus F32/F35: the batched review-date proposal and the Knowledge Graph write of
+//! confirmed facts (and only those). All code, no model call.
 
 use lp_core::course::{Course, CourseEvent};
+use lp_core::graph::{GraphNode, Provenance};
 use lp_core::method::mastery::{
     count_line, counts_for_lesson, fold_mastery, FactStatus, StatusCounts,
 };
 use lp_core::method::{next_step, Settings, Step};
+use lp_core::ports::{GraphStore, StoreResult, TrackerStore};
 use lp_store::FsCourseStore;
+
+use super::card_id;
+use crate::review;
+
+const DAY_MS: i64 = 86_400_000;
 
 fn words(s: &str) -> std::collections::HashSet<String> {
     s.to_lowercase()
@@ -142,6 +148,131 @@ pub fn write_session_log(
     Ok(report)
 }
 
+/// A Knowledge Graph node id for one confirmed key fact: stable, so closing twice never
+/// duplicates a node.
+fn fact_node_id(course: &str, lesson: &str, fact: usize) -> String {
+    format!("n_course_{course}_{lesson}_{fact}")
+}
+
+/// F35: one node per `Confirmed` key fact. Open, taught, multiple-choice-passed and parked facts
+/// never reach the graph.
+pub fn confirmed_nodes(course: &Course, events: &[CourseEvent], now: i64) -> Vec<GraphNode> {
+    let mastery = fold_mastery(course, events);
+    let at = chrono::DateTime::from_timestamp_millis(now).unwrap_or_default();
+    let mut out = Vec::new();
+    for l in &course.lessons {
+        for (i, f) in l.key_facts.iter().enumerate() {
+            if mastery.status(&l.id, i) != FactStatus::Confirmed {
+                continue;
+            }
+            out.push(GraphNode {
+                id: fact_node_id(&course.id, &l.id, i).into(),
+                name: f.chars().take(60).collect(),
+                statement: f.clone(),
+                aliases: vec![l.title.clone()],
+                created_at: at,
+                provenance: vec![Provenance {
+                    chat_id: course.id.as_str().into(),
+                    message_id: format!("{}#{i}", l.id).into(),
+                }],
+            });
+        }
+    }
+    out
+}
+
+/// Appends the confirmed facts not yet in the graph; returns how many were new.
+pub fn write_confirmed(
+    graph: &dyn GraphStore,
+    course: &Course,
+    events: &[CourseEvent],
+    now: i64,
+) -> StoreResult<usize> {
+    let have: std::collections::HashSet<_> = graph.nodes()?.into_iter().map(|n| n.id).collect();
+    let mut n = 0;
+    for node in confirmed_nodes(course, events, now) {
+        if !have.contains(&node.id) {
+            graph.append_node(&node)?;
+            n += 1;
+        }
+    }
+    Ok(n)
+}
+
+/// One proposed first test for a review card.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ReviewDate {
+    pub card_id: String,
+    pub item: String,
+    pub due: i64,
+}
+
+/// F32: a date for every item testing a confirmed fact. Default is FSRS's first interval (within
+/// a day); an item answered sure and wrong goes back to the first rung, so it is due now.
+pub fn propose_review_dates(course: &Course, events: &[CourseEvent], now: i64) -> Vec<ReviewDate> {
+    let mastery = fold_mastery(course, events);
+    let sure_wrong: std::collections::HashSet<&str> = events
+        .iter()
+        .filter_map(|e| match e {
+            CourseEvent::Answered {
+                item,
+                correct: false,
+                confidence: Some(c),
+                gap: false,
+                ..
+            } if *c >= 4 => Some(item.as_str()),
+            _ => None,
+        })
+        .collect();
+    let items: Vec<(&str, usize)> = course
+        .lessons
+        .iter()
+        .flat_map(|l| {
+            let mastery = &mastery;
+            l.items.iter().filter_map(move |it| {
+                let fact = it.tests?;
+                (mastery.status(&l.id, fact) == FactStatus::Confirmed)
+                    .then_some((it.id.as_str(), fact))
+            })
+        })
+        .collect();
+    let ids: Vec<String> = items.iter().map(|(i, _)| (*i).to_string()).collect();
+    review::propose_dates(&ids, now)
+        .into_iter()
+        .map(|(item, due)| ReviewDate {
+            card_id: card_id(&course.id, &item),
+            due: if sure_wrong.contains(item.as_str()) {
+                now
+            } else {
+                due
+            },
+            item,
+        })
+        .collect()
+}
+
+/// Applies the learner's chosen dates to cards not yet reviewed. A first test is never more than
+/// one day out, whatever date is sent. Returns how many cards changed.
+pub fn apply_review_dates(
+    tracker: &dyn TrackerStore,
+    dates: &[(String, i64)],
+    now: i64,
+) -> StoreResult<usize> {
+    let mut n = 0;
+    for (id, due) in dates {
+        let Some(mut c) = tracker.card(id)? else {
+            continue;
+        };
+        if c.card.reps > 0 {
+            continue;
+        }
+        c.card.due = (*due).clamp(now, now + DAY_MS);
+        tracker.upsert_card(&c)?;
+        n += 1;
+    }
+    Ok(n)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -251,5 +382,100 @@ mod tests {
         write_session_log(&store, "c", &c, &[], &Settings::default(), "2026-11-05", 1).unwrap();
         let read = store.read_session_log("c", "2026-11-05", 1).unwrap();
         assert!(read.contains("## 2026-11-05"));
+    }
+
+    fn confirmed_events() -> Vec<CourseEvent> {
+        vec![
+            CourseEvent::Shown {
+                ts: 0,
+                lesson: "l00".into(),
+            },
+            ans("l00-i0", true, 3),
+            CourseEvent::Shown {
+                ts: 0,
+                lesson: "l00".into(),
+            },
+            CourseEvent::RecallGraded {
+                ts: 0,
+                item: "l00-i1".into(),
+                correct: true,
+                source: String::new(),
+            },
+        ]
+    }
+
+    #[test]
+    fn only_confirmed_facts_reach_the_graph() {
+        let c = course();
+        assert!(confirmed_nodes(&c, &[], 0).is_empty());
+        let nodes = confirmed_nodes(&c, &confirmed_events(), 0);
+        assert!(nodes
+            .iter()
+            .all(|n| n.statement != "nucleus holds dna" || nodes.len() == 2));
+        let mastery = fold_mastery(&c, &confirmed_events());
+        let confirmed = (0..2)
+            .filter(|i| mastery.status("l00", *i) == FactStatus::Confirmed)
+            .count();
+        assert_eq!(nodes.len(), confirmed);
+    }
+
+    #[test]
+    fn write_confirmed_is_idempotent() {
+        let d = tempfile::tempdir().unwrap();
+        let g = lp_store::FsGraphStore::open(d.path().join("g")).unwrap();
+        let c = course();
+        let ev = confirmed_events();
+        let first = write_confirmed(&g, &c, &ev, 0).unwrap();
+        assert_eq!(write_confirmed(&g, &c, &ev, 0).unwrap(), 0);
+        assert_eq!(g.nodes().unwrap().len(), first);
+    }
+
+    #[test]
+    fn review_dates_are_within_a_day_and_sure_and_wrong_is_due_now() {
+        let c = course();
+        let mut ev = confirmed_events();
+        let now = 1_000_000;
+        let dates = propose_review_dates(&c, &ev, now);
+        assert!(dates.iter().all(|d| d.due > now && d.due <= now + DAY_MS));
+        ev.push(ans("l00-i0", false, 5));
+        let sw = propose_review_dates(&c, &ev, now);
+        for d in sw.iter().filter(|d| d.item == "l00-i0") {
+            assert_eq!(d.due, now);
+        }
+    }
+
+    #[test]
+    fn apply_review_dates_clamps_to_one_day_and_skips_reviewed_cards() {
+        use lp_core::ports::FlashCard;
+        let d = tempfile::tempdir().unwrap();
+        let t = lp_store::SqliteTrackerStore::open(d.path().join("t")).unwrap();
+        let mk = |id: &str, reps: u32| {
+            let mut card = lp_core::fsrs::Card::new(i64::MAX / 2);
+            card.reps = reps;
+            FlashCard {
+                id: id.into(),
+                front: "q".into(),
+                options: ["a".into(), "b".into(), "c".into(), "d".into()],
+                correct_index: 0,
+                rationale: String::new(),
+                card,
+            }
+        };
+        t.upsert_card(&mk("new", 0)).unwrap();
+        t.upsert_card(&mk("old", 3)).unwrap();
+        let now = 5_000;
+        let n = apply_review_dates(
+            &t,
+            &[
+                ("new".into(), now + 9 * DAY_MS),
+                ("old".into(), now),
+                ("none".into(), now),
+            ],
+            now,
+        )
+        .unwrap();
+        assert_eq!(n, 1);
+        assert_eq!(t.card("new").unwrap().unwrap().card.due, now + DAY_MS);
+        assert_eq!(t.card("old").unwrap().unwrap().card.due, i64::MAX / 2);
     }
 }

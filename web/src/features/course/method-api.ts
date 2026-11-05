@@ -6,6 +6,7 @@ import type {
   InsertPrereqRequest,
   MethodAnswerRequest,
   MethodStep,
+  ReviewDatesRequest,
 } from "@/api/method-types"
 
 const base = (ws: string, id: string) =>
@@ -50,6 +51,21 @@ export function useRegister(ws: string, id: string, enabled: boolean) {
           signal,
         })
       ).rows,
+  })
+}
+
+/** F32: the batched first-test proposal, fetched once the report is up. */
+export function useReviewDates(ws: string, id: string, enabled: boolean) {
+  return useQuery({
+    queryKey: [...base(ws, id), "review-dates"],
+    enabled,
+    queryFn: async ({ signal }) =>
+      unwrap(
+        await methodApi.GET("/workspaces/{ws}/courses/{id}/review-dates", {
+          params: { path: { ws, id } },
+          signal,
+        })
+      ).dates,
   })
 }
 
@@ -131,6 +147,23 @@ export function useMethodActions(ws: string, id: string) {
           params: { path },
           body: { lesson },
         }),
+    }),
+    brainDump: useMutation({
+      mutationFn: async (text: string) =>
+        unwrap(
+          await methodApi.POST("/workspaces/{ws}/courses/{id}/braindump", {
+            params: { path },
+            body: { text },
+          })
+        ),
+    }),
+    saveDates: useMutation({
+      mutationFn: async (body: ReviewDatesRequest) =>
+        await methodApi.POST("/workspaces/{ws}/courses/{id}/review-dates", {
+          params: { path },
+          body,
+        }),
+      onSuccess: () => qc.invalidateQueries({ queryKey: keys.ws(ws).all }),
     }),
     close: useMutation({
       mutationFn: async () =>

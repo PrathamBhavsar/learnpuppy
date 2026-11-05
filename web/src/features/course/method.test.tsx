@@ -103,9 +103,20 @@ describe("Method lesson", () => {
     )
     await user.click(screen.getByRole("button", { name: "Continue" }))
     await user.click(await screen.findByRole("button", { name: /back/ }))
+    // Close starts with a blank brain dump, then the report and the batched review dates.
+    const dump = await screen.findByTestId("course-braindump")
+    await user.type(within(dump).getByLabelText("Your brain dump"), "a poll")
+    await user.click(within(dump).getByRole("button", { name: "Check" }))
+    expect(await screen.findByTestId("braindump-missed")).toHaveTextContent(
+      "poll returns a status"
+    )
+    await user.click(screen.getByRole("button", { name: "Finish" }))
     expect(await screen.findByTestId("course-close")).toHaveTextContent(
       "1 of 2 facts solid"
     )
+    const dates = await screen.findByTestId("course-review-dates")
+    await user.click(within(dates).getByRole("button", { name: "Save dates" }))
+    expect(await screen.findByText(/Dates saved/)).toBeInTheDocument()
     expect(modelCalls).toBe(0)
   })
 

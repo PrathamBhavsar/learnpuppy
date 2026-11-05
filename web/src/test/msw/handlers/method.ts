@@ -10,6 +10,7 @@ import type {
   MethodAnswerResult,
   MethodStep,
   RegisterRow,
+  ReviewDate,
 } from "@/api/method-types"
 
 import { state } from "../db"
@@ -96,6 +97,25 @@ export const methodHandlers = [
     }
     return HttpResponse.json(report)
   }),
+
+  http.post(`${API}/braindump`, async ({ request }) => {
+    const { text } = (await request.json()) as { text: string }
+    const missed = text.includes("status") ? [] : ["poll returns a status"]
+    return HttpResponse.json({ missed })
+  }),
+
+  http.get(`${API}/review-dates`, () => {
+    const dates: ReviewDate[] = [
+      {
+        cardId: "c:m:m1",
+        label: "poll returns a status",
+        due: Date.now() + 20 * 3_600_000,
+      },
+    ]
+    return HttpResponse.json({ dates })
+  }),
+
+  http.post(`${API}/review-dates`, () => noContent()),
 
   http.get(`${API}/mastery`, () => {
     const mastery: MasteryCount = { countLine: "0 of 2 facts solid" }

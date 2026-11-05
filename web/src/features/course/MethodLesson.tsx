@@ -146,7 +146,13 @@ export function MethodLesson({
         />
       ) : null}
       {step?.step === "close" ? (
-        <Close actions={actions} report={report} onReport={setReport} />
+        <Close
+          ws={ws}
+          id={id}
+          actions={actions}
+          report={report}
+          onReport={setReport}
+        />
       ) : null}
       {step ? (
         <div className="border-t pt-3">
