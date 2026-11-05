@@ -14,6 +14,7 @@ pub mod graph;
 pub mod graph_mut;
 pub mod ingest;
 pub mod ingest_svc;
+pub mod learning;
 pub mod paths;
 pub mod review;
 pub mod settings;
