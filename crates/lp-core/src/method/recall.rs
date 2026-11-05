@@ -3,7 +3,7 @@
 //! call. A match confirms the fact directly. Rubric false negatives (right answer, different
 //! words) are accepted; the rubric must never produce a false positive.
 
-use crate::course::{fold_accents, normalise, Item};
+use crate::course::{fold_accents, normalise, CourseEvent, Item};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum RubricResult {
@@ -35,6 +35,32 @@ pub fn rubric_check(item: &Item, text: &str) -> RubricResult {
     } else {
         RubricResult::NoMatch
     }
+}
+
+/// Items with a `RecallPending` not yet followed by a `RecallGraded` or `Answered` on the same
+/// item: `(item, lesson, text)`, in first-pending order, each with its most recent pending text.
+/// A later grader run batches these into one cheap call (F15's fallback when the rubric does
+/// not match); this is how it finds what still needs grading.
+pub fn unresolved_pending(events: &[CourseEvent]) -> Vec<(String, String, String)> {
+    let mut open: Vec<(String, String, String)> = Vec::new();
+    for ev in events {
+        match ev {
+            CourseEvent::RecallPending {
+                item, lesson, text, ..
+            } => match open.iter_mut().find(|(i, ..)| i == item) {
+                Some(e) => {
+                    e.1 = lesson.clone();
+                    e.2 = text.clone();
+                }
+                None => open.push((item.clone(), lesson.clone(), text.clone())),
+            },
+            CourseEvent::RecallGraded { item, .. } | CourseEvent::Answered { item, .. } => {
+                open.retain(|(i, ..)| i != item);
+            }
+            _ => {}
+        }
+    }
+    open
 }
 
 #[cfg(test)]
@@ -101,6 +127,58 @@ mod tests {
         assert_eq!(
             rubric_check(&it, "well, my name is Alex"),
             RubricResult::Match
+        );
+    }
+
+    fn pending(item: &str, lesson: &str, text: &str) -> CourseEvent {
+        CourseEvent::RecallPending {
+            ts: 0,
+            item: item.into(),
+            lesson: lesson.into(),
+            text: text.into(),
+        }
+    }
+
+    fn graded(item: &str) -> CourseEvent {
+        CourseEvent::RecallGraded {
+            ts: 0,
+            item: item.into(),
+            correct: true,
+            source: "model".into(),
+        }
+    }
+
+    #[test]
+    fn unresolved_pending_tracks_open_items_in_first_seen_order() {
+        let events = [pending("l00-i0", "l00", "a"), pending("l00-i1", "l00", "b")];
+        assert_eq!(
+            unresolved_pending(&events),
+            vec![
+                ("l00-i0".to_string(), "l00".to_string(), "a".to_string()),
+                ("l00-i1".to_string(), "l00".to_string(), "b".to_string()),
+            ]
+        );
+    }
+
+    #[test]
+    fn a_graded_event_resolves_its_pending_item() {
+        let events = [pending("l00-i0", "l00", "a"), graded("l00-i0")];
+        assert!(unresolved_pending(&events).is_empty());
+    }
+
+    #[test]
+    fn a_later_pending_on_the_same_item_keeps_the_newest_text() {
+        let events = [
+            pending("l00-i0", "l00", "first try"),
+            pending("l00-i0", "l00", "second try"),
+        ];
+        assert_eq!(
+            unresolved_pending(&events),
+            vec![(
+                "l00-i0".to_string(),
+                "l00".to_string(),
+                "second try".to_string()
+            )]
         );
     }
 }

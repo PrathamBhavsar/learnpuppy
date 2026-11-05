@@ -241,6 +241,14 @@ pub fn preview_entries(card: &fsrs::Card, now: i64) -> [(Rating, i64, String); 4
     std::array::from_fn(|i| (ratings[i], ivls[i], format_interval_ms(ivls[i])))
 }
 
+/// F32: the Close screen's batched date proposal for facts confirmed just now, before any card
+/// for them exists yet — each from a brand-new card's own `Good` preview, so the first test
+/// lands well within a day. The learner may change any of these; this is only the default.
+pub fn propose_dates(items: &[String], now: i64) -> Vec<(String, i64)> {
+    let good = fsrs::preview(None, now)[2]; // [again, hard, good, easy] offsets, 0-indexed
+    items.iter().map(|id| (id.clone(), now + good)).collect()
+}
+
 /// The numbers on the review header.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Stats {
@@ -383,6 +391,20 @@ pub(crate) mod tests {
         assert!(std::fs::read_to_string(a.join("sync-deva.jsonl"))
             .unwrap()
             .contains("\"kind\":\"card\""));
+    }
+
+    #[test]
+    fn propose_dates_proposes_one_date_per_item_within_a_day() {
+        let now = 1_767_258_000_000;
+        let out = propose_dates(&["l00-i0".to_string(), "l00-i1".to_string()], now);
+        assert_eq!(
+            out.iter().map(|(id, _)| id.clone()).collect::<Vec<_>>(),
+            vec!["l00-i0".to_string(), "l00-i1".to_string()]
+        );
+        for (_, due) in &out {
+            assert!(*due > now && *due - now < MS_DAY);
+        }
+        assert_eq!(out[0].1, out[1].1);
     }
 
     #[test]

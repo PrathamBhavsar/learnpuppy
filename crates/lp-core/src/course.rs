@@ -283,6 +283,19 @@ pub enum CourseEvent {
         lesson: String,
         before: String,
     },
+    /// A recall answer that the code rubric did not match and that could not be graded on the
+    /// spot (no provider available, or a batch call failed): neither correct nor incorrect yet
+    /// (F15). A later grader run matches this by item id and appends `RecallGraded` to resolve
+    /// it; `method::recall::unresolved_pending` finds every pending item still waiting.
+    RecallPending {
+        #[serde(default)]
+        ts: i64,
+        item: String,
+        #[serde(default)]
+        lesson: String,
+        #[serde(default)]
+        text: String,
+    },
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -910,7 +923,7 @@ fn item_text<'a>(course: &'a Course, id: &str) -> Option<&'a str> {
 }
 
 /// Find an item by id along with the lesson that owns it.
-pub(crate) fn find_item<'a>(course: &'a Course, id: &str) -> Option<(&'a Lesson, &'a Item)> {
+pub fn find_item<'a>(course: &'a Course, id: &str) -> Option<(&'a Lesson, &'a Item)> {
     course
         .lessons
         .iter()

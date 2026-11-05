@@ -11,6 +11,13 @@ mod progress;
 #[cfg(test)]
 mod tests;
 
+// Learning-method (method_version >= 1) course service: F05-F21, F29-F32. Stand-alone from the
+// cheap-tutor flow above, which owns method_version 0.
+pub mod close;
+pub mod grading;
+pub mod plan;
+pub mod verify_job;
+
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
