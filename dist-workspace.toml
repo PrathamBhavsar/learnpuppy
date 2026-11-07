@@ -16,7 +16,7 @@ install-path = "CARGO_HOME"
 # Where to host releases
 hosting = "github"
 # Build web/dist (embedded by rust-embed) before cargo build
-github-build-setup = "build-setup.yml"
+github-build-setup = "../build-setup.yml"
 # Checksums
 checksum = "sha256"
 # Whether to install an updater program

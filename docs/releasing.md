@@ -9,7 +9,7 @@ Tag push `vX.Y.Z` -> GitHub Actions `.github/workflows/release.yml` (generated b
 3. `git tag vX.Y.Z && git push origin vX.Y.Z`.
 4. Workflow: `plan` -> `build-local-artifacts` (4 targets) -> `build-global-artifacts` (installer, checksums) -> `host` -> `announce`.
 
-Each build job first runs `.github/workflows/build-setup.yml`: setup bun, `bun install --frozen-lockfile && bun run build` in `web/`, `touch crates/lp-server/src/assets.rs` so rust-embed re-embeds `web/dist`. `web/dist` is not committed.
+Each build job first runs `.github/build-setup.yml`: setup bun, `bun install --frozen-lockfile && bun run build` in `web/`, `touch crates/lp-server/src/assets.rs` so rust-embed re-embeds `web/dist`. `web/dist` is not committed.
 
 ## Assets
 
@@ -39,4 +39,4 @@ gh release download --repo PrathamBhavsar/learnpuppy --pattern 'lp-server-instal
 
 ## Regenerate workflow
 
-After editing `dist-workspace.toml` or `.github/workflows/build-setup.yml`: `dist generate` then `dist plan`. Never hand-edit `release.yml`.
+After editing `dist-workspace.toml` or `.github/build-setup.yml`: `dist generate` then `dist plan`. Never hand-edit `release.yml`.
