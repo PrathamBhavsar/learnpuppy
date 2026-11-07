@@ -143,14 +143,16 @@ registerScene("graph", ({ cols, rows, rand }) => {
         }
       });
 
-      // nodes on top
+      // nodes on top, labels in a second pass so no later node or edge glyph cuts a label
       nodes.forEach((n) => {
         if (n.lit > 0.05) {
           set(n.x - 1, n.y, "(", 2, n.lit); set(n.x + 1, n.y, ")", 2, n.lit);
           set(n.x, n.y, "@", 2, 1);
-          for (let k = 0; k < n.label.length; k++) set(n.x + 3 + k, n.y, n.label[k], 2, Math.min(1, n.lit * 1.4), true);
         } else if (n.flash > 0.05) set(n.x, n.y, "O", 1, 0.5 + 0.5 * n.flash);
         else set(n.x, n.y, "o", 1, 0.62);
+      });
+      nodes.forEach((n) => {
+        if (n.lit > 0.05) for (let k = 0; k < n.label.length; k++) set(n.x + 3 + k, n.y, n.label[k], 2, Math.min(1, n.lit * 1.4), true);
       });
 
       // forgetting curve: drawn left to right by a cursor, holds, then repeats
