@@ -2,6 +2,9 @@
 
 Back to [Brain Index](/index.md). Related: [Overview](/overview.md), [Task DAG](/tasks/index.md).
 
+## 2026-11-07 — S3 marketing + docs site (feat/site)
+- Vite vanilla site in `site/`, pink skin on the shared kit, `graph` ASCII scene (pup + knowledge graph + synthetic forgetting curve). Review pass: pup rebuilt from ellipses, curve enlarged, pup mark in nav, repo-private note under the hero command, unsourced "3 GB" claim removed, platforms FAQ says the release workflow has not run on a tag. DESIGN.md added. Not done: six identical feature groups left as is; GitHub links stay while the repo is private.
+
 ## 2026-10-27 — Reverse Engineering & Master Plan Initialization
 - Inspected `/Applications/LearnHarness.app` (`v0.3.8`) using `rea-agents` (`/tmp/rea-learnharness.json`) and cloned `https://github.com/amosblomqvist/learnharness.git` (`/tmp/learnharness-repo`).
 - Audited all `learnharness` core contracts (`graph.ts`, `plan.ts`, `probe.ts`, `jobs.ts`, `chat.ts`, `chains.ts`, `question-core.ts`), agent tools (`probe`/`recall` vs `quiz`/`explain`, `probe_done`, `plan_init`, `problem`/`conclude`), and the 3-stage extraction pipeline (`Extractor -> Verdicts-Only Auditor -> Deterministic Merger` + `simplifyChains`).
