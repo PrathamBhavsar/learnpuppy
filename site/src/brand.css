@@ -1,0 +1,18 @@
+/* learnpuppy skin: hot pink on cool violet-black ink */
+:root {
+  --bg: #09080d;
+  --bg-2: #100e17;
+  --bg-3: #181522;
+  --line: #1f1b2b;
+  --line-2: #342e47;
+  --fg: #f0ecf7;
+  --fg-dim: #a8a0bd;
+  --accent: #ff6ad5;
+  --accent-ink: #09080d;
+}
+.hero h1 { font-size: clamp(2.5rem, 6vw, 5rem); max-width: 15ch; }
+@media (max-width: 760px) { .hero h1 { font-size: clamp(2.25rem, 11vw, 3rem); } }
+/* long receipt values must wrap on phones instead of widening the page */
+.live > * { min-width: 0; }
+.receipt .v { min-width: 0; overflow-wrap: anywhere; }
+@media (max-width: 560px) { .receipt .dots { display: none; } .receipt li { justify-content: space-between; } }

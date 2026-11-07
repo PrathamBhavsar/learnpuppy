@@ -1,0 +1,308 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-11-07T00:00:00Z",
+  "title": "Design System: LearnPuppy site",
+  "extensions": {
+    "colorMeta": {
+      "accent": {
+        "role": "primary",
+        "displayName": "Hot Pink",
+        "canonical": "#ff6ad5",
+        "tonalRamp": [
+          "#4a1a40",
+          "#701f5f",
+          "#9a2a82",
+          "#c8409f",
+          "#ee5cc6",
+          "#ff6ad5",
+          "#ff9be2",
+          "#ffd0f2"
+        ]
+      },
+      "accent-ink": {
+        "role": "primary",
+        "displayName": "Ink on Pink",
+        "canonical": "#09080d",
+        "tonalRamp": [
+          "#09080d",
+          "#100e17",
+          "#181522",
+          "#1f1b2b",
+          "#342e47",
+          "#5a5370",
+          "#a8a0bd",
+          "#f0ecf7"
+        ]
+      },
+      "ink": {
+        "role": "neutral",
+        "displayName": "Ink",
+        "canonical": "#09080d",
+        "tonalRamp": [
+          "#09080d",
+          "#100e17",
+          "#181522",
+          "#1f1b2b",
+          "#342e47",
+          "#5a5370",
+          "#a8a0bd",
+          "#f0ecf7"
+        ]
+      },
+      "ink-raised": {
+        "role": "neutral",
+        "displayName": "Raised Ink",
+        "canonical": "#100e17",
+        "tonalRamp": [
+          "#09080d",
+          "#100e17",
+          "#181522",
+          "#1f1b2b",
+          "#342e47",
+          "#5a5370",
+          "#a8a0bd",
+          "#f0ecf7"
+        ]
+      },
+      "ink-sunken": {
+        "role": "neutral",
+        "displayName": "Sunken Ink",
+        "canonical": "#181522",
+        "tonalRamp": [
+          "#09080d",
+          "#100e17",
+          "#181522",
+          "#1f1b2b",
+          "#342e47",
+          "#5a5370",
+          "#a8a0bd",
+          "#f0ecf7"
+        ]
+      },
+      "bone": {
+        "role": "neutral",
+        "displayName": "Bone",
+        "canonical": "#f0ecf7",
+        "tonalRamp": [
+          "#342e47",
+          "#5a5370",
+          "#7f7898",
+          "#a8a0bd",
+          "#c4bdd6",
+          "#ddd7ea",
+          "#f0ecf7",
+          "#faf8fd"
+        ]
+      },
+      "bone-dim": {
+        "role": "neutral",
+        "displayName": "Dim Bone",
+        "canonical": "#a8a0bd",
+        "tonalRamp": [
+          "#09080d",
+          "#100e17",
+          "#181522",
+          "#1f1b2b",
+          "#342e47",
+          "#5a5370",
+          "#a8a0bd",
+          "#f0ecf7"
+        ]
+      },
+      "hairline": {
+        "role": "neutral",
+        "displayName": "Hairline",
+        "canonical": "#1f1b2b",
+        "tonalRamp": [
+          "#09080d",
+          "#100e17",
+          "#181522",
+          "#1f1b2b",
+          "#342e47",
+          "#5a5370",
+          "#a8a0bd",
+          "#f0ecf7"
+        ]
+      },
+      "hairline-strong": {
+        "role": "neutral",
+        "displayName": "Strong Hairline",
+        "canonical": "#342e47",
+        "tonalRamp": [
+          "#09080d",
+          "#100e17",
+          "#181522",
+          "#1f1b2b",
+          "#342e47",
+          "#5a5370",
+          "#a8a0bd",
+          "#f0ecf7"
+        ]
+      }
+    },
+    "typographyMeta": {
+      "display": {
+        "displayName": "Display",
+        "purpose": "Hero h1 only, Geist Pixel Square, max 15ch."
+      },
+      "headline": {
+        "displayName": "Headline",
+        "purpose": "Section h2, pixel face."
+      },
+      "title": {
+        "displayName": "Title",
+        "purpose": "Group heads, flow steps, doc headings."
+      },
+      "body": {
+        "displayName": "Body",
+        "purpose": "Satoshi prose and ledes."
+      },
+      "label": {
+        "displayName": "Label",
+        "purpose": "Mono facts, receipt keys, meta lines."
+      },
+      "code": {
+        "displayName": "Code",
+        "purpose": "Commands and code blocks in Geist Mono."
+      }
+    },
+    "shadows": [],
+    "motion": [
+      {
+        "name": "ease",
+        "value": "cubic-bezier(0.16, 1, 0.3, 1)",
+        "purpose": "Button and marker transitions (0.2s to 0.25s)."
+      },
+      {
+        "name": "hero-rise",
+        "value": "0.9s var(--ease) both, translateY(14px) fade, staggered 0.08s to 0.3s",
+        "purpose": "The single authored entrance on hero copy; disabled under reduced motion."
+      }
+    ],
+    "breakpoints": [
+      {
+        "name": "nav-collapse",
+        "value": "760px"
+      },
+      {
+        "name": "grid-collapse",
+        "value": "860px"
+      },
+      {
+        "name": "docs-toc-hide",
+        "value": "1100px"
+      }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "Pink fill, ink text; the main call to action.",
+      "html": "<a class=\"ds-btn-primary\" href=\"#\">Get started</a>",
+      "css": ".ds-btn-primary { display: inline-flex; align-items: center; height: 48px; padding-inline: 20px; background: var(--accent, #ff6ad5); color: var(--accent-ink, #09080d); border: 1px solid var(--accent, #ff6ad5); font-weight: 700; font-size: 0.9375rem; text-decoration: none; transition: background 0.2s, border-color 0.2s, transform 0.2s; } .ds-btn-primary:hover { background: var(--fg, #f0ecf7); border-color: var(--fg, #f0ecf7); } .ds-btn-primary:active { transform: translateY(1px); } .ds-btn-primary:focus-visible { outline: 2px solid var(--accent, #ff6ad5); outline-offset: 3px; }"
+    },
+    {
+      "name": "Default Button",
+      "kind": "button",
+      "refersTo": "button-default",
+      "description": "Hairline outline button for secondary actions.",
+      "html": "<a class=\"ds-btn\" href=\"#\">Star on GitHub</a>",
+      "css": ".ds-btn { display: inline-flex; align-items: center; height: 48px; padding-inline: 20px; border: 1px solid var(--line-2, #342e47); color: var(--fg, #f0ecf7); font-weight: 700; font-size: 0.9375rem; text-decoration: none; transition: background 0.2s, border-color 0.2s, transform 0.2s; } .ds-btn:hover { border-color: var(--fg, #f0ecf7); background: var(--bg-3, #181522); } .ds-btn:active { transform: translateY(1px); } .ds-btn:focus-visible { outline: 2px solid var(--accent, #ff6ad5); outline-offset: 3px; }"
+    },
+    {
+      "name": "Ink Button",
+      "kind": "button",
+      "refersTo": "button-ink",
+      "description": "Ink fill with pink text; used only on the pink install band.",
+      "html": "<div class=\"ds-band\"><a class=\"ds-btn-ink\" href=\"#\">Full install guide</a></div>",
+      "css": ".ds-band { background: var(--accent, #ff6ad5); padding: 24px; } .ds-btn-ink { display: inline-flex; align-items: center; height: 48px; padding-inline: 20px; background: var(--accent-ink, #09080d); color: var(--accent, #ff6ad5); border: 1px solid var(--accent-ink, #09080d); font-weight: 700; font-size: 0.9375rem; text-decoration: none; transition: background 0.2s, color 0.2s; } .ds-btn-ink:hover { background: transparent; color: var(--accent-ink, #09080d); } .ds-btn-ink:focus-visible { outline: 2px solid var(--accent-ink, #09080d); outline-offset: 3px; }"
+    },
+    {
+      "name": "Copy Line",
+      "kind": "input",
+      "refersTo": "copy-line",
+      "description": "One-line install command with square copy button.",
+      "html": "<div class=\"ds-copy\"><code>cargo build --release</code><button type=\"button\" aria-label=\"Copy\">⧉</button></div>",
+      "css": ".ds-copy { display: flex; align-items: center; max-width: 560px; background: var(--bg-2, #100e17); border: 1px solid var(--line-2, #342e47); } .ds-copy code { flex: 1; padding: 14px 16px; font-family: var(--font-mono, 'Geist Mono', monospace); font-size: 0.8125rem; color: var(--fg, #f0ecf7); } .ds-copy code::before { content: '$ '; color: var(--accent, #ff6ad5); } .ds-copy button { width: 48px; align-self: stretch; border: 0; border-left: 1px solid var(--line-2, #342e47); background: none; color: var(--fg-dim, #a8a0bd); cursor: pointer; transition: color 0.15s, background 0.15s; } .ds-copy button:hover { color: var(--accent-ink, #09080d); background: var(--accent, #ff6ad5); } .ds-copy button:focus-visible { outline: 2px solid var(--accent, #ff6ad5); outline-offset: 3px; }"
+    },
+    {
+      "name": "Install Tabs",
+      "kind": "nav",
+      "refersTo": "code-panel",
+      "description": "Segmented tablist with hairline dividers and an ink code panel, on the pink band.",
+      "html": "<div class=\"ds-band\"><div class=\"ds-tabs\" role=\"tablist\"><button role=\"tab\" aria-selected=\"true\">Docker</button><button role=\"tab\" aria-selected=\"false\">Binary</button></div><div class=\"ds-code\"><pre><span class=\"p\">$ </span>docker compose up -d</pre></div></div>",
+      "css": ".ds-band { background: var(--accent, #ff6ad5); padding: 24px; } .ds-tabs { display: flex; width: max-content; border: 1px solid var(--accent-ink, #09080d); } .ds-tabs button { padding: 10px 18px; border: 0; background: none; color: var(--accent-ink, #09080d); font-weight: 700; font-size: 0.9063rem; cursor: pointer; transition: background 0.15s, color 0.15s; } .ds-tabs button + button { border-left: 1px solid var(--accent-ink, #09080d); } .ds-tabs button[aria-selected='true'] { background: var(--accent-ink, #09080d); color: var(--accent, #ff6ad5); } .ds-tabs button:focus-visible { outline: 2px solid var(--accent-ink, #09080d); outline-offset: 3px; } .ds-code { margin-top: 14px; background: var(--accent-ink, #09080d); color: var(--fg, #f0ecf7); } .ds-code pre { margin: 0; padding: 20px; font-family: var(--font-mono, 'Geist Mono', monospace); font-size: 0.8125rem; line-height: 1.75; } .ds-code .p { color: var(--accent, #ff6ad5); }"
+    },
+    {
+      "name": "Receipt Row",
+      "kind": "custom",
+      "refersTo": "label",
+      "description": "Dashed mono fact row with dotted leader, used for real project numbers.",
+      "html": "<ul class=\"ds-receipt\"><li><span class=\"k\">License</span><span class=\"dots\"></span><span class=\"v\">127.0.0.1</span></li><li><span class=\"k\">Bind address</span><span class=\"dots\"></span><span class=\"v\">0.00</span></li></ul>",
+      "css": ".ds-receipt { list-style: none; margin: 0; padding: 0; font-family: var(--font-mono, 'Geist Mono', monospace); font-size: 0.9375rem; border-top: 1px dashed var(--line-2, #342e47); } .ds-receipt li { display: flex; align-items: baseline; gap: 12px; padding: 14px 0; border-bottom: 1px dashed var(--line-2, #342e47); } .ds-receipt .k { color: var(--fg-dim, #a8a0bd); text-transform: uppercase; letter-spacing: 0.04em; font-size: 0.8125rem; } .ds-receipt .dots { flex: 1; min-width: 24px; border-bottom: 1px dotted var(--line-2, #342e47); transform: translateY(-4px); } .ds-receipt .v { color: var(--fg, #f0ecf7); text-align: right; }"
+    },
+    {
+      "name": "Nav Bar",
+      "kind": "nav",
+      "refersTo": "button-primary",
+      "description": "Sticky ink nav with pixel wordmark, dim links, and primary action.",
+      "html": "<nav class=\"ds-nav\"><a class=\"mark\" href=\"#\">bun<b>f</b>iiliate</a><span class=\"links\"><a href=\"#\" aria-current=\"page\">Docs</a><a href=\"#\">GitHub</a></span></nav>",
+      "css": ".ds-nav { display: flex; align-items: center; gap: 32px; height: 64px; padding-inline: 24px; background: var(--bg, #09080d); border-bottom: 1px solid var(--line, #1f1b2b); } .ds-nav .mark { font-family: var(--font-display, 'Geist Pixel Square', monospace); font-size: 1.375rem; color: var(--fg, #f0ecf7); text-decoration: none; } .ds-nav .mark b { color: var(--accent, #ff6ad5); font-weight: 400; } .ds-nav .links { display: flex; gap: 28px; font-weight: 500; font-size: 0.9375rem; } .ds-nav .links a { color: var(--fg-dim, #a8a0bd); text-decoration: none; transition: color 0.15s; } .ds-nav .links a:hover, .ds-nav .links a[aria-current] { color: var(--fg, #f0ecf7); } .ds-nav a:focus-visible { outline: 2px solid var(--accent, #ff6ad5); outline-offset: 3px; }"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Pup at the Graph",
+    "overview": "The site is a dark study sheet: violet-black ink ground, lavender-bone text, 1px hairlines, square corners, pixel-grid display type. Warm and a little playful in the hero, plain and exact everywhere else. The hero shows the mechanism: an ASCII pixel pup behind a knowledge graph whose edges carry pulses and whose picked nodes light up, plus a forgetting curve that decays and jumps back at each review. The curve is labelled a synthetic illustration, never a result; the rest of the page is receipts, rows, and rules rather than cards and tiles.\n\nOne saturated field per page carries the brand color at scale: the install band, drenched in hot pink with ink-black type. Elsewhere the accent is a sparse mark (a link, an icon, a focus ring, a node). Dark only; there is no light theme.\n\nThe UI kit (`site/src/kit/`) is shared by two sibling sites, bunfiiliate (acid green) and Deskpost (amber), alongside LearnPuppy (pink). Each overrides only the `--accent`, `--bg*`, and `--fg*` custom properties in `site/src/brand.css`. This document records the LearnPuppy skin; the structure, type, hairlines, and components below belong to the kit and must not be forked per brand.",
+    "keyCharacteristics": [
+      "Pixel display type over a quiet humanist body; mono only for code, figures, and facts.",
+      "Square corners everywhere; separation by 1px hairlines and tonal steps, never shadows.",
+      "One drenched accent band; sparse accent marks elsewhere.",
+      "Receipt forms (dashed rows, dotted leaders, real facts only) instead of icon-card grids.",
+      "Canvas is decoration only: aria-hidden, reduced-motion renders a still frame, all copy is real text."
+    ],
+    "rules": [
+      {
+        "name": "The One Field Rule",
+        "body": "Exactly one saturated pink field per page, the install band. Everything else uses the accent as a mark, never as a second block of color.",
+        "section": "colors"
+      },
+      {
+        "name": "The Skin Seam Rule",
+        "body": "A brand skin changes only --accent, --accent-ink, --bg*, --fg*. Never hardcode a hex in component CSS; read the token (the canvas reads tones from the computed custom properties).",
+        "section": "colors"
+      },
+      {
+        "name": "The Mono Is Literal Rule",
+        "body": "Geist Mono appears only for code, commands, figures, and facts; never for decorative headings or labels that are not data.",
+        "section": "typography"
+      },
+      {
+        "name": "The Pixel Is Display Rule",
+        "body": "The pixel face is used for headings, wordmark, and the faq \"+\" only, always weight 400 and letter-spacing 0; body text is never pixel.",
+        "section": "typography"
+      },
+      {
+        "name": "The Hairline Depth Rule",
+        "body": "Separate surfaces with a 1px line or a tonal step. No shadows, blur, or glass.",
+        "section": "elevation"
+      }
+    ],
+    "dos": [
+      "Do keep every corner square and every divider a 1px hairline.",
+      "Do use Hugeicons through the kit icon set for all icons.",
+      "Do keep real facts only (bind address, data folder, supported CLIs, known limits) and hide a figure rather than invent it; no benchmarks.",
+      "Do keep text in real DOM; the canvas is decorative and aria-hidden.",
+      "Do keep a 2px accent focus ring with 3px offset (ink on the pink band).",
+      "Do let sibling brands re-skin through `brand.css` tokens only."
+    ],
+    "donts": [
+      "Don't add shadows, glass, gradients as decoration, or rounded corners; the only gradient is the hero legibility scrim.",
+      "Don't introduce a second saturated field or a light theme.",
+      "Don't build icon-card grids, hero metric tiles, fake logos, invented user counts, or retention claims; the forgetting curve stays labelled synthetic.",
+      "Don't use Geist Mono or the pixel face for body copy.",
+      "Don't hardcode brand colors in kit CSS or JS."
+    ]
+  }
+}

@@ -90,3 +90,5 @@ Designed for parallel multi-worktree execution via Orca (`orca worktree create -
 |---|---|---|---|---|---|---|
 | `T70` | **Phase W (Next)**: Windows Desktop Packaging (`x86_64-pc-windows-msvc`), WebView2 installer bundle, and Windows `%APPDATA%` / `%USERPROFILE%\.claude` path discovery | Windows 11 Desktop | `codex gpt-5.4 (high)` | `D60` | [Dioxus 0.7 & lp-ui Architecture](/architecture/dioxus-ui.md) | `cancelled` |
 | `T80` | **Phase M (Last)**: iOS & Android Mobile Companion (`dioxus` `mobile` feature), touch gesture Graph Canvas, and LAN/folder `sync-<device>.jsonl` + `nodes.jsonl` replication for mobile FSRS review | iOS & Android | `agy claude-sonnet-4-6 (high)` | `T70` | [Dioxus 0.7 & lp-ui Architecture](/architecture/dioxus-ui.md) | `cancelled` |
+| `S3` | **Site**: Vite marketing + docs site in `site/` (branch `feat/site`, done, unmerged). Release workflow on `feat/release`. |
+
