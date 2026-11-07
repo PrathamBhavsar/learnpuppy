@@ -6,6 +6,7 @@ members = ["crates/lp-core", "crates/lp-store", "crates/lp-cli-driver", "crates/
 edition = "2021"
 license = "MIT"
 publish = false
+repository = "https://github.com/PrathamBhavsar/learnpuppy"
 version = "0.1.0"
 
 [workspace.lints.rust]
@@ -42,3 +43,8 @@ reqwest = { version = "0.12", features = ["json", "stream", "rustls-tls"] }
 scraper = "0.29"
 proptest = "1"
 tempfile = "3"
+
+# The profile that 'dist' will build with
+[profile.dist]
+inherits = "release"
+lto = "thin"
