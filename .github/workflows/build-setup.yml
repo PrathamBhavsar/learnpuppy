@@ -1,0 +1,14 @@
+# Injected by dist before every build job. web/dist is embedded by rust-embed,
+# so the SPA must exist before cargo compiles lp-server.
+- name: Install bun
+  uses: oven-sh/setup-bun@v2
+  with:
+    bun-version: 1.3.14
+- name: Build web SPA
+  shell: bash
+  run: |
+    cd web
+    bun install --frozen-lockfile
+    bun run build
+    cd ..
+    touch crates/lp-server/src/assets.rs
