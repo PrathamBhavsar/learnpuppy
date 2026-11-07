@@ -2,35 +2,30 @@
 // (a synthetic illustration, not data) decays and jumps back up at each review tick.
 import { registerScene } from "../kit/ascii.js";
 
-// # body, @ ear and nose, o muzzle and paws. Eyes are holes so they can blink.
-const PUP = [
-  "         ############         ",
-  "      ##################      ",
-  "   @@@##################@@@   ",
-  "  @@@@##################@@@@  ",
-  "  @@@@###  ########  ###@@@@  ",
-  "  @@@@###  ########  ###@@@@  ",
-  "  @@@@##################@@@@  ",
-  "   @@@#####ooo@@ooo#####@@@   ",
-  "   @@@#####oooooooo#####@@@   ",
-  "    @@#####ooo  ooo#####@@    ",
-  "     @######oo  oo######@     ",
-  "        #### oooo ####        ",
-  "       ################       ",
-  "      ##################      ",
-  "     ####################     ",
-  "     ####  ########  ####     ",
-  "     ####  ########  ####     ",
-  "     ooo#  ########  #ooo     ",
-];
-const EYES = [[9, 4], [10, 4], [9, 5], [10, 5], [19, 4], [20, 4], [19, 5], [20, 5]];
+// Built from ellipses so the silhouette reads as a pup: # head and body, @ floppy ears, o muzzle, N nose, E eyes.
+const PW_ = 30, PH_ = 20;
+const PUP = (() => {
+  const g = Array.from({ length: PH_ }, () => Array(PW_).fill(" "));
+  const fill = (cx, cy, rx, ry, ch) => {
+    for (let y = 0; y < PH_; y++) for (let x = 0; x < PW_; x++) if (((x - cx) / rx) ** 2 + ((y - cy) / ry) ** 2 <= 1) g[y][x] = ch;
+  };
+  fill(15, 17, 9.5, 3.4, "#");       // body
+  fill(15, 7, 11, 6.5, "#");         // head
+  fill(4, 9, 3.6, 6.2, "@"); fill(25, 9, 3.6, 6.2, "@"); // ears hang below the head line
+  fill(15, 11, 6.2, 3.3, "o");       // muzzle
+  for (const [x, y] of [[10, 6], [11, 6], [10, 7], [11, 7], [19, 6], [20, 6], [19, 7], [20, 7]]) g[y][x] = "E";
+  for (const x of [14, 15, 16]) g[9][x] = "N";
+  for (const x of [9, 10, 20, 21]) g[19][x] = "o"; // paws
+  return g.map((r) => r.join(""));
+})();
+const EYES = [[10, 6], [11, 6], [10, 7], [11, 7], [19, 6], [20, 6], [19, 7], [20, 7]];
 const TOPICS = ["recursion", "big-O", "hashing", "trees", "caching", "locks", "graphs", "parsing", "types", "queues", "joins", "retries", "sorting", "streams", "closures", "paging"];
 
 // Illustration only: made-up intervals that grow, made-up decay. Review ticks are columns of the plot.
-const PW = 30, PH = 7, BW = 40, BH = 10;
-const REVIEWS = [0, 7, 16, 26];
+const PW = 36, PH = 8, BW = 46, BH = 11;
+const REVIEWS = [0, 6, 15, 27];
 const STAB = [12, 20, 34, 56];
-const CYCLE = 11500, SCAN = 8500;
+const CYCLE = 9000, SCAN = 6000;
 
 const recallAt = (x) => {
   let k = 0;
@@ -61,9 +56,10 @@ registerScene("graph", ({ cols, rows, rand }) => {
     ? { x: x0, y: 1, w: cols - x0 - 3, h: rows - 2 }
     : { x: 1, y: Math.max(0, rows - 16), w: cols - 2, h: Math.min(rows, 16) - 1 };
   const curve = wide && R.h >= 28 && R.w >= 56;
-  const box = { x: R.x + R.w - BW, y: R.y + R.h - BH };
+  const box = { x: R.x + R.w - BW - Math.round(cols * 0.04), y: R.y + R.h - BH };
   const pupX = R.x + Math.floor((R.w - 30) / 2) - (wide ? 4 : 0);
-  const pupY = wide ? R.y + Math.max(1, Math.floor((R.h - (curve ? BH : 0) - 18) / 2)) : R.y;
+  const pupY = wide ? R.y + Math.max(1, Math.floor((R.h - (curve ? BH : 0) - PH_) / 2)) : R.y;
+  const inPup = (x, y) => x >= pupX - 1 && x <= pupX + PW_ && y >= pupY - 1 && y <= pupY + PH_;
 
   // nodes: rejection sampled, never over the curve box, never left of the headline column
   const want = Math.max(8, Math.min(22, Math.floor((R.w * R.h) / (wide ? 120 : 70))));
@@ -73,7 +69,7 @@ registerScene("graph", ({ cols, rows, rand }) => {
   for (let minD = 5; nodes.length < want && minD > 2; minD -= 0.5) {
     for (let tries = 0; tries < 300 && nodes.length < want; tries++) {
       const n = { x: R.x + 2 + Math.floor(rand() * Math.max(1, R.w - 16)), y: R.y + 1 + Math.floor(rand() * Math.max(1, R.h - 2)), lit: 0, flash: 0, label: TOPICS[nodes.length % TOPICS.length] };
-      if (hit(n.x, n.y) || hit(n.x + 12, n.y)) continue;
+      if (hit(n.x, n.y) || hit(n.x + 12, n.y) || inPup(n.x, n.y) || inPup(n.x + 9, n.y)) continue;
       if (nodes.every((m) => dist(n, m) >= minD)) nodes.push(n);
     }
   }
@@ -84,7 +80,7 @@ registerScene("graph", ({ cols, rows, rand }) => {
       const key = i < j ? `${i}-${j}` : `${j}-${i}`;
       if (seen.has(key)) return;
       seen.add(key);
-      edges.push({ a: i, b: j, cells: line(a.x, a.y, nodes[j].x, nodes[j].y), pos: -1, dir: 1, speed: 12, next: 400 + rand() * 3500 });
+      edges.push({ a: i, b: j, cells: line(a.x, a.y, nodes[j].x, nodes[j].y).filter((c) => !inPup(c.x, c.y)), pos: -1, dir: 1, speed: 12, next: 400 + rand() * 3500 });
     });
   });
   const incident = nodes.map((_, i) => edges.filter((e) => e.a === i || e.b === i));
@@ -120,13 +116,14 @@ registerScene("graph", ({ cols, rows, rand }) => {
 
       // pup, dim, behind everything
       const blink = !still && t % 4300 < 150;
+      const tone = { "#": [0, 0.2, false], "@": [0, 0.34, false], o: [1, 0.5, false], N: [2, 1, false], E: [2, 0.95, false] };
       PUP.forEach((row, ry) => {
         for (let rx = 0; rx < row.length; rx++) {
           const ch = row[rx];
-          if (ch !== " ") set(pupX + rx, pupY + ry, ch, 0, ch === "#" ? 0.2 : 0.32);
+          if (ch !== " ") { const [tn, al] = tone[ch]; set(pupX + rx, pupY + ry, ch === "E" || ch === "N" ? "@" : ch, tn, al); }
         }
       });
-      if (blink) EYES.forEach(([ex, ey]) => set(pupX + ex, pupY + ey, "#", 0, 0.2));
+      if (blink) EYES.forEach(([ex, ey]) => set(pupX + ex, pupY + ey, "-", 0, 0.5));
 
       // edges
       edges.forEach((e) => {
@@ -163,13 +160,13 @@ registerScene("graph", ({ cols, rows, rand }) => {
         const cx = still || cyc > SCAN ? PW - 1 : Math.floor((cyc / SCAN) * PW);
         const text = (x, y, s, tone, a) => { for (let i = 0; i < s.length; i++) set(x + i, y, s[i], tone, a, true); };
         text(box.x, box.y, `recall ${Math.round(recallAt(cx) * 100)}%`, 2, 0.95);
-        text(box.x + BW - 22, box.y, "synthetic illustration", 0, 0.7);
-        text(box.x + 2, py0, "100%", 0, 0.6);
-        text(box.x + 3, py0 + PH - 1, "50%", 0, 0.6);
-        for (let y = 0; y < PH; y++) set(px0 - 1, py0 + y, "|", 0, 0.45);
-        set(px0 - 1, py0 + PH, "+", 0, 0.45);
-        for (let x = 0; x < PW; x++) set(px0 + x, py0 + PH, "-", 0, 0.45);
-        text(box.x, py0 + PH + 1, "reviews", 0, 0.6);
+        text(box.x + BW - 22, box.y, "synthetic illustration", 1, 0.85);
+        text(box.x + 2, py0, "100%", 0, 0.85);
+        text(box.x + 3, py0 + PH - 1, "50%", 0, 0.85);
+        for (let y = 0; y < PH; y++) set(px0 - 1, py0 + y, "|", 0, 0.6);
+        set(px0 - 1, py0 + PH, "+", 0, 0.6);
+        for (let x = 0; x < PW; x++) set(px0 + x, py0 + PH, "-", 0, 0.6);
+        text(box.x, py0 + PH + 1, "reviews", 0, 0.85);
         REVIEWS.forEach((rx) => set(px0 + rx, py0 + PH + 1, "^", rx <= cx ? 2 : 0, rx <= cx ? 1 : 0.5));
         let prev = 0;
         for (let x = 0; x <= cx; x++) {

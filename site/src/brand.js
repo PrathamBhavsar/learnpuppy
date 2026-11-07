@@ -2,6 +2,8 @@
 // (README.md, docs/web/*.md, crates/*, release docs). Pre-release: no numbers that were not measured.
 export default {
   name: "LearnPuppy",
+  markImg: "favicon.svg",
+  heroNote: "The repository is private until the first release, so the clone above needs access. Nothing is downloadable yet.",
   wordmark: "learn<b>puppy</b>",
   repo: "PrathamBhavsar/learnpuppy",
   scene: "graph",
@@ -12,7 +14,7 @@ export default {
   sub: "A tutor that probes, plans and teaches. A <strong>Knowledge Graph</strong> that keeps what you learn. <strong>Spaced repetition</strong> that brings it back before it fades. All on your machine, driving the AI CLIs you already use.",
   heroCmd: "git clone https://github.com/PrathamBhavsar/learnpuppy && cd learnpuppy && make install",
 
-  liveTitle: "Built in the open.",
+  liveTitle: "Facts, from the source.",
   liveNote: "GitHub stats appear here once the repo is public. Until then these are facts read from the source: the code, `README.md` and `docs/web/`.",
   facts: [
     ["Listens on", "`127.0.0.1` only"],
@@ -30,7 +32,7 @@ export default {
     { title: "Learn", blurb: "Four phases in one chat, with the plan visible while you work.", items: [
       ["chat", "Probe", "Up to 8 questions find what you already know before anything is taught, as free text or choices."],
       ["tree", "Plan", "The plan appears beside the chat as a live graph of steps: current, visited, upcoming. Click a step to jump to where it was taught."],
-      ["idea", "Teach with questions", "Quiz (options A to D, optional confidence 1 to 5), recall (with an I don't know button), explain in your own words, and problems with a hint ladder."],
+      ["help", "Teach with questions", "Quiz (options A to D, optional confidence 1 to 5), recall (with an I don't know button), explain in your own words, and problems with a hint ladder."],
       ["checklist", "Practice", "Pick nodes in the graph and start a Practice chat on them. Problems come in recall, discrimination and composition modes."],
       ["pdf", "Workbench jobs", "Research, visual and PDF jobs run beside the chat. Artifacts open in a viewer; HTML renders in an inert sandboxed iframe with no scripts."],
       ["repeat", "Stop, steer, resume", "Esc stops a turn and keeps the partial answer. Steer mid-turn. A turn cut off by a restart offers Resume."],
@@ -89,7 +91,7 @@ export default {
       "make install",
       "learnpuppy doctor",
       "learnpuppy serve",
-    ], note: "Needs Rust (rustup.rs) and bun (bun.sh), macOS or Linux, and about 3 GB of free disk. `make release` builds `target/release/learnpuppy` without installing." },
+    ], note: "Needs Rust (rustup.rs) and bun (bun.sh), macOS or Linux,. `make release` builds `target/release/learnpuppy` without installing." },
     { id: "binary", label: "Binary", cmds: [
       "curl --proto '=https' --tlsv1.2 -LsSf https://github.com/PrathamBhavsar/learnpuppy/releases/latest/download/lp-server-installer.sh | sh",
       "learnpuppy doctor",
@@ -105,7 +107,7 @@ export default {
     ["What is verified, and what is not?", "Probe, Plan, Teach, Practice, workbench jobs (research, visual, PDF), ingest and Digest were checked against real CLIs. Review-all was only checked against the scripted engine and mocks. agy was out of quota during verification, so agy as the teacher is untested; failover away from it is tested. The graph legend's claim, concept, procedure and decision kinds are cosmetic."],
     ["What is the animation in the hero?", "A synthetic illustration: a made-up forgetting curve that drops, then jumps back up at each review, with intervals that grow. It is not measured data and not a result from LearnPuppy."],
     ["Which scheduling algorithm?", "FSRS v5, ported from the ts-fsrs build with default weights, short-term steps on, fuzz off and a 0.9 target retention."],
-    ["Which platforms?", "macOS and Linux. The release workflow builds arm64 and x86_64 for both."],
+    ["Which platforms?", "macOS and Linux. A release workflow for arm64 and x86_64 exists on a branch; it has not run on a tag yet."],
   ],
 
   footBlurb: "A local learning harness: tutor, Knowledge Graph and spaced repetition.",
