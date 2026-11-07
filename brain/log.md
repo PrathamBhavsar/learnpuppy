@@ -48,3 +48,9 @@ Back to [Brain Index](/index.md). Related: [Overview](/overview.md), [Task DAG](
 - Cross-referenced with ai.hubermanlab.com summaries for structured study habit data.
 - Created [Huberman Learning](/huberman-learning/index.md) brain section with 8 documents: index, neuroplasticity fundamentals (3 mechanisms, two-step process, sleep, NSDR), self-testing protocol (1917 study, SSSS/SSST/STTT, familiarity vs mastery, timing, 50% rule, test format), study habits (~700 med students: schedule/alone/phone-away/3-4hrs/teach-peers/aspirational), neuroplasticity super-protocol (9 steps), circadian optimization (autonomic arousal, go/no-go D1/D2, two daily bouts, creativity two-stage, morning/evening routines), advanced tools (gap effects, interleaving, emotion, ~15% error rate, cold exposure, skill levels), and transcript excerpts.
 - Cross-referenced Huberman concepts to both LearnPuppy's crate architecture and the Alvar Method (e.g., self-testing ↔ quiz-after-every-step, gap effects ↔ potential lp-agent feature, interleaving ↔ mixed pass every third quiz, familiarity vs mastery ↔ mastery bar MC + free recall).
+
+## 2026-11-07 — S3 Marketing + docs site (feat/site) and release workflow (feat/release)
+- `site/`: Vite vanilla landing + docs on the shared kit (copied from bunfiiliate with `scripts/sync-kit.sh`), pink skin, `graph` ASCII scene (pixel pup, graph, forgetting curve labelled as a synthetic illustration), 11 docs pages, Pages workflow, smoke test.
+- Install tabs lead with build-from-source. Binary installer needs a public repo and a first tag (`feat/release`: cargo-dist, asset names `lp-server-*`).
+- Open: no LICENSE file (site says MIT from Cargo.toml); no SECURITY.md; several screen details were taken from `docs/web/06-screens.md`, not the React source.
+
