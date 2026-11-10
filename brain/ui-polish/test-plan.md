@@ -35,7 +35,7 @@ Back to [UI Polish Plan](/ui-polish/index.md). Task detail: [Task DAG](/ui-polis
 
 ## Textbook mode, specific checks
 
-- **Fixture:** a small generated PDF with 3 chapters, an outline, a two-column page, a page with only an image, and one with a prompt-injection sentence ("ignore previous instructions"). Expect: chapters found, empty page skipped without error, injection text treated as plain text and never obeyed.
+- **Fixture:** a small generated PDF with 3 chapters, an outline, a two-column page, roman-numeral front matter, a page with only an image, and one with a prompt-injection sentence ("ignore previous instructions"). Expect: chapters found, empty page skipped without error, injection text treated as plain text and never obeyed.
 - **Large file:** a 400-page synthetic PDF imports in the background; the server stays responsive (health route under 200 ms during import).
 - **Idempotence:** importing the same PDF twice produces no duplicate objectives or cards.
 - **Grading:** the reading check grades by code; a wrong option never turns right through model output.

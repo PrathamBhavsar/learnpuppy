@@ -17,7 +17,7 @@ File paths below were read on 2026-11-11. A worker confirms each path with `git 
 ```mermaid
 graph TD
   U0[U0 baseline] --> U1[U1 stream-safe markdown]
-  U0 --> U2[U2 mermaid]
+  U1 --> U2[U2 mermaid]
   U0 --> U3[U3 type ladder]
   U1 --> U4[U4 event cards]
   U2 --> U4
@@ -26,6 +26,7 @@ graph TD
   U0 --> U6[U6 chain glyphs]
   U0 --> U7[U7 textbook backend]
   U7 --> U8[U8 textbook screens]
+  U4 --> U8
   U4 -.-> U9[U9 drawing answers, parked]
   U5 -.-> U9
 ```
@@ -37,7 +38,8 @@ graph TD
 3. Before each commit: `make gate` in that worktree. Web packages also run `bun run test` and `bun run build` inside `web/`.
 4. Merge: from the main worktree, `git merge --no-ff pratham404/<id>-<slug>` into `staging`, then run `make gate` once more.
 5. **Cleanup after every merge:** `git worktree remove ../learnpuppy-wt-<id>`, `git branch -d pratham404/<id>-<slug>`, `tribe clean` for stray workers. A worktree or worker left over after its task is a bug.
-6. Shared files have one owner: `web/src/features/classroom/Message.tsx` is U4's. Others export components, U4 wires them.
+6. Generated `web/openapi/openapi.json` and its TypeScript client are never hand-merged. On a conflict after rebase, regenerate them (the `openapi` subcommand, then `web/scripts/gen-api.ts`) and commit the result. Server DTO work in U3, U4, U5 and U7 lands in merge order; the next worker rebases first.
+7. Shared files have one owner: `web/src/features/classroom/Message.tsx` is U4's. Others export components, U4 wires them.
 
 ## Wave 0
 
@@ -48,7 +50,7 @@ graph TD
 - **Accept:** spec passes under `make e2e`; baseline numbers committed; no source change.
 - **Route:** Codex medium.
 
-## Wave 1 (parallel, disjoint files)
+## Wave 1 (U1 and U3 parallel; U2 starts after U1 merges, because both touch `MarkdownView.tsx`)
 
 ### U1 Stream-safe markdown
 
@@ -61,10 +63,10 @@ graph TD
 
 ### U2 Mermaid block
 
-- **Do:** a fenced block tagged `mermaid` renders as SVG. `mermaid` loads in its own lazy chunk on first use. `securityLevel: "strict"`, theme follows light or dark, a parse error shows a small error card with the source and a Copy button instead of an empty box. Render inside a size-capped, scrollable container, with an `aria-label` and the source as text for screen readers.
-- **Files:** `web/package.json` (add `mermaid` pinned to an exact version; check its publish date with `npm view mermaid time` is at least 14 days old), `docs/web/04-frontend-foundation.md` (add `mermaid` to the lazy list), `web/src/components/app/markdown/MermaidBlock.tsx` (new), `MarkdownView.tsx` (route the `mermaid` lang to it), `web/src/components/app/markdown/styles.css`.
+- **Do:** a fenced block tagged `mermaid` renders as SVG. `mermaid` loads in its own lazy chunk on first use. `securityLevel: "strict"`, `htmlLabels: false`, the SVG passed through DOMPurify (add `dompurify` if absent) before it enters the DOM, theme follows light or dark, a parse error shows a small error card with the source and a Copy button instead of an empty box. Render inside a size-capped, scrollable container, with an `aria-label` and the source as text for screen readers.
+- **Files:** `web/package.json` (add `mermaid` pinned to an exact version; check its publish date with `npm view mermaid time` is at least 14 days old), `docs/web/04-frontend-foundation.md` (add `mermaid` to the lazy list), `web/src/components/app/markdown/MermaidBlock.tsx` (new), `MarkdownView.tsx` (route the `mermaid` lang to it; rebased on U1), its own `web/src/components/app/markdown/mermaid.css` (never `styles.css`, which U3 owns).
 - **Accept:** valid diagram renders; broken diagram shows the error card; main chunk grows by under 2 kB gzip; `mermaid` chunk is not fetched on pages without one.
-- **Tests:** component tests with a valid and an invalid diagram (mock `mermaid` in jsdom, real in one Playwright spec); a bundle check that the main chunk stays in budget; an XSS case with a `click` directive and an `<img onerror>` label.
+- **Tests:** component tests with a valid and an invalid diagram (mock `mermaid` in jsdom, real in one Playwright spec); a bundle check that the main chunk stays in budget; XSS cases: a `click` directive, a `<foreignObject>` script, a `javascript:` link and an `<img onerror>` label, each asserted inert after sanitising.
 - **Route:** Codex medium.
 
 ### U3 Type ladder and reading font
@@ -106,13 +108,14 @@ graph TD
 Plan owner first: Claude high writes the spec as a sealed artifact; a goldfish reviews it; then Codex builds.
 
 - **Do:**
-  1. **Page map.** The PDF job already extracts one string per page with `pdftotext`. Add a chapter map: detect headings from the PDF outline when present, else a single cheap-tier call over the first pages and the table of contents. Store `chapters[] = {title, startPage, endPage}` per source.
-  2. **Objectives and items.** One cheap-tier call per chapter at import returns 5 to 12 objectives **and** their quiz items together, as data, with source page ranges. All stored (course-as-data), so studying costs zero model calls. The chapter map uses the PDF outline (0 calls); only when there is no outline is one extra call made for the whole book.
+  1. **Page map.** The PDF job already extracts one string per page with `pdftotext`. Add a chapter map: take headings from the PDF outline when present (outline targets are physical page indices, so no offset is needed), else a single cheap-tier call over the first pages and the table of contents. A printed-number to physical-page offset is detected from the first page that carries a printed number, to handle roman-numeral front matter. Store `chapters[] = {title, startPage, endPage}` per source, physical pages.
+  2. **Objectives and items.** One cheap-tier call per chapter at import returns 5 to 12 objectives **and** their quiz items together, as data, with source page ranges. A chapter over about 8,000 words is split into at most 3 parts, each its own call, so one reply never carries too much output; parts count against the cap below. All stored (course-as-data), so studying costs zero model calls. The chapter map uses the PDF outline (0 calls); only when there is no outline is one extra call made for the whole book.
   3. **Reading check.** `POST` an "I read chapter N" intent; the server selects objectives for that chapter and returns a quiz from stored items. Results grade by code, never by the model, and feed FSRS cards through the existing review service.
-  4. **Budget.** Import is a one-off cost, exempt from the G4 per-hour cap but counted on the usage route and capped at 40 cheap calls per book (more chapters are queued and imported on request). Studying and the reading check stay at 0 calls.
-  5. **Safety.** Extracted text is untrusted: strip control characters, cap per-chapter text, redact secrets before any model call, keep the 50 MB upload limit and the PDF magic check.
+  4. **Budget.** Import is a one-off cost, exempt from the G4 per-hour cap but counted on the usage route and capped at 40 cheap calls per book including split parts (the rest are queued and imported on request). Studying and the reading check stay at 0 calls.
+  5. **Job lifecycle.** Import runs as a workbench job on the existing `jobs` route and SSE events, not as a blocking request. `POST` returns 202 with a job id; the job reports chapter-level progress, retries a failed chapter on its own, and can be cancelled. U8 reads status from the same job and event stream.
+  6. **Safety.** Extracted text is untrusted: strip control characters, cap per-chapter text, redact secrets before any model call, keep the 50 MB upload limit and the PDF magic check.
 - **Files (confirm by `git ls-files`):** `crates/lp-agent/src/workbench/adapters.rs` and `jobs.rs` (page text, outline), new `crates/lp-core/src/textbook.rs` (types, objective and chapter structs, no IO), `crates/lp-store` (a `textbook.jsonl` ledger, append-only like the others), `crates/lp-service/src/course/` or a new `textbook.rs`, `crates/lp-server/src/routes/sources.rs` plus a new `routes/textbook.rs`, DTOs, `web/openapi/openapi.json`.
-- **Accept:** an O'Reilly-style PDF of 400+ pages imports without blocking the server; chapter list is correct on the fixture, including a two-column page and an image-only page; importing the same PDF twice creates no duplicates; each objective has stored items; reading check makes zero model calls; torn tail and concurrent append tests pass; `make gate` green.
+- **Accept:** an O'Reilly-style PDF of 400+ pages imports without blocking the server; chapter list is correct on the fixture, including a two-column page, an image-only page and roman-numeral front matter; importing the same PDF twice creates no duplicates; each objective has stored items; reading check makes zero model calls; torn tail and concurrent append tests pass; `make gate` green.
 - **Tests:** `lp-core` unit and `proptest` for page-range invariants; store tests for torn tail and workspace isolation; service tests with `FauxEngine`; route oneshot tests including upload rejection and a DTO leak test; one fixture PDF under `crates/lp-service/tests/fixtures/` (new folder; small, license-clean, generated by us); a real-model smoke added to `scripts/real_smoke.py` (manual, not CI).
 - **Route:** Claude high for the spec, Codex medium for the build.
 
