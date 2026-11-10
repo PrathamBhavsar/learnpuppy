@@ -10,7 +10,7 @@ bunx --bun shadcn@latest init --preset buFyzGS --base radix --template vite --rt
 **V00 verification (before the real init, in the scratchpad dir):** run the same command, then record in `docs/web/04-preset-facts.md`: resulting `components.json` (style, iconLibrary, rtl flag), fonts it wires, radius, baseColor, what `--pointer` actually changes (expected: `cursor:pointer` on interactive elements; if the CLI rejects the flag, apply equivalent via a global rule), what `--rtl` changes (expected: logical-property classes `ms-/me-/ps-/pe-/start-/end-` and `rtl:` variants in generated components). Compare against the previous `buFzGJc` (base-lyra, Base UI) — radix primitives differ (`asChild`, `data-state` attrs, no `render` prop). Anything unexpected becomes a decision before W1.
 
 ## Stack (versions: latest stable at init, pinned by `bun.lock`, recorded in `web/README.md`)
-React 19 · TypeScript (strict, `noUncheckedIndexedAccess`) · Vite · Tailwind CSS v4 (`@theme inline`, `tw-animate-css`) · shadcn (radix) · TanStack Router + Query · `openapi-fetch` + `openapi-typescript` · Zustand · `motion` · `lucide-react` · `sonner` (toasts, as shadcn) · `cmdk` (shadcn Command) · `react-hook-form` + `zod` (settings/workspace forms) · `react-markdown` + `remark-gfm` + `remark-math` + `rehype-katex` · `shiki` (lazy, per-language chunks) · `@dagrejs/dagre` · `d3-zoom`, `d3-quadtree`, `d3-ease`, `d3-interpolate` (modules only) · `date-fns` (or `Intl` only — prefer `Intl`) · Vitest · Testing Library · MSW · Playwright · `@axe-core/playwright` · ESLint (typescript-eslint, react-hooks, jsx-a11y, import/no-cycle) · Prettier · `knip` (dead code).
+React 19 · TypeScript (strict, `noUncheckedIndexedAccess`) · Vite · Tailwind CSS v4 (`@theme inline`, `tw-animate-css`) · shadcn (radix) · TanStack Router + Query · `openapi-fetch` + `openapi-typescript` · Zustand · `motion` · `lucide-react` · `sonner` (toasts, as shadcn) · `cmdk` (shadcn Command) · `react-hook-form` + `zod` (settings/workspace forms) · `react-markdown` + `remark-gfm` + `remark-math` + `rehype-katex` · `shiki` (lazy, per-language chunks) · `mermaid` + `dompurify` (lazy, one chunk) · `@dagrejs/dagre` · `d3-zoom`, `d3-quadtree`, `d3-ease`, `d3-interpolate` (modules only) · `date-fns` (or `Intl` only — prefer `Intl`) · Vitest · Testing Library · MSW · Playwright · `@axe-core/playwright` · ESLint (typescript-eslint, react-hooks, jsx-a11y, import/no-cycle) · Prettier · `knip` (dead code).
 No: Redux, axios, lodash, moment, any CSS-in-JS, any CDN script.
 
 ## Source layout
@@ -68,7 +68,7 @@ Rules: `features/*` may import `components`, `lib`, `api`, `stores`; never each 
 - Never block the main thread >50 ms: markdown/shiki/layout heavy work is lazy/chunked (`requestIdleCallback`/worker for graph hit index build if >5k nodes).
 
 ## Build & bundle budgets
-- `vite build` main chunk ≤ 220 kB gzip (shell + router + query); route chunks lazy; `shiki`, `katex`, `dagre`, graph canvas lazy; fonts subset to latin (+ latin-ext) woff2.
+- `vite build` main chunk ≤ 220 kB gzip (shell + router + query); route chunks lazy; `shiki`, `katex`, `mermaid` (+ `dompurify`, own chunk, first fenced diagram), `dagre`, graph canvas lazy; fonts subset to latin (+ latin-ext) woff2.
 - Source maps in dev only. Hashed assets served `immutable`.
 - `bun run check` = `tsc -b && eslint . && knip && vitest run && vite build` (the web half of `make gate`).
 
