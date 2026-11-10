@@ -56,6 +56,8 @@ const SESSION_IDLE_MS: i64 = 1_800_000;
 const START_REVIEWS: usize = 10;
 /// Lessons written per Author call.
 const LESSONS: usize = 10;
+/// The `Course::method_version` every newly authored course gets.
+const METHOD_VERSION: u32 = 1;
 /// Cards for unstudied items are parked here until their first review replays real FSRS state.
 const PARKED_DUE: i64 = 253_402_300_799_000;
 const KEEP_CHARS: usize = 500;
@@ -955,6 +957,9 @@ async fn run_write<E: LlmEngine + 'static>(me: &Arc<Inner<E>>, id: &str) -> Res<
             Ok(w) => {
                 let mut course = w.authored.course;
                 course.id = cid.clone();
+                // A course written now follows the learning method; only courses already on disk
+                // stay at version 0 (no plan, no gates).
+                course.method_version = METHOD_VERSION;
                 m2.save_course(&course)
             }
             Err(e) => Err(CourseError::Unavailable(format!(

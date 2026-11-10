@@ -681,6 +681,15 @@ async fn a_written_course_is_listed_by_its_goal() {
 }
 
 #[tokio::test]
+async fn a_newly_written_course_follows_the_learning_method() {
+    // Found by `scripts/real_smoke.py`: courses were written at version 0, so the plan route
+    // answered 404 and the app never reached the bout shell or the method gates.
+    let w = world();
+    let id = w.ready().await;
+    assert_eq!(w.course(&id).method_version, 1);
+}
+
+#[tokio::test]
 async fn pending_placement_survives_a_reload_and_empties_once_submitted() {
     let w = world_with(true);
     let created = w.svc.create("learn spanish").await.unwrap();
