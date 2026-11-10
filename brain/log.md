@@ -4,6 +4,7 @@ Back to [Brain Index](/index.md). Related: [Overview](/overview.md), [Task DAG](
 
 ## 2026-11-11 — Open items closed (pratham404/deps-sqlite)
 - Strand probe (F06) and course `why` (F02) are wired into course creation. `create(goal, why)` writes the probe with one cheap call (falls back to the plain quiz if that comes back unusable); `submit_placement` grades a round and returns `next`, binary-searching each strand with `lp_core::method::probe` (middle level first, then up or down, at most 6 questions). `guessed` makes a right answer `edge`, `blocked` labels the strand `blocked`. Labels and `why` are stored on the course and returned by `/plan`; the ready gate shows the `why`. Web: why field on create, follow-up rounds with a one-line verdict, guess and prerequisite checkboxes.
+- Review (the `ocr` step ran as a self-review via `ocr delegate`, no LLM endpoint): a repeated or partial probe round is refused without changing anything, so a double submit cannot grade the next round blank.
 - `rusqlite` 0.32 to 0.41 (`fallible_uint` keeps the u64/usize conversions), which fixes RUSTSEC-2026-0459; `Zlib` allowed in `deny.toml` for `foldhash`. `make deny` passes.
 - `make okf` picks a python3 that can import PyYAML (Make puts Homebrew's, without it, first on PATH).
 - Real smoke on real models: 6 probe questions, 10 lessons, why and three strand labels on the plan, zero model calls in the walk.

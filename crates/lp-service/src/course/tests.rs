@@ -860,6 +860,35 @@ async fn the_probe_follows_each_strand_up_or_down_and_never_asks_more_than_six()
 }
 
 #[tokio::test]
+async fn a_repeated_or_partial_round_is_refused_and_changes_nothing() {
+    let w = world_with(true);
+    let created = w.svc.create("learn spanish", WHY).await.unwrap();
+    let id = created.id;
+    let right = |w: &World, items: &[PlacementItem]| {
+        answers_for(w, &id, items, |_| ("right".into(), false, false))
+    };
+    // A partial round is refused.
+    let mut partial = right(&w, &created.items);
+    partial.pop();
+    assert!(matches!(
+        w.svc.submit_placement(&id, partial).await,
+        Err(CourseError::Invalid(_))
+    ));
+    assert_eq!(w.svc.pending_placement(&id).await.unwrap(), created.items);
+    // The round goes through once; sending the same answers again must not grade round two blank.
+    let first = right(&w, &created.items);
+    let r1 = w.svc.submit_placement(&id, first.clone()).await.unwrap();
+    assert_eq!(r1.next.len(), 3);
+    assert!(matches!(
+        w.svc.submit_placement(&id, first).await,
+        Err(CourseError::Invalid(_))
+    ));
+    assert_eq!(w.svc.pending_placement(&id).await.unwrap(), r1.next);
+    let p: Placement = w.inner().read_json(&id, "placement.json").unwrap();
+    assert!(p.strands.iter().all(|s| s.answers.len() == 1));
+}
+
+#[tokio::test]
 async fn a_blocked_strand_is_labelled_blocked_and_settles_at_once() {
     let w = world_with(true);
     let created = w.svc.create("learn spanish", WHY).await.unwrap();

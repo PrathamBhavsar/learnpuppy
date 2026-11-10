@@ -613,6 +613,17 @@ impl<E: LlmEngine + 'static> CourseService<E> {
                     .map(|a| (keep(&a.text), a.guessed, a.blocked))
                     .unwrap_or_default()
             };
+            // A stale or repeated submit (a double click, an old tab) names questions that are no
+            // longer pending; grading it would mark the next round blank, so refuse it untouched.
+            if !p.strands.is_empty()
+                && probe_pending(&p)
+                    .iter()
+                    .any(|id| !answers.iter().any(|a| &a.item == id))
+            {
+                return Err(CourseError::Invalid(
+                    "answer every question of this round".into(),
+                ));
+            }
             let items = p.items.clone();
             let mut graded = Vec::new();
             let results: Vec<Result1>;
