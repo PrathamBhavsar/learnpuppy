@@ -1,7 +1,7 @@
 ---
 type: spec
 title: The Four AI Learning Methods — Visualize, Filter, 80/20, Find Resources
-description: Aleks Gornik's 4 practical methods for using AI to learn engineering: make concepts visual with 3D models, filter resources with AI prompts, find the essential 20% to get unstuck, and use sub-agents to find the best resources on the internet.
+description: "Aleks Gornik's 4 practical methods for using AI to learn engineering: make concepts visual with 3D models, filter resources with AI prompts, find the essential 20% to get unstuck, and use sub-agents to find the best resources on the internet."
 tags: [gornik, ai-methods, visualization, filtering, 80-20, resources, engineering, claude-code]
 timestamp: 2026-11-04
 ---

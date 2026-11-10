@@ -1,11 +1,3 @@
----
-type: guide
-title: Gornik Method — Anti-Brain-Rot AI Learning for Engineering
-description: Aleks Gornik's 4-method AI learning workflow from "How I use AI to learn engineering (anti brain rot studying)": visualize concepts, filter resources, find the 20%, and find the best resources — using AI as a filter, not a replacement for thinking.
-tags: [gornik, learning, ai, engineering, visualization, filtering, 80-20, resources, brain-rot]
-timestamp: 2026-11-04
----
-
 # Gornik Method — Anti-Brain-Rot AI Learning for Engineering
 
 Back to [Brain Index](/index.md). Related: [Alvar Method](/alvar-method/index.md), [Huberman Learning](/huberman-learning/index.md), [Core Domain Contracts & Algorithms](/architecture/core-domain.md).
