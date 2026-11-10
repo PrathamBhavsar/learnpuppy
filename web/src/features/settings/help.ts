@@ -6,7 +6,7 @@ export const SETTINGS_INFO = {
     title: "Appearance",
     short: "How the app looks: colours, reading direction, motion and spacing.",
     body: [
-      "Theme picks light, dark or the same as your computer. Direction mirrors the layout for right-to-left languages such as Arabic. Reduce motion swaps movement for simple fades. Density Compact tightens the spacing so more fits on screen.",
+      "Theme picks light, dark or the same as your computer. Direction mirrors the layout for right-to-left languages such as Arabic. Reduce motion swaps movement for simple fades. Density Compact tightens the spacing so more fits on screen. Reading font sets the font for lessons, chat and the digest.",
     ],
   },
   behavior: {

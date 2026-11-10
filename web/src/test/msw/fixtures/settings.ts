@@ -31,6 +31,7 @@ export function settingsFixture(): SettingsDoc {
       theme: "system",
       direction: "ltr",
       density: "comfortable",
+      readingFont: "sans",
       reduceMotion: false,
       confirmDestructive: true,
       autoOpenBrowser: false,

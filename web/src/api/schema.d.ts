@@ -3413,6 +3413,8 @@ export interface components {
             density: string;
             /** @description `ltr`, `rtl` or `auto`. */
             direction: string;
+            /** @description `sans`, `serif` or `mono`. */
+            readingFont: string;
             reduceMotion: boolean;
             /** @description `dark`, `light` or `system`. */
             theme: string;

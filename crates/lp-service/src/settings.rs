@@ -169,6 +169,7 @@ const DEFAULT_PROFILES: [(&str, &str, &str, Option<&str>); 12] = [
 pub const THEMES: [&str; 3] = ["dark", "light", "system"];
 pub const DIRECTIONS: [&str; 3] = ["ltr", "rtl", "auto"];
 pub const DENSITIES: [&str; 2] = ["comfortable", "compact"];
+pub const READING_FONTS: [&str; 3] = ["sans", "serif", "mono"];
 /// Parallel model calls the server allows (docs/web/06 Settings → Behavior).
 pub const CONCURRENCY_RANGE: std::ops::RangeInclusive<u8> = 1..=6;
 pub const DEFAULT_CONCURRENCY: u8 = 2;
@@ -183,6 +184,8 @@ pub struct UiSettings {
     pub direction: String,
     /// One of [`DENSITIES`].
     pub density: String,
+    /// One of [`READING_FONTS`]: the font for lesson prose, chat and digest text.
+    pub reading_font: String,
     pub reduce_motion: bool,
     pub confirm_destructive: bool,
     pub auto_open_browser: bool,
@@ -194,6 +197,7 @@ impl Default for UiSettings {
             theme: "dark".into(),
             direction: "ltr".into(),
             density: "comfortable".into(),
+            reading_font: "sans".into(),
             reduce_motion: false,
             confirm_destructive: true,
             auto_open_browser: true,
@@ -208,6 +212,7 @@ impl UiSettings {
             ("ui.theme", &self.theme, &THEMES[..]),
             ("ui.direction", &self.direction, &DIRECTIONS[..]),
             ("ui.density", &self.density, &DENSITIES[..]),
+            ("ui.readingFont", &self.reading_font, &READING_FONTS[..]),
         ] {
             if !ok.contains(&v.as_str()) {
                 out.push((path, format!("must be one of: {}", ok.join(", "))));
@@ -358,6 +363,19 @@ mod tests {
         s.pins.insert("teacher".into(), "agy:default".into());
         s.save(d.path()).unwrap();
         assert_eq!(Settings::load(d.path()).unwrap(), s);
+    }
+
+    #[test]
+    fn reading_font_defaults_to_sans_and_round_trips() {
+        let d = tempfile::tempdir().unwrap();
+        std::fs::write(d.path().join("settings.json"), r#"{"ui":{"theme":"dark"}}"#).unwrap();
+        let mut s = Settings::load(d.path()).unwrap();
+        assert_eq!(s.ui.reading_font, "sans");
+        s.ui.reading_font = "serif".into();
+        s.save(d.path()).unwrap();
+        assert_eq!(Settings::load(d.path()).unwrap().ui.reading_font, "serif");
+        s.ui.reading_font = "comic".into();
+        assert_eq!(s.ui.validate().len(), 1);
     }
 
     #[test]

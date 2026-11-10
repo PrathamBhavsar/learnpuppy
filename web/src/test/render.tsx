@@ -23,6 +23,7 @@ export function resetUi() {
     direction: "ltr",
     reduceMotion: false,
     density: "comfortable",
+    readingFont: "sans",
     sidebarCollapsed: false,
     lastWorkspace: null,
   })

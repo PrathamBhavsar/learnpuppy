@@ -61,10 +61,7 @@ export function MarkdownView({
   rehypePlugins,
 }: MarkdownViewProps) {
   return (
-    <div
-      dir="auto"
-      className={cn("lp-prose text-[14px] leading-[1.55]", className)}
-    >
+    <div dir="auto" className={cn("lp-prose", className)}>
       <ReactMarkdown
         remarkPlugins={remarkPlugins ?? GFM}
         rehypePlugins={rehypePlugins}

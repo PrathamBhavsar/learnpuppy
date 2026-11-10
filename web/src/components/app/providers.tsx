@@ -6,6 +6,7 @@ import { Toaster } from "@/components/ui/sonner"
 import { TooltipProvider } from "@/components/ui/tooltip"
 import {
   applyDensity,
+  applyReadingFont,
   applyDirection,
   applyReduceMotion,
   applyResolvedTheme,
@@ -17,6 +18,7 @@ export function AppProviders({ children }: { children: ReactNode }) {
   const direction = useUi((s) => s.direction)
   const reduceMotion = useUi((s) => s.reduceMotion)
   const density = useUi((s) => s.density)
+  const readingFont = useUi((s) => s.readingFont)
   const theme = useUi((s) => s.theme)
   const resolvedTheme = useUi((s) => s.resolvedTheme)
   const syncSystemTheme = useUi((s) => s.syncSystemTheme)
@@ -27,7 +29,8 @@ export function AppProviders({ children }: { children: ReactNode }) {
     applyDirection(direction)
     applyReduceMotion(reduceMotion)
     applyDensity(density)
-  }, [resolvedTheme, direction, reduceMotion, density])
+    applyReadingFont(readingFont)
+  }, [resolvedTheme, direction, reduceMotion, density, readingFont])
 
   useEffect(() => {
     if (theme !== "system") return
