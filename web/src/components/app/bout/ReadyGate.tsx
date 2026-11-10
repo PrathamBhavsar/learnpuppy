@@ -17,9 +17,12 @@ export const FOCUS_SECONDS = 30
  */
 export function ReadyGate({
   busy,
+  why,
   onReady,
 }: {
   busy: boolean
+  /** The learner's own reason for the course. */
+  why?: string
   onReady: (ready: ReadyAnswers) => void
 }) {
   const [phoneAway, setPhoneAway] = useState(false)
@@ -41,6 +44,14 @@ export function ReadyGate({
   return (
     <section data-testid="step-ready" className="flex flex-col gap-4">
       <h2 className="font-heading text-[16px] font-medium">Get ready</h2>
+      {why ? (
+        <p
+          data-testid="ready-why"
+          className="text-[13px] text-muted-foreground"
+        >
+          Why you are here: {why}
+        </p>
+      ) : null}
       <div className="flex flex-col gap-2">
         <div className="flex items-center gap-2">
           <Checkbox

@@ -106,9 +106,9 @@ Model-backed calls (`create`, `placement`, `ask`, `check`) are plain awaited POS
 | | |
 |---|---|
 | `GET …/courses` | `{courses[{id, title, version, updatedAt}]}` newest first |
-| `POST …/courses` | `{goal}` -> `201 {id, items[{id, kind, q, options}]}`; runs placement; nothing stored on `503` |
-| `POST …/courses/{id}/placement` | `{answers[{item, text}]}` -> `{graded[{item, correct, answer, why}]}`; starts the Author in the background |
-| `GET …/courses/{id}/placement` | `{items[{id, kind, q, options}]}` the questions still to answer, same order and options as `create`; empty once submitted. Lets a reloaded page carry on |
+| `POST …/courses` | `{goal, why}` (both 1 to 500 chars, `why` required) -> `201 {id, items[{id, kind, q, options}]}`; one cheap call writes the strand probe (3 strands at 3 levels; falls back to a plain five-question quiz if that comes back unusable) and `items` is its first round, the middle level of each strand; nothing stored on `503` |
+| `POST …/courses/{id}/placement` | `{answers[{item, text, guessed?, blocked?}]}` -> `{graded[{item, correct, answer, why}], next[{id, kind, q, options}]}`; grades one round. `next` holds the follow-up questions for strands not settled yet (at most 2 per strand, 6 in all); answer them the same way. Once `next` is empty the Author starts in the background. A right answer flagged `guessed` counts as `edge`; `blocked` marks a missing prerequisite |
+| `GET …/courses/{id}/placement` | `{items[{id, kind, q, options}]}` the questions of the current round, same order and options as the response that returned them; empty once placement is over. Lets a reloaded page carry on |
 | `GET …/courses/{id}/misses` | `{misses[{q, answer, why}]}` mini lesson while writing |
 | `GET …/courses/{id}/status` | `{state: writing\|ready\|failed\|refilling, reason?}` |
 | `POST …/courses/{id}/retry` | `204`; rewrites a failed course |

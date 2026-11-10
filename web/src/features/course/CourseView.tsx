@@ -35,10 +35,12 @@ export function CourseView({ ws, id, onBack }: Props) {
   const actions = useCourseActions(ws, id)
   const methodActions = useMethodActions(ws, id)
   const plan = useCoursePlan(ws, id)
+  // Every round graded so far, and the latest round alone for its one-line verdict.
   const [graded, setGraded] = useState<Graded[] | null>(null)
+  const [lastRound, setLastRound] = useState<Graded[]>([])
   const items = usePlacementItems(ws, id)
   const placement = items.data
-  const placing = (placement?.length ?? 0) > 0 && graded === null
+  const placing = (placement?.length ?? 0) > 0
   const status = useCourseStatus(ws, id, placement !== undefined && !placing)
   const state = status.data?.state
   const [started, setStarted] = useState(false)
@@ -69,12 +71,15 @@ export function CourseView({ ws, id, onBack }: Props) {
       <Shell>
         {back}
         <Placement
+          key={placement.map((i) => i.id).join(",")}
           items={placement}
           pending={actions.placement.isPending}
+          verdicts={lastRound}
           onSubmit={(answers) =>
             actions.placement.mutate(answers, {
-              onSuccess: (g) => {
-                setGraded(g)
+              onSuccess: (round) => {
+                setLastRound(round.graded)
+                setGraded((all) => [...(all ?? []), ...round.graded])
               },
               onError: (e) => toastError(e, "Could not check your answers"),
             })
@@ -90,7 +95,7 @@ export function CourseView({ ws, id, onBack }: Props) {
         {plan.isPending ? (
           <Spinner />
         ) : plan.data ? (
-          <BoutShell ws={ws} course={id}>
+          <BoutShell ws={ws} course={id} why={plan.data.why}>
             {({ onClosed }) => (
               <MethodLesson
                 ws={ws}

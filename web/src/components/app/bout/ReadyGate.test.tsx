@@ -22,6 +22,17 @@ async function checkBoth() {
 }
 
 describe("ReadyGate (F03)", () => {
+  it("shows the learner's own why when there is one (F02)", () => {
+    const { rerender } = render(
+      <ReadyGate busy={false} why="To read async code" onReady={vi.fn()} />
+    )
+    expect(screen.getByTestId("ready-why")).toHaveTextContent(
+      "To read async code"
+    )
+    rerender(<ReadyGate busy={false} onReady={vi.fn()} />)
+    expect(screen.queryByTestId("ready-why")).toBeNull()
+  })
+
   it("keeps Begin disabled until both checks are done and the focus timer finishes", async () => {
     const onReady = vi.fn()
     render(<ReadyGate busy={false} onReady={onReady} />)

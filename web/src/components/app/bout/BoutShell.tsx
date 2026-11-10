@@ -26,6 +26,8 @@ type Props = {
   ws: string
   /** The course the bout is for. Bouts are workspace-wide; this is only recorded on the log. */
   course: string
+  /** The learner's own reason for the course, shown at the ready gate (F02). */
+  why?: string
   /** Rendered once a bout is open. Call `onClosed` when Close finishes: that ends the bout. */
   children: (api: { onClosed: () => void }) => ReactNode
 }
@@ -37,7 +39,7 @@ type Props = {
  * minutes, is a pause due, is it locked) comes from the server's clock. The server also refuses
  * `step` without an open bout, so this screen cannot be skipped by calling the API directly.
  */
-export function BoutShell({ ws, course, children }: Props) {
+export function BoutShell({ ws, course, why, children }: Props) {
   const clockQ = useClock(ws)
   const needed = useCheckinNeeded(ws)
   const act = useLearningActions(ws)
@@ -120,6 +122,7 @@ export function BoutShell({ ws, course, children }: Props) {
     }
     return (
       <ReadyGate
+        why={why}
         busy={act.startBout.isPending}
         onReady={(ready) =>
           act.startBout.mutate(

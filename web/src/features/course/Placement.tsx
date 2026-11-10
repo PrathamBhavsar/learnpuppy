@@ -3,10 +3,14 @@ import { useState } from "react"
 import type { components } from "@/api/schema"
 import { PromptMarkdown } from "@/components/app/prompt-markdown"
 import { Button } from "@/components/ui/button"
+import { Checkbox } from "@/components/ui/checkbox"
 import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
 import { Spinner } from "@/components/ui/spinner"
 
 type Item = components["schemas"]["PlacementItemDto"]
+type Graded = components["schemas"]["GradedDto"]
+type Answer = components["schemas"]["PlacementAnswerDto"]
 
 /** Options as radio buttons (mcq) or a text box (recall). The server grades; nothing is checked here. */
 export function Choice({
@@ -55,16 +59,25 @@ export function Choice({
   )
 }
 
+/**
+ * The strand probe: one question per strand, then a follow-up round for strands that are not
+ * settled yet. `verdicts` is the previous round, one line each: right or wrong, nothing taught.
+ */
 export function Placement({
   items,
   pending,
+  verdicts,
   onSubmit,
 }: {
   items: Item[]
   pending: boolean
-  onSubmit: (answers: { item: string; text: string }[]) => void
+  verdicts?: Graded[]
+  onSubmit: (answers: Answer[]) => void
 }) {
   const [answers, setAnswers] = useState<Record<string, string>>({})
+  const [flags, setFlags] = useState<
+    Record<string, { guessed?: boolean; blocked?: boolean }>
+  >({})
   const complete = items.every((i) => (answers[i.id] ?? "").trim() !== "")
   return (
     <form
@@ -73,13 +86,29 @@ export function Placement({
       onSubmit={(e) => {
         e.preventDefault()
         onSubmit(
-          items.map((i) => ({ item: i.id, text: (answers[i.id] ?? "").trim() }))
+          items.map((i) => ({
+            item: i.id,
+            text: (answers[i.id] ?? "").trim(),
+            guessed: flags[i.id]?.guessed ?? false,
+            blocked: flags[i.id]?.blocked ?? false,
+          }))
         )
       }}
     >
       <h2 className="font-heading text-[16px] font-medium">
-        A quick quiz to see where you are
+        {verdicts?.length
+          ? "A few follow-up questions"
+          : "A quick quiz to see where you are"}
       </h2>
+      {verdicts?.length ? (
+        <p
+          data-testid="placement-verdict"
+          className="text-[13px] text-muted-foreground"
+        >
+          Last round: {verdicts.filter((v) => v.correct).length} of{" "}
+          {verdicts.length} right.
+        </p>
+      ) : null}
       {items.map((item, n) => (
         <fieldset key={item.id} className="flex flex-col gap-2">
           <legend className="mb-1 text-[13px] font-medium">
@@ -91,6 +120,29 @@ export function Placement({
             disabled={pending}
             onChange={(text) => setAnswers((a) => ({ ...a, [item.id]: text }))}
           />
+          <div className="flex flex-wrap gap-x-4 gap-y-1 text-[12px] text-muted-foreground">
+            {(
+              [
+                ["guessed", "I'm guessing"],
+                ["blocked", "I'm missing a prerequisite"],
+              ] as const
+            ).map(([key, label]) => (
+              <span key={key} className="flex items-center gap-1.5">
+                <Checkbox
+                  id={`${item.id}-${key}`}
+                  checked={flags[item.id]?.[key] ?? false}
+                  disabled={pending}
+                  onCheckedChange={(v) =>
+                    setFlags((f) => ({
+                      ...f,
+                      [item.id]: { ...f[item.id], [key]: v === true },
+                    }))
+                  }
+                />
+                <Label htmlFor={`${item.id}-${key}`}>{label}</Label>
+              </span>
+            ))}
+          </div>
         </fieldset>
       ))}
       <Button

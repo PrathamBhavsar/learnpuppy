@@ -724,7 +724,10 @@ export interface paths {
         /** The placement questions still to answer (empty once submitted), so a reloaded page can carry on. */
         get: operations["get_workspaces_ws_courses_id_placement"];
         put?: never;
-        /** Grades placement with code and starts writing the course in the background; poll `status`. */
+        /**
+         * Grades one placement round with code. While `next` is non-empty answer those questions the same
+         *     way; once it is empty the course is being written in the background, poll `status`.
+         */
         post: operations["post_workspaces_ws_courses_id_placement"];
         delete?: never;
         options?: never;
@@ -2172,6 +2175,10 @@ export interface components {
         CoursePlanDto: {
             confirmed: boolean;
             lessons: components["schemas"]["PlanLessonDto"][];
+            /** @description Where the strand probe placed the learner, one entry per strand. */
+            strands: components["schemas"]["StrandDto"][];
+            /** @description The learner's one line on why this goal matters. */
+            why: string;
         };
         /** @enum {string} */
         CourseState: "writing" | "ready" | "failed" | "refilling";
@@ -2201,6 +2208,8 @@ export interface components {
         };
         CreateCourseRequest: {
             goal: string;
+            /** @description One line on why this goal matters to the learner (required). */
+            why: string;
         };
         CreatedChatDto: {
             chatId: string;
@@ -2357,6 +2366,8 @@ export interface components {
         };
         GradedListDto: {
             graded: components["schemas"]["GradedDto"][];
+            /** @description The next round of the strand probe; empty once placement is over and the course is writing. */
+            next: components["schemas"]["PlacementItemDto"][];
         };
         GradeDto: {
             card: components["schemas"]["CardBriefDto"];
@@ -2817,6 +2828,10 @@ export interface components {
             tool: string;
         };
         PlacementAnswerDto: {
+            /** @description The learner is missing a prerequisite for this strand. */
+            blocked?: boolean;
+            /** @description The learner was guessing: a right answer counts as `edge`, never `known`. */
+            guessed?: boolean;
             item: string;
             text: string;
         };
@@ -3264,6 +3279,12 @@ export interface components {
             /** @enum {string} */
             step: "done";
         };
+        StrandDto: {
+            label: components["schemas"]["StrandLabelDto"];
+            name: string;
+        };
+        /** @enum {string} */
+        StrandLabelDto: "known" | "edge" | "unknown" | "blocked";
         SubmitPlacementRequest: {
             answers: components["schemas"]["PlacementAnswerDto"][];
         };

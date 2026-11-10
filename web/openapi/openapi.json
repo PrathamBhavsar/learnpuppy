@@ -1541,10 +1541,23 @@
               "$ref": "#/components/schemas/PlanLessonDto"
             },
             "type": "array"
+          },
+          "strands": {
+            "description": "Where the strand probe placed the learner, one entry per strand.",
+            "items": {
+              "$ref": "#/components/schemas/StrandDto"
+            },
+            "type": "array"
+          },
+          "why": {
+            "description": "The learner's one line on why this goal matters.",
+            "type": "string"
           }
         },
         "required": [
           "confirmed",
+          "why",
+          "strands",
           "lessons"
         ],
         "type": "object"
@@ -1630,10 +1643,15 @@
         "properties": {
           "goal": {
             "type": "string"
+          },
+          "why": {
+            "description": "One line on why this goal matters to the learner (required).",
+            "type": "string"
           }
         },
         "required": [
-          "goal"
+          "goal",
+          "why"
         ],
         "type": "object"
       },
@@ -2261,10 +2279,18 @@
               "$ref": "#/components/schemas/GradedDto"
             },
             "type": "array"
+          },
+          "next": {
+            "description": "The next round of the strand probe; empty once placement is over and the course is writing.",
+            "items": {
+              "$ref": "#/components/schemas/PlacementItemDto"
+            },
+            "type": "array"
           }
         },
         "required": [
-          "graded"
+          "graded",
+          "next"
         ],
         "type": "object"
       },
@@ -3897,6 +3923,14 @@
       },
       "PlacementAnswerDto": {
         "properties": {
+          "blocked": {
+            "description": "The learner is missing a prerequisite for this strand.",
+            "type": "boolean"
+          },
+          "guessed": {
+            "description": "The learner was guessing: a right answer counts as `edge`, never `known`.",
+            "type": "boolean"
+          },
           "item": {
             "type": "string"
           },
@@ -5492,6 +5526,30 @@
             "type": "object"
           }
         ]
+      },
+      "StrandDto": {
+        "properties": {
+          "label": {
+            "$ref": "#/components/schemas/StrandLabelDto"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "label"
+        ],
+        "type": "object"
+      },
+      "StrandLabelDto": {
+        "enum": [
+          "known",
+          "edge",
+          "unknown",
+          "blocked"
+        ],
+        "type": "string"
       },
       "SubmitPlacementRequest": {
         "properties": {
@@ -8934,7 +8992,7 @@
             "description": "Workspace archived"
           }
         },
-        "summary": "Grades placement with code and starts writing the course in the background; poll `status`.",
+        "summary": "Grades one placement round with code. While `next` is non-empty answer those questions the same\nway; once it is empty the course is being written in the background, poll `status`.",
         "tags": [
           "courses"
         ]

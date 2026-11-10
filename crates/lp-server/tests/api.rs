@@ -1512,20 +1512,21 @@ fn course_lesson(id: &str) -> Value {
 }
 
 fn queue_course_models(a: &Api) {
-    let mut items: Vec<Value> = (0..3)
-        .map(|i| {
-            json!({"type":"mcq","q":format!("Which statement about placement number {i} holds?"),
-                "options":["red apple","blue plum","pink pear","gray kiwi"],
-                "answer":"red apple","why":format!("placement why {i}")})
+    let strands: Vec<Value> = (0..3)
+        .map(|si| {
+            let items: Vec<Value> = (1..=3)
+                .map(|l| {
+                    json!({"type":"mcq","q":format!("Which statement about strand {si} level {l} holds?"),
+                        "options":["red apple","blue plum","pink pear","gray kiwi"],
+                        "answer":"red apple","why":format!("placement why s{si} l{l}"),"level":l})
+                })
+                .collect();
+            json!({"name":format!("Strand {si}"),"items":items})
         })
         .collect();
-    for i in 3..5 {
-        items.push(json!({"type":"recall","q":format!("State placement fact {i}."),
-            "answer":format!("placement answer {i}"),"accept":[],"why":format!("placement why {i}")}));
-    }
     a.state
         .faux()
-        .faux_text(&json!({ "items": items }).to_string());
+        .faux_text(&json!({ "strands": strands }).to_string());
     let lessons: Vec<Value> = (0..10).map(|i| course_lesson(&format!("b0l{i}"))).collect();
     a.state
         .faux()
@@ -1553,14 +1554,18 @@ async fn a_course_runs_from_goal_to_feedback_and_usage() {
     let a = api();
     queue_course_models(&a);
     let r = a
-        .post(&ws("/courses"), json!({"goal": "learn spanish"}))
+        .post(
+            &ws("/courses"),
+            json!({"goal": "learn spanish", "why": "to read other code"}),
+        )
         .await;
     assert_eq!(r.status, StatusCode::CREATED, "{}", r.text);
     let created = r.json();
     no_secret_keys(&created);
     let id = created["id"].as_str().unwrap().to_owned();
     let items = created["items"].as_array().unwrap();
-    assert_eq!(items.len(), 5);
+    // The strand probe opens with the middle level of each of the three strands.
+    assert_eq!(items.len(), 3);
 
     // A reload before submitting: the same questions, no secrets.
     let again = a.get(&ws(&format!("/courses/{id}/placement"))).await;
@@ -1568,27 +1573,40 @@ async fn a_course_runs_from_goal_to_feedback_and_usage() {
     no_secret_keys(&again.json());
     assert_eq!(again.json()["items"], created["items"]);
 
-    let answers: Vec<Value> = items
-        .iter()
-        .enumerate()
-        .map(|(n, i)| {
-            // The first question wrong on purpose, so there is a miss to show.
-            let text = if n == 0 {
-                "definitely wrong".to_owned()
-            } else {
-                i["options"][0].as_str().unwrap_or("x").to_owned()
-            };
-            json!({"item": i["id"], "text": text})
-        })
-        .collect();
-    let r = a
-        .post(
-            &ws(&format!("/courses/{id}/placement")),
-            json!({"answers": answers}),
-        )
-        .await;
-    assert_eq!(r.status, StatusCode::OK, "{}", r.text);
-    assert_eq!(r.json()["graded"].as_array().unwrap().len(), 5);
+    // The first question wrong on purpose, so there is a miss to show; later rounds are answered
+    // with whatever comes first. The probe asks at most six questions in all.
+    let mut round = items.clone();
+    let mut graded_total = 0;
+    for turn in 0..3 {
+        let answers: Vec<Value> = round
+            .iter()
+            .enumerate()
+            .map(|(n, i)| {
+                let text = if turn == 0 && n == 0 {
+                    "definitely wrong".to_owned()
+                } else {
+                    i["options"][0].as_str().unwrap_or("x").to_owned()
+                };
+                json!({"item": i["id"], "text": text, "guessed": false})
+            })
+            .collect();
+        let r = a
+            .post(
+                &ws(&format!("/courses/{id}/placement")),
+                json!({"answers": answers}),
+            )
+            .await;
+        assert_eq!(r.status, StatusCode::OK, "{}", r.text);
+        // The graded answers are revealed; the questions still to come never carry a key.
+        no_secret_keys(&r.json()["next"]);
+        graded_total += r.json()["graded"].as_array().unwrap().len();
+        round = r.json()["next"].as_array().unwrap().clone();
+        if round.is_empty() {
+            break;
+        }
+    }
+    assert!(round.is_empty(), "the probe must end within three rounds");
+    assert!((3..=6).contains(&graded_total), "{graded_total}");
     let after = a.get(&ws(&format!("/courses/{id}/placement"))).await.json();
     assert_eq!(after["items"], json!([]));
 
@@ -1667,7 +1685,10 @@ async fn a_course_runs_from_goal_to_feedback_and_usage() {
 async fn course_calls_without_an_ai_share_the_engine_unavailable_shape() {
     let a = api();
     let r = a
-        .post(&ws("/courses"), json!({"goal": "learn spanish"}))
+        .post(
+            &ws("/courses"),
+            json!({"goal": "learn spanish", "why": "to read other code"}),
+        )
         .await;
     assert_eq!(r.status, StatusCode::SERVICE_UNAVAILABLE, "{}", r.text);
     assert_eq!(r.code(), "engine_unavailable");
@@ -1680,7 +1701,10 @@ async fn course_ids_are_scoped_to_their_workspace_and_cannot_traverse() {
     let a = api();
     queue_course_models(&a);
     let id = a
-        .post(&ws("/courses"), json!({"goal": "learn spanish"}))
+        .post(
+            &ws("/courses"),
+            json!({"goal": "learn spanish", "why": "to read other code"}),
+        )
         .await
         .json()["id"]
         .as_str()
@@ -1703,7 +1727,19 @@ async fn course_ids_are_scoped_to_their_workspace_and_cannot_traverse() {
 async fn course_inputs_are_length_checked_at_the_boundary() {
     let a = api();
     for goal in ["".to_owned(), "x".repeat(501)] {
-        let r = a.post(&ws("/courses"), json!({"goal": goal})).await;
+        let r = a
+            .post(&ws("/courses"), json!({"goal": goal, "why": "because"}))
+            .await;
+        assert_eq!(r.status, StatusCode::BAD_REQUEST, "{}", r.text);
+    }
+    // Why this matters is required, and bounded like the goal.
+    for why in ["".to_owned(), "  ".to_owned(), "x".repeat(501)] {
+        let r = a
+            .post(
+                &ws("/courses"),
+                json!({"goal": "learn spanish", "why": why}),
+            )
+            .await;
         assert_eq!(r.status, StatusCode::BAD_REQUEST, "{}", r.text);
     }
     let r = a

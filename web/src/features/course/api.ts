@@ -26,11 +26,11 @@ export function useCourses(ws: string) {
 export function useCreateCourse(ws: string) {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: async (goal: string) =>
+    mutationFn: async (body: { goal: string; why: string }) =>
       unwrap(
         await api.POST("/workspaces/{ws}/courses", {
           params: { path: { ws } },
-          body: { goal },
+          body,
         })
       ),
     onSuccess: () => qc.invalidateQueries({ queryKey: courseKey(ws) }),
@@ -110,8 +110,12 @@ export function useCourseActions(ws: string, id: string) {
             params: { path },
             body: { answers },
           })
-        ).graded,
-      onSuccess: () => qc.invalidateQueries({ queryKey: courseKey(ws, id) }),
+        ),
+      onSuccess: (round) => {
+        // The probe's next round (empty once placement is over) replaces the pending questions.
+        qc.setQueryData([...courseKey(ws, id), "placement"], round.next)
+        void qc.invalidateQueries({ queryKey: courseKey(ws, id) })
+      },
     }),
     retry: useMutation({
       mutationFn: async () =>

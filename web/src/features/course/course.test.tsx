@@ -3,11 +3,14 @@ import userEvent from "@testing-library/user-event"
 import { HttpResponse, delay, http } from "msw"
 import { beforeEach, describe, expect, it } from "vitest"
 
+import type { components } from "@/api/schema"
 import { state } from "@/test/msw/db"
-import { newCourse } from "@/test/msw/fixtures/courses"
+import { newCourse, placementItems } from "@/test/msw/fixtures/courses"
 import { apiError } from "@/test/msw/respond"
 import { server } from "@/test/msw/server"
 import { renderApp, resetUi } from "@/test/render"
+
+type Dto = components["schemas"]
 
 const WS = "ws_rustasync"
 const API = "*/api/v1/workspaces/:ws/courses"
@@ -64,6 +67,12 @@ describe("Course screen", () => {
     const user = userEvent.setup()
     renderApp(`/w/${WS}/course`)
     await user.type(await screen.findByLabelText("Course goal"), "Rust async")
+    // Why this matters is required: Start stays off until it is written.
+    expect(screen.getByRole("button", { name: "Start course" })).toBeDisabled()
+    await user.type(
+      screen.getByLabelText("Why this matters to you"),
+      "To read other people's code"
+    )
     await user.click(screen.getByRole("button", { name: "Start course" }))
     const form = await screen.findByTestId("course-placement")
     await user.click(within(form).getByLabelText("Blocks the thread"))
@@ -79,6 +88,76 @@ describe("Course screen", () => {
       await screen.findByRole("button", { name: "Start lesson" })
     )
     expect(await screen.findByTestId("course-explain")).toBeInTheDocument()
+  })
+
+  it("asks a follow-up round of the strand probe and sends the guess and prerequisite flags", async () => {
+    const user = userEvent.setup()
+    const bodies: Dto["SubmitPlacementRequest"][] = []
+    const followUp: Dto["PlacementItemDto"] = {
+      id: "p3",
+      kind: "mcq",
+      q: "Which keyword suspends a function?",
+      options: ["await", "loop"],
+    }
+    server.use(
+      // Like the real server: the pending questions are the probe's current round.
+      http.get(`${API}/:id/placement`, () => {
+        return HttpResponse.json({
+          items:
+            bodies.length === 0
+              ? placementItems
+              : bodies.length === 1
+                ? [followUp]
+                : [],
+        })
+      }),
+      http.post(`${API}/:id/placement`, async ({ request }) => {
+        const body = (await request.json()) as Dto["SubmitPlacementRequest"]
+        bodies.push(body)
+        return HttpResponse.json(
+          bodies.length === 1
+            ? {
+                graded: [
+                  { item: "p1", correct: true, answer: "x", why: "y" },
+                  { item: "p2", correct: false, answer: "x", why: "y" },
+                ],
+                next: [followUp],
+              }
+            : { graded: [], next: [] }
+        )
+      })
+    )
+    renderApp(`/w/${WS}/course`)
+    await user.type(await screen.findByLabelText("Course goal"), "Rust async")
+    await user.type(screen.getByLabelText("Why this matters to you"), "work")
+    await user.click(screen.getByRole("button", { name: "Start course" }))
+    let form = await screen.findByTestId("course-placement")
+    await user.click(within(form).getByLabelText("Blocks the thread"))
+    await user.type(within(form).getByLabelText("Your answer"), "Future")
+    await user.click(within(form).getAllByLabelText("I'm guessing")[0]!)
+    await user.click(
+      within(form).getAllByLabelText("I'm missing a prerequisite")[1]!
+    )
+    await user.click(
+      within(form).getByRole("button", { name: "Check my answers" })
+    )
+    // Only the follow-up question is asked, with the last round's verdict above it.
+    await screen.findByText("Which keyword suspends a function?")
+    expect(screen.getByText("A few follow-up questions")).toBeInTheDocument()
+    expect(screen.getByTestId("placement-verdict")).toHaveTextContent(
+      "1 of 2 right"
+    )
+    expect(bodies[0]!.answers).toEqual([
+      { item: "p1", text: "Blocks the thread", guessed: true, blocked: false },
+      { item: "p2", text: "Future", guessed: false, blocked: true },
+    ])
+    form = screen.getByTestId("course-placement")
+    await user.click(within(form).getByLabelText("await"))
+    await user.click(
+      within(form).getByRole("button", { name: "Check my answers" })
+    )
+    // The probe is over: the wait shows the whole result, across both rounds.
+    expect(await screen.findByText("You got 1 of 2 right.")).toBeInTheDocument()
   })
 
   it("shows the misses while the course is Writing, then offers the lesson", async () => {
