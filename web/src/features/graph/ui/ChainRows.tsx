@@ -1,7 +1,8 @@
 /* eslint-disable jsx-a11y/click-events-have-key-events, jsx-a11y/no-static-element-interactions -- rows are treeitems driven by the tree container (aria-activedescendant); the click handlers are the pointer path to the same actions */
-import { ArrowRightIcon, ChevronRightIcon } from "lucide-react"
+import { ChevronRightIcon } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
+import { LatexGlyph } from "@/components/app/markdown/latex-glyph"
 import { cn } from "@/lib/utils"
 
 import { copy, formatCount } from "../copy"
@@ -107,9 +108,11 @@ export function ChainRow({
         >
           {from}
         </span>
-        <ArrowRightIcon
-          aria-hidden
-          className="size-3 shrink-0 text-muted-foreground rtl:-scale-x-100"
+        <LatexGlyph
+          tex="\\implies"
+          label="implies"
+          fallback="⟹"
+          className="shrink-0 text-muted-foreground rtl:-scale-x-100"
         />
         <span dir="auto" className="min-w-0 flex-1 truncate">
           {to}
@@ -122,6 +125,14 @@ export function ChainRow({
       <Badge variant="secondary" className="shrink-0">
         {row.role === "from" ? copy.table_.premise : copy.table_.conclusion}
       </Badge>
+      {row.role === "from" && (
+        <LatexGlyph
+          tex="\\land"
+          label="and"
+          fallback="∧"
+          className="shrink-0 text-muted-foreground"
+        />
+      )}
       <span
         dir="auto"
         className="min-w-0 flex-1 truncate"
