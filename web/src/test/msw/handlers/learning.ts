@@ -139,6 +139,20 @@ export const learningHandlers = [
     HttpResponse.json({ slots: entry(params["ws"]).slots })
   ),
 
+  http.get(`${API}/settings`, ({ params }) =>
+    HttpResponse.json({ settings: entry(params["ws"]).settings })
+  ),
+
+  http.post(`${API}/settings`, async ({ params, request }) => {
+    const e = entry(params["ws"])
+    const body = (await request.json()) as { name: string; value: number }
+    const row = e.settings.find((s) => s.name === body.name)
+    if (!row || body.value < row.min || body.value > row.max)
+      return apiError("validation", `${body.name} is out of range`)
+    row.value = body.value
+    return HttpResponse.json({ settings: e.settings })
+  }),
+
   http.get(`${API}/profile`, ({ params }) =>
     HttpResponse.json({ entries: entry(params["ws"]).profile })
   ),

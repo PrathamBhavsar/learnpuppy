@@ -34,9 +34,16 @@ it("reads B20's day envelope and sends an exclusive end date", async () => {
       })
     })
   )
-  renderApp(`${PATH}?range=custom&from=2026-10-01&to=2026-10-31`)
+  // The fixture's days are relative to today, so the custom range has to be too.
+  const day = (back: number) =>
+    new Date(Date.now() - back * 86_400_000).toISOString().slice(0, 10)
+  const from = day(10)
+  const to = day(0)
+  renderApp(`${PATH}?range=custom&from=${from}&to=${to}`)
   expect(await screen.findByTestId("digest-days")).toBeInTheDocument()
-  expect(end).toBe("2026-11-01")
+  expect(end).toBe(
+    new Date(Date.parse(to) + 86_400_000).toISOString().slice(0, 10)
+  )
 })
 
 it("reads the nested decision detail without inventing commit dates", async () => {

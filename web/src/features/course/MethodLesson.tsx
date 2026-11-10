@@ -32,11 +32,14 @@ export function MethodLesson({
   id,
   plan,
   actions,
+  onClosed,
 }: {
   ws: string
   id: string
   plan: CoursePlan
   actions: MethodActions
+  /** Called once the Close report is shown: the bout that held this session ends. */
+  onClosed?: () => void
 }) {
   const [step, setStep] = useState<MethodStep | null>(null)
   const [version, setVersion] = useState(0)
@@ -151,7 +154,10 @@ export function MethodLesson({
           id={id}
           actions={actions}
           report={report}
-          onReport={setReport}
+          onReport={(r) => {
+            setReport(r)
+            onClosed?.()
+          }}
         />
       ) : null}
       {step ? (

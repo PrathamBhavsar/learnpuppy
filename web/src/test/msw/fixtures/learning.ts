@@ -1,5 +1,6 @@
 import type {
   Clock,
+  MethodSetting,
   ProfileEntry,
   Schedule,
   SlotRecord,
@@ -11,6 +12,7 @@ export type MockLearning = {
   schedule: Schedule
   slots: SlotRecord[]
   profile: ProfileEntry[]
+  settings: MethodSetting[]
 }
 
 export function learningFixture(): MockLearning {
@@ -29,5 +31,15 @@ export function learningFixture(): MockLearning {
     schedule: { wakeTime: "", slots: [] },
     slots: [],
     profile: [],
+    settings: [
+      { name: "bout_limit_minutes", value: 90, default: 90, min: 5, max: 180 },
+      {
+        name: "attempts_before_parking",
+        value: 3,
+        default: 3,
+        min: 1,
+        max: 10,
+      },
+    ],
   }
 }

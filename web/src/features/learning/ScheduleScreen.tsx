@@ -8,19 +8,18 @@ import { PageHeader } from "@/components/app/page-header"
 import { SkeletonBlock } from "@/components/app/skeleton-block"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { usePageTitle } from "@/hooks/use-page-title"
 import { useWorkspaceName } from "@/hooks/use-workspace"
 import { toastError, toastSuccess } from "@/lib/toast"
 
-import { useLearningActions, useSchedule, useTrackSlots } from "./api"
+import {
+  useLearningActions,
+  useSchedule,
+  useTrackSlots,
+} from "@/api/queries/learning"
 
 const STATE_LABEL = { kept: "Kept", missed: "Missed", upcoming: "Upcoming" }
 const STATE_VARIANT = {
@@ -61,7 +60,11 @@ export function ScheduleScreen({ ws }: { ws: string }) {
         description="Weekly study slots: 2 to 3 bouts a day, on 5 days."
       />
       {/* `key` resets the draft whenever the server record itself changes (e.g. after a save). */}
-      <ScheduleForm key={JSON.stringify(schedule.data)} ws={ws} saved={schedule.data} />
+      <ScheduleForm
+        key={JSON.stringify(schedule.data)}
+        ws={ws}
+        saved={schedule.data}
+      />
       <TrackedSlots track={track.data} />
     </div>
   )
@@ -71,7 +74,8 @@ function ScheduleForm({ ws, saved }: { ws: string; saved: Schedule }) {
   const { setSchedule, suggestSlots } = useLearningActions(ws)
   const [wakeTime, setWakeTime] = useState(saved.wakeTime)
   const [slots, setSlots] = useState(saved.slots)
-  const dirty = wakeTime !== saved.wakeTime || slots.join(",") !== saved.slots.join(",")
+  const dirty =
+    wakeTime !== saved.wakeTime || slots.join(",") !== saved.slots.join(",")
 
   const setSlot = (i: number, value: string) =>
     setSlots(slots.map((s, j) => (j === i ? value : s)))

@@ -1,7 +1,6 @@
 import createClient, { type Middleware } from "openapi-fetch"
 
 import { errorFromResponse, toApiError } from "./errors"
-import type { LearningPaths } from "./learning-types"
 import type { MethodPaths } from "./method-types"
 import type { PendingPaths } from "./pending-types"
 import type { paths } from "./schema"
@@ -50,8 +49,8 @@ export const pendingApi = make<paths>()
 /** Learning-method course routes (M8c), typed by hand until they reach the generated schema. */
 export const methodApi = make<MethodPaths>()
 
-/** Bout clock and check-in routes (M8's learning routes), typed by hand ahead of M8. */
-export const learningApi = make<LearningPaths>()
+/** Bout clock, check-in, schedule, profile and method-settings routes. */
+export const learningApi = make<paths>()
 
 /** `POST /diagnostics` is in docs/web/03 but the server does not implement it yet; callers fall back locally. */
 export const diagnosticsApi = make<Pick<PendingPaths, "/diagnostics">>()

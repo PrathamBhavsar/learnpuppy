@@ -86,7 +86,7 @@ export type CloseReport = {
   resume?: string | null
 }
 
-export type BrainDumpResult = { missed: string[] }
+type BrainDumpResult = { missed: string[] }
 /** F32: a proposed first test for one review card; `due` is epoch ms. */
 export type ReviewDate = { cardId: string; label: string; due: number }
 export type ReviewDatesRequest = { dates: { cardId: string; due: number }[] }
