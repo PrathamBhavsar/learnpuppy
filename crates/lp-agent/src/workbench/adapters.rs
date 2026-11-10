@@ -61,6 +61,8 @@ impl HttpWeb {
             let mut builder = reqwest::Client::builder()
                 .timeout(WEB_TIMEOUT)
                 .user_agent("learnpuppy")
+                // A proxy would resolve and connect on our behalf, bypassing the vetted pin.
+                .no_proxy()
                 .redirect(reqwest::redirect::Policy::none());
             if let Some((host, addr)) = self.vet(&mut url).await? {
                 builder = builder.resolve(&host, addr);
@@ -158,10 +160,12 @@ fn is_internal(ip: IpAddr) -> bool {
                 || v4.octets()[0] == 0 // 0.0.0.0/8
                 || (v4.octets()[0] == 100 && v4.octets()[1] & 0xc0 == 0x40) // 100.64.0.0/10 CGNAT
                 || v4.octets()[..3] == [192, 0, 0] // 192.0.0.0/24
+                || (v4.octets()[0] == 198 && v4.octets()[1] & 0xfe == 18) // 198.18.0.0/15 benchmarking
+                || v4.octets()[0] >= 240 // 240.0.0.0/4 reserved
         }
         IpAddr::V6(v6) => {
-            if let Some(v4) = v6.to_ipv4_mapped() {
-                return is_internal(v4.into());
+            if let Some(v4) = v6.to_ipv4() {
+                return is_internal(v4.into()); // mapped and IPv4-compatible forms
             }
             let seg = v6.segments();
             if seg[..6] == [0x64, 0xff9b, 0, 0, 0, 0] {
@@ -497,6 +501,10 @@ mod tests {
             "http://[fd00::1]/",
             "http://[fe80::1]/",
             "http://user:pw@example.com/",
+            "http://100.64.0.1/",
+            "http://198.18.0.1/",
+            "http://240.0.0.1/",
+            "http://[::127.0.0.1]/",
         ] {
             assert!(web.fetch(url).await.is_err(), "{url} should be rejected");
         }
@@ -512,10 +520,15 @@ mod tests {
             "192.0.0.8",
             "64:ff9b::7f00:1",
             "64:ff9b::a9fe:a9fe",
+            "198.18.0.1",
+            "198.19.255.255",
+            "240.0.0.1",
+            "255.255.255.255",
+            "::127.0.0.1",
         ] {
             assert!(is_internal(ip.parse().unwrap()), "{ip}");
         }
-        for ip in ["100.63.0.1", "100.128.0.1", "192.0.1.1", "64:ff9b::808:808"] {
+        for ip in ["100.63.0.1", "100.128.0.1", "192.0.1.1", "198.17.0.1", "198.20.0.1", "64:ff9b::808:808"] {
             assert!(!is_internal(ip.parse().unwrap()), "{ip}");
         }
     }
