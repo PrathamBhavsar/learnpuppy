@@ -1,6 +1,6 @@
 # UI Polish and Textbook Mode Plan
 
-Back to [Brain Index](/index.md). Details: [Task DAG](/ui-polish/tasks.md), [Test Plan](/ui-polish/test-plan.md), [Review Log](/ui-polish/review.md). Decision: [ADR-0009](/decisions/0009-ui-polish-borrow-ideas-not-code.md). Related: [Learning Method Plan](/learning-method/index.md), [Cheap Tutor Plan](/cheap-tutor/index.md), [Design and Motion](/learning-method/features.md).
+Back to [Brain Index](/index.md). Details: [Task DAG](/ui-polish/tasks.md), [Test Plan](/ui-polish/test-plan.md), [Review Log](/ui-polish/review.md). Decision: [ADR-0009](/decisions/0009-ui-polish-borrow-ideas-not-code.md). Related: [Learning Method Plan](/learning-method/index.md), [Cheap Tutor Plan](/cheap-tutor/index.md).
 
 **Status:** planned 2026-11-11, not started. Review by the Elephant-Goldfish pass is logged in [Review Log](/ui-polish/review.md).
 
@@ -26,8 +26,8 @@ The owner compared LearnPuppy with `amosblomqvist/learnharness` and judged its U
 ## Non-negotiables (from the project guardrails)
 
 1. Domain logic stays in Rust. The SPA renders DTOs and sends intent. FSRS, grading, objective extraction and card generation never move to TypeScript.
-2. Cheap tutor cost rule ([ADR-0007](/decisions/0007-course-as-data.md)): UI work causes **zero** model calls. Textbook mode may use **at most one cheap-tier call per chapter** at import time, and none while studying.
-3. Bundle budget: main chunk stays within the `docs/web/04-frontend-foundation.md` limit; `mermaid`, `katex`, `shiki` stay lazy.
+2. Cheap tutor cost rule ([ADR-0007](/decisions/0007-course-as-data.md)): UI work causes **zero** model calls. Textbook mode may use **one cheap-tier call per chapter** at import (capped at 40 per book, outside the G4 hour cap, shown on the usage route) and none while studying.
+3. Bundle budget: main chunk stays at or under 220 kB gzip (`docs/web/04-frontend-foundation.md`); `mermaid`, `katex`, `shiki` stay lazy.
 4. Accessibility: keyboard, light and dark, RTL, reduced motion, contrast 4.5:1 all keep passing.
 5. Every package merges through `make gate` in its own worktree, then `git merge --no-ff` into `staging`.
 
@@ -46,9 +46,9 @@ Ids `U0` to `U9`. Full file lists, acceptance and tests are in [Task DAG](/ui-po
 | U6 | Chain connectives as KaTeX glyphs | 2 | Codex low |
 | U7 | Textbook mode backend (F37 part 1): page map, objectives, cards | 2 | Claude high plan, Codex medium build |
 | U8 | Textbook mode screens (F37 part 2): chapter check, "I read this" quiz | 3 | Claude medium |
-| U9 | Drawing answer type | 3 | Codex medium |
+| U9 | Drawing answer type (parked) | 3 | Codex medium |
 
-U9 is the first to cut if time is short.
+U9 is parked: it needs a stored image field and an upload path, so it waits for the owner's verdict.
 
 ## Order and merge flow
 

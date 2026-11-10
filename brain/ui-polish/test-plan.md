@@ -30,8 +30,8 @@ Back to [UI Polish Plan](/ui-polish/index.md). Task detail: [Task DAG](/ui-polis
 1. Every package adds its tests in the same commit as its code. A package with no new test is not done.
 2. A test must fail without the change. For the streaming helper, keep a test that renders raw chunks and asserts the raw syntax shows, so the guard is proven.
 3. Any new string on screen has an accessible name. Any new motion honours reduced motion.
-4. **Zero-call rule:** a service test wraps the engine in a call counter and asserts 0 calls for rendering, studying and the reading check, and at most 1 per chapter at import.
-5. Cost guard: the usage route after a full textbook import plus a study session must stay inside the G4 budget (under 100k tokens, at most 2 strong and 22 cheap calls per hour).
+4. **Zero-call rule:** a service test wraps the engine in a call counter and asserts 0 calls for rendering, studying and the reading check, and at most 1 per chapter at import (plus 1 for the whole book only when the PDF has no outline), never more than 40 per book.
+5. Cost guard: a study session after import must stay inside the G4 hour budget (under 100k tokens, at most 2 strong and 22 cheap calls per hour). The import itself is a separate, capped, one-off cost visible on the usage route.
 
 ## Textbook mode, specific checks
 
