@@ -1,0 +1,9 @@
+.lp-mermaid {
+  max-height: 480px;
+  overflow: auto;
+}
+.lp-mermaid svg {
+  max-width: 100%;
+  height: auto;
+  margin-inline: auto;
+}

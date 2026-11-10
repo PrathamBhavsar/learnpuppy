@@ -16,6 +16,25 @@ export function budgetFor(name: string, entry: string): number {
   return HEAVY.test(name) ? HEAVY_ROUTE_BUDGET : ROUTE_BUDGET
 }
 
+/** Chunks reachable only from a lazy vendor root (mermaid pulls in elk, cytoscape, per-diagram chunks): never on first load, exempt from route budgets. */
+function lazyClosure(
+  files: string[],
+  root: RegExp,
+  entry: string
+): Set<string> {
+  const seen = new Set<string>()
+  const queue = files.filter((f) => root.test(f))
+  while (queue.length) {
+    const f = queue.pop() as string
+    if (seen.has(f)) continue
+    seen.add(f)
+    const src = readFileSync(join(DIST, "assets", f), "utf8")
+    for (const g of files)
+      if (g !== entry && !seen.has(g) && src.includes(g)) queue.push(g)
+  }
+  return seen
+}
+
 if (import.meta.main) {
   const html = readFileSync(join(DIST, "index.html"), "utf8")
   const entry =
@@ -29,15 +48,17 @@ if (import.meta.main) {
   const files = readdirSync(join(DIST, "assets")).filter((f) =>
     f.endsWith(".js")
   )
+  const exempt = lazyClosure(files, /^mermaid\.core-/, entry)
   const rows = files.map((name) => {
     const gz = gzipSync(readFileSync(join(DIST, "assets", name))).length
-    return { name, gz, budget: budgetFor(name, entry) }
+    const budget = exempt.has(name) ? Infinity : budgetFor(name, entry)
+    return { name, gz, budget }
   })
   rows.sort((a, b) => b.gz - a.gz)
   for (const r of rows) {
     const flag = r.gz > r.budget ? "OVER" : "ok  "
     console.log(
-      `${flag} ${(r.gz / KB).toFixed(1).padStart(7)} kB gzip / ${(r.budget / KB).toFixed(0)} kB  ${r.name}${r.name === entry ? "  (entry)" : ""}`
+      `${flag} ${(r.gz / KB).toFixed(1).padStart(7)} kB gzip / ${Number.isFinite(r.budget) ? (r.budget / KB).toFixed(0) : "lazy"} kB  ${r.name}${r.name === entry ? "  (entry)" : ""}`
     )
   }
   const over = rows.filter((r) => r.gz > r.budget)

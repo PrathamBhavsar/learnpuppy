@@ -6,6 +6,7 @@ import { cn } from "@/lib/utils"
 
 import "./styles.css"
 import { CodeBlock } from "./CodeBlock"
+import { MermaidBlock } from "./MermaidBlock"
 
 type Plugins = ComponentProps<typeof ReactMarkdown>
 
@@ -25,6 +26,8 @@ const COMPONENTS: Plugins["components"] = {
     const text = String(children)
     const lang = /language-([\w+-]+)/.exec(className ?? "")?.[1]
     // A fence yields a `language-*` class or a trailing newline; inline code has neither.
+    if (lang === "mermaid")
+      return <MermaidBlock code={text.replace(/\n$/, "")} />
     if (lang || text.endsWith("\n"))
       return <CodeBlock code={text.replace(/\n$/, "")} lang={lang} />
     return (
