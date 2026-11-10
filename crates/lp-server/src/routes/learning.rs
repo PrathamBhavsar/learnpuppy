@@ -31,9 +31,10 @@ use crate::dto::course::{
     RegisterListDto, ReviewDateDto, ReviewDateListDto, ReviewDatesRequest,
 };
 use crate::dto::learning::{
-    clock_dto, CheckinNeededDto, CheckinRequest, CheckinResultDto, ClockDto, HeartbeatRequest,
-    OverrideRequest, ProfileResultDto, ScheduleDto, SetProfileRequest, SetScheduleRequest,
-    StartBoutRequest, SuggestSlotsRequest, SuggestSlotsResultDto, TrackSlotsResultDto,
+    clock_dto, method_settings_dto, CheckinNeededDto, CheckinRequest, CheckinResultDto, ClockDto,
+    HeartbeatRequest, MethodSettingsDto, OverrideRequest, ProfileResultDto, ScheduleDto,
+    SetMethodSettingRequest, SetProfileRequest, SetScheduleRequest, StartBoutRequest,
+    SuggestSlotsRequest, SuggestSlotsResultDto, TrackSlotsResultDto,
 };
 use crate::error::{ApiError, ApiJson, ErrorCode, ErrorEnvelope};
 
@@ -96,6 +97,10 @@ pub fn routes() -> Router<AppState> {
             get(checkin_needed),
         )
         .route("/workspaces/{ws}/learning/checkin", post(checkin))
+        .route(
+            "/workspaces/{ws}/learning/settings",
+            get(method_settings_get).post(method_settings_set),
+        )
         .route(
             "/workspaces/{ws}/learning/schedule",
             get(schedule_get).post(schedule_set),
@@ -169,6 +174,22 @@ fn refusal_gate(r: Refusal) -> &'static str {
     }
 }
 
+/// The refusal for a step asked of a locked clock, with the same stable codes a bout start uses.
+fn locked_gate(status: BoutStatus) -> ApiError {
+    match status {
+        BoutStatus::Gap { remaining_minutes } => ApiError::new(
+            ErrorCode::Conflict,
+            format!("in the gap between bouts: {remaining_minutes} min left"),
+        )
+        .with_details(serde_json::json!({ "gate": "gap", "remainingMinutes": remaining_minutes })),
+        BoutStatus::DailyLimitReached => {
+            ApiError::gate("daily_limit", "today's study time is used up")
+        }
+        BoutStatus::BoutLimitReached => ApiError::gate("bout_limit", "this bout hit its limit"),
+        BoutStatus::Active { .. } => ApiError::gate("bout_required", "no open bout"),
+    }
+}
+
 impl From<LearningError> for ApiError {
     fn from(e: LearningError) -> Self {
         match e {
@@ -229,6 +250,12 @@ fn bout_id(v: &str) -> Result<(), ApiError> {
 
 fn learning(h: &WorkspaceHandle) -> LearningService {
     LearningService::open(h.root())
+}
+
+/// The workspace's tuned method settings (`attempts_before_parking`, bout limits, ...), never the
+/// built-in defaults: a setting changed in the UI has to change the teach loop.
+fn ws_settings(h: &WorkspaceHandle) -> Result<MethodSettings, LearningError> {
+    learning(h).settings()
 }
 
 /// F24: whether a gap pause is due right now, seeded from the open bout's own id (its start
@@ -348,7 +375,7 @@ pub async fn plan_prereq(
         Ok(plan::commit_prereq(
             &hc.stores().courses,
             &idc,
-            &MethodSettings::default(),
+            &ws_settings(&hc)?,
             prereq,
             &beforec,
             &visitedc,
@@ -368,7 +395,7 @@ pub async fn plan_prereq(
     path = "/workspaces/{ws}/courses/{id}/step",
     tag = "courses",
     params(("ws" = String, Path, description = "Workspace id"), ("id" = String, Path, description = "Course id")),
-    responses((status = 200, body = MethodStepDto), (status = 404, body = ErrorEnvelope))
+    responses((status = 200, body = MethodStepDto), (status = 404, body = ErrorEnvelope), (status = 409, description = "No open bout, or the bout clock is locked", body = ErrorEnvelope))
 )]
 pub async fn step(
     State(st): State<AppState>,
@@ -378,13 +405,32 @@ pub async fn step(
     let h = open(&st, &ws, false).await?;
     let now = lp_service::now_ms();
     let (course, st_) = blocking(move || {
-        Ok(plan::step(
+        // F23: teaching needs an open bout, and a locked clock hands out nothing but Close.
+        let clock = learning(&h).clock(now)?;
+        if clock.bout.is_none() && !matches!(clock.status, BoutStatus::Active { .. }) {
+            return Err(locked_gate(clock.status));
+        }
+        if clock.bout.is_none() {
+            return Err(ApiError::gate(
+                "bout_required",
+                "start a bout (the ready gate) before studying",
+            ));
+        }
+        let (course, st_) = plan::step(
             &h.stores().courses,
             &*h.stores().tracker,
             &id,
-            &MethodSettings::default(),
+            &ws_settings(&h)?,
             now,
-        )?)
+        )?;
+        match clock.status {
+            BoutStatus::Active { .. } => Ok((course, st_)),
+            // An open bout that ran out of time, or spent the day, may only be closed.
+            BoutStatus::BoutLimitReached | BoutStatus::DailyLimitReached => {
+                Ok((course, lp_core::method::Step::Close))
+            }
+            other => Err(locked_gate(other)),
+        }
     })
     .await?;
     Ok(Json(crate::dto::course::method_step_dto(&course, &st_)))
@@ -415,7 +461,7 @@ pub async fn predict(
     let h = open(&st, &ws, true).await?;
     let now = lp_service::now_ms();
     blocking(move || {
-        let settings = MethodSettings::default();
+        let settings = ws_settings(&h)?;
         let due = plan::due_items(&*h.stores().tracker, &id, now)?;
         let action = Action::Predict {
             lesson: req.lesson.clone(),
@@ -463,7 +509,7 @@ pub async fn explain_seen(
     let h = open(&st, &ws, true).await?;
     let now = lp_service::now_ms();
     blocking(move || {
-        let settings = MethodSettings::default();
+        let settings = ws_settings(&h)?;
         let due = plan::due_items(&*h.stores().tracker, &id, now)?;
         let action = Action::Explain {
             lesson: req.lesson.clone(),
@@ -511,7 +557,7 @@ pub async fn note(
     let h = open(&st, &ws, true).await?;
     let now = lp_service::now_ms();
     blocking(move || {
-        let settings = MethodSettings::default();
+        let settings = ws_settings(&h)?;
         let due = plan::due_items(&*h.stores().tracker, &id, now)?;
         let action = Action::WriteNote {
             lesson: req.lesson.clone(),
@@ -575,7 +621,7 @@ pub async fn quiz_answer(
         gap: req.gap,
     };
     let out = blocking(move || {
-        let settings = MethodSettings::default();
+        let settings = ws_settings(&h)?;
         Ok(plan::quiz_answer(
             &h.stores().courses,
             &*h.stores().tracker,
@@ -629,7 +675,7 @@ pub async fn feynman(
         check.correct,
     );
     blocking(move || {
-        let method_settings = MethodSettings::default();
+        let method_settings = ws_settings(&h)?;
         let due = plan::due_items(&*h.stores().tracker, &idc, now)?;
         Ok(plan::commit_feynman(
             &h.stores().courses,
@@ -674,7 +720,7 @@ pub async fn take_break(
     let h = open(&st, &ws, true).await?;
     let now = lp_service::now_ms();
     blocking(move || {
-        let settings = MethodSettings::default();
+        let settings = ws_settings(&h)?;
         let due = plan::due_items(&*h.stores().tracker, &id, now)?;
         let action = Action::TakeBreak {
             lesson: req.lesson.clone(),
@@ -721,7 +767,7 @@ pub async fn close_session(
             &*stores.graph,
             &*stores.tracker,
             &id,
-            &MethodSettings::default(),
+            &ws_settings(&h)?,
             &date,
             now,
         )?)
@@ -1240,4 +1286,50 @@ pub async fn profile_set(
     Ok(Json(ProfileResultDto {
         entries: entries.into_iter().map(Into::into).collect(),
     }))
+}
+
+/// Every tunable method setting with its default and allowed range (the plan's defaults ship as
+/// settings, not as facts).
+#[utoipa::path(
+    get,
+    path = "/workspaces/{ws}/learning/settings",
+    tag = "courses",
+    params(("ws" = String, Path, description = "Workspace id")),
+    responses((status = 200, body = MethodSettingsDto), (status = 404, body = ErrorEnvelope))
+)]
+pub async fn method_settings_get(
+    State(st): State<AppState>,
+    Path(ws): Path<String>,
+) -> Result<Json<MethodSettingsDto>, ApiError> {
+    let h = open(&st, &ws, false).await?;
+    let current = blocking(move || Ok(ws_settings(&h)?)).await?;
+    Ok(Json(method_settings_dto(&current)))
+}
+
+/// Changes one setting for this workspace; the value must sit inside the setting's range.
+#[utoipa::path(
+    post,
+    path = "/workspaces/{ws}/learning/settings",
+    tag = "courses",
+    params(("ws" = String, Path, description = "Workspace id")),
+    request_body = SetMethodSettingRequest,
+    responses(
+        (status = 200, body = MethodSettingsDto),
+        (status = 400, body = ErrorEnvelope),
+        (status = 404, body = ErrorEnvelope),
+        (status = 409, description = "Workspace archived", body = ErrorEnvelope),
+    )
+)]
+pub async fn method_settings_set(
+    State(st): State<AppState>,
+    Path(ws): Path<String>,
+    ApiJson(req): ApiJson<SetMethodSettingRequest>,
+) -> Result<Json<MethodSettingsDto>, ApiError> {
+    let h = open(&st, &ws, true).await?;
+    let current = blocking(move || {
+        learning(&h).set_setting(&req.name, req.value)?;
+        Ok(ws_settings(&h)?)
+    })
+    .await?;
+    Ok(Json(method_settings_dto(&current)))
 }

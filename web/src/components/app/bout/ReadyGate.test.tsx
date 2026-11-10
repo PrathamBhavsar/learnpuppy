@@ -36,9 +36,9 @@ describe("ReadyGate (F03)", () => {
     await vi.advanceTimersByTimeAsync(FOCUS_SECONDS * 1000)
     expect(screen.getByRole("button", { name: "Begin" })).toBeEnabled()
 
-    await userEvent.setup({ delay: null }).click(
-      screen.getByRole("button", { name: "Begin" })
-    )
+    await userEvent
+      .setup({ delay: null })
+      .click(screen.getByRole("button", { name: "Begin" }))
     expect(onReady).toHaveBeenCalledWith({
       phoneAway: true,
       tabsClosed: true,

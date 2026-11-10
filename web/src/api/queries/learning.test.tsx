@@ -1,13 +1,19 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
-import { act, render, renderHook, screen, waitFor } from "@testing-library/react"
+import {
+  act,
+  render,
+  renderHook,
+  screen,
+  waitFor,
+} from "@testing-library/react"
 import type { ReactNode } from "react"
 import { describe, expect, it } from "vitest"
 
 import { state } from "@/test/msw/db"
 import { learningFixture } from "@/test/msw/fixtures/learning"
 
-import { useClock, useLearningActions } from "./api"
-import { LockedScreen } from "./LockedScreen"
+import { useClock, useLearningActions } from "./learning"
+import { LockedScreen } from "@/components/app/bout/LockedScreen"
 
 const WS = "ws_rustasync"
 
@@ -25,7 +31,13 @@ function wrapper() {
 function ClockGate() {
   const clock = useClock(WS, { pollMs: false })
   if (!clock.data) return null
-  return <LockedScreen clock={clock.data} onOverride={() => {}} overridePending={false} />
+  return (
+    <LockedScreen
+      clock={clock.data}
+      onOverride={() => {}}
+      overridePending={false}
+    />
+  )
 }
 
 describe("learning clock (F23) is refresh-proof", () => {
@@ -146,7 +158,10 @@ describe("useLearningActions (F23)", () => {
     })
     const { Wrapper } = wrapper()
     const { result } = renderHook(
-      () => ({ clock: useClock(WS, { pollMs: false }), ...useLearningActions(WS) }),
+      () => ({
+        clock: useClock(WS, { pollMs: false }),
+        ...useLearningActions(WS),
+      }),
       { wrapper: Wrapper }
     )
     await waitFor(() =>

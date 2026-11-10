@@ -32,7 +32,11 @@ describe("LockedScreen (F23)", () => {
 
   it("shows the server's time left during a gap, read straight from the clock", () => {
     render(
-      <LockedScreen clock={clock()} onOverride={vi.fn()} overridePending={false} />
+      <LockedScreen
+        clock={clock()}
+        onOverride={vi.fn()}
+        overridePending={false}
+      />
     )
     expect(screen.getByTestId("locked-time-left")).toHaveTextContent(
       "Back in 42 min."
@@ -42,7 +46,11 @@ describe("LockedScreen (F23)", () => {
   it("requires a typed reason before the override can be used", async () => {
     const onOverride = vi.fn()
     render(
-      <LockedScreen clock={clock()} onOverride={onOverride} overridePending={false} />
+      <LockedScreen
+        clock={clock()}
+        onOverride={onOverride}
+        overridePending={false}
+      />
     )
     const button = screen.getByRole("button", {
       name: "Override, just this once",
@@ -91,8 +99,8 @@ describe("LockedScreen (F23)", () => {
         overridePending={false}
       />
     )
-    expect(
-      screen.getAllByTestId("screen-locked").at(-1)
-    ).toHaveTextContent(/study time is used up/)
+    expect(screen.getAllByTestId("screen-locked").at(-1)).toHaveTextContent(
+      /study time is used up/
+    )
   })
 })

@@ -130,5 +130,20 @@ Mark each: `[ ] implemented  [ ] reduced-motion variant  [ ] perf checked`.
 Isolated `LEARNPUPPY_HOME`, `serve --engine real`, one workspace, one teach chat, 2 turns, over HTTP (no browser).
 - Result: Probe turn 1 reached `idle` with a pending `probe` question after 6 s; the answer was accepted (202) and turn 2 reached a new pending `probe` after 8 s. No errors.
 - Bug found only by this run and fixed: the driver's `env_clear` allow-list omitted `USER`/`LOGNAME`, so every non-default Claude profile failed with `Not logged in` (exit 1, empty stderr) even though the pool listed it `ready`. Added both to `ENV_ALLOW`.
-- Known gap: `/accounts` shows `tokensIn: 0, tokensOut: 0` after real calls (`requests` does increment), so usage accounting is not parsed from the real CLIs.
+- Gap closed since: `/accounts` token counts. The driver parses usage from each CLI's result event (`subprocess.rs` `usage_of`, tested for Claude, Codex, Agy and opencode) and `lp-service/src/engine.rs` feeds it to the pool on success.
 - Not exercised on the real engine: Plan/Teach phases, workbench jobs, PDF, the browser UI, `codex`/`agy` roles (a direct `codex exec` ping with the prober settings worked).
+
+
+## Learning-method integration (2026-11-10)
+Found by running the full web check, which `make gate` did not include, and by reading what the merged code actually wired.
+- [x] Bout UI is live. `BoutShell` (check-in, ready gate, clock, heartbeat, gap pauses, focus guard, lock) wraps the method lesson in the course screen; before this, `BoutClock`, `GapPause`, `LockedScreen`, `ReadyGate` and `SleepCheckin` were built and unit-tested but rendered nowhere.
+  - Evidence: `BoutShell.test.tsx` (7), `method.test.tsx` "asks how you slept first, then the ready gate, before any step is requested" and "shows the lock, not the lesson, inside the gap".
+- [x] The lock is the server's. `POST /courses/{id}/step` returns `409` with `details.gate` `bout_required`, `gap` or `daily_limit`; an open bout past its limit gets only `close`.
+  - Evidence: `crates/lp-server/tests/api.rs` `method_course_runs_from_plan_to_close_with_gated_steps`, `step_is_refused_between_bouts_and_when_the_day_is_spent`.
+- [x] Workspace settings reach the teach loop. Nine method routes read `MethodSettings::default()`; they now read the workspace's saved values.
+- [x] All 15 method numbers are settings with ranges: `GET/POST /workspaces/{ws}/learning/settings`, Study method section in workspace settings. Before, no route called `set_setting` and only 6 of 15 names were accepted.
+  - Evidence: `method_settings_list_validate_and_persist_per_workspace`, `MethodSettingsSection.test.tsx`.
+- [x] Wire shape. `BoutStatusDto` (`activeMinutes`, `remainingMinutes`) and the Feynman step (`keyFacts`) serialized snake_case while the SPA read camelCase, hidden by hand-written client types. The web now uses the generated OpenAPI types for learning and method routes, so a rename fails `tsc`.
+  - Evidence: `api.rs` clock assertions, `dto/course.rs` `feynman_step_uses_camel_case_key_facts`.
+- [x] `make gate` now includes `web-check` (tsc, eslint, knip, tokens, contrast, vitest, build, bundle budget). 650 web tests pass.
+- Not covered: a real-browser Playwright run of the method session (mock courses are legacy, not method courses; the serve suite uses the faux engine). The vitest integration tests drive the real `CourseView` against MSW.

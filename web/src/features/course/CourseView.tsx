@@ -14,6 +14,8 @@ import {
   useMisses,
   usePlacementItems,
 } from "./api"
+import { BoutShell } from "@/components/app/bout/BoutShell"
+
 import { Lesson } from "./Lesson"
 import { useCoursePlan, useMethodActions } from "./method-api"
 import { MethodLesson } from "./MethodLesson"
@@ -88,12 +90,17 @@ export function CourseView({ ws, id, onBack }: Props) {
         {plan.isPending ? (
           <Spinner />
         ) : plan.data ? (
-          <MethodLesson
-            ws={ws}
-            id={id}
-            plan={plan.data}
-            actions={methodActions}
-          />
+          <BoutShell ws={ws} course={id}>
+            {({ onClosed }) => (
+              <MethodLesson
+                ws={ws}
+                id={id}
+                plan={plan.data}
+                actions={methodActions}
+                onClosed={onClosed}
+              />
+            )}
+          </BoutShell>
         ) : (
           <Lesson ws={ws} id={id} actions={actions} />
         )}

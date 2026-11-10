@@ -6,19 +6,14 @@ import { ErrorState } from "@/components/app/error-state"
 import { PageHeader } from "@/components/app/page-header"
 import { SkeletonBlock } from "@/components/app/skeleton-block"
 import { Button } from "@/components/ui/button"
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { usePageTitle } from "@/hooks/use-page-title"
 import { useWorkspaceName } from "@/hooks/use-workspace"
 import { toastError, toastSuccess } from "@/lib/toast"
 
-import { useLearningActions, useProfile } from "./api"
+import { useLearningActions, useProfile } from "@/api/queries/learning"
 
 /** F34: dated profile entries for edges, outcomes and preferences; the latest per key wins. */
 export function ProfileScreen({ ws }: { ws: string }) {
@@ -48,9 +43,7 @@ export function ProfileScreen({ ws }: { ws: string }) {
     )
   }
 
-  const entries = [...(profile.data?.entries ?? [])].sort(
-    (a, b) => b.ts - a.ts
-  )
+  const entries = [...(profile.data?.entries ?? [])].sort((a, b) => b.ts - a.ts)
 
   const add = () => {
     if (!valid) return

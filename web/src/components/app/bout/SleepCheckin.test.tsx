@@ -40,14 +40,8 @@ describe("SleepCheckin (F04)", () => {
 
   it("otherwise just confirms the check-in was logged", () => {
     render(
-      <SleepCheckin
-        busy={false}
-        suggestReviewOnly={false}
-        onSubmit={vi.fn()}
-      />
+      <SleepCheckin busy={false} suggestReviewOnly={false} onSubmit={vi.fn()} />
     )
-    expect(screen.getByTestId("step-checkin-done")).toHaveTextContent(
-      /logged/i
-    )
+    expect(screen.getByTestId("step-checkin-done")).toHaveTextContent(/logged/i)
   })
 })

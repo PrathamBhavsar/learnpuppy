@@ -5,15 +5,82 @@ import { beforeEach, describe, expect, it } from "vitest"
 
 import { state } from "@/test/msw/db"
 import { SECRET_ANSWER, newMethodCourse } from "@/test/msw/fixtures/courses"
+import { learningFixture } from "@/test/msw/fixtures/learning"
 import { server } from "@/test/msw/server"
 import { renderApp, resetUi } from "@/test/render"
 
 const WS = "ws_rustasync"
 const API = "*/api/v1/workspaces/:ws/courses/:id"
 
+/** A bout the learner already opened through the ready gate: the lesson tests start inside it. */
+function openBout() {
+  const f = learningFixture()
+  state.db.learning.set(WS, {
+    ...f,
+    checkinNeeded: false,
+    clock: {
+      ...f.clock,
+      bout: "b_open",
+      status: { status: "active", activeMinutes: 3 },
+    },
+  })
+}
+
 beforeEach(() => {
   resetUi()
   state.db.courses.set(WS, [newMethodCourse("m", "Rust async")])
+  openBout()
+})
+
+describe("Method lesson bout", () => {
+  it("asks how you slept first, then the ready gate, before any step is requested", async () => {
+    const f = learningFixture()
+    state.db.learning.set(WS, { ...f, checkinNeeded: true })
+    let steps = 0
+    server.use(
+      http.post(`${API}/step`, () => {
+        steps += 1
+        return new HttpResponse(null, { status: 404 })
+      })
+    )
+    const user = userEvent.setup()
+    renderApp(`/w/${WS}/course?id=m`)
+    await user.click(
+      await screen.findByRole("button", { name: "Start lesson" })
+    )
+    expect(await screen.findByTestId("step-checkin")).toBeInTheDocument()
+    await user.type(screen.getByLabelText("Hours of sleep"), "8")
+    await user.click(screen.getByRole("button", { name: "Continue" }))
+    await user.click(await screen.findByRole("button", { name: "Continue" }))
+    const gate = await screen.findByTestId("step-ready")
+    expect(within(gate).getByRole("button", { name: "Begin" })).toBeDisabled()
+    expect(steps).toBe(0)
+  })
+
+  it("shows the lock, not the lesson, inside the gap between bouts", async () => {
+    const f = learningFixture()
+    state.db.learning.set(WS, {
+      ...f,
+      checkinNeeded: false,
+      clock: { ...f.clock, status: { status: "gap", remainingMinutes: 77 } },
+    })
+    let steps = 0
+    server.use(
+      http.post(`${API}/step`, () => {
+        steps += 1
+        return new HttpResponse(null, { status: 404 })
+      })
+    )
+    const user = userEvent.setup()
+    renderApp(`/w/${WS}/course?id=m`)
+    await user.click(
+      await screen.findByRole("button", { name: "Start lesson" })
+    )
+    expect(await screen.findByTestId("screen-locked")).toBeInTheDocument()
+    expect(screen.getByTestId("locked-time-left")).toHaveTextContent("77")
+    expect(screen.queryByTestId("course-lesson")).not.toBeInTheDocument()
+    expect(steps).toBe(0)
+  })
 })
 
 describe("Method lesson", () => {

@@ -82,7 +82,9 @@ export function ReadyGate({
         {breathing ? (
           <div className="flex flex-col items-center gap-3 py-4">
             {reduced ? (
-              <p className="text-[13px]">Breathe in slowly, then breathe out.</p>
+              <p className="text-[13px]">
+                Breathe in slowly, then breathe out.
+              </p>
             ) : (
               <motion.div
                 aria-hidden
@@ -96,8 +98,8 @@ export function ReadyGate({
               data-testid="breathing-warning"
               className="max-w-sm text-center text-[12px] text-muted-foreground"
             >
-              Never do this in water or while driving. Stop if you feel
-              dizzy. This step is always optional.
+              Never do this in water or while driving. Stop if you feel dizzy.
+              This step is always optional.
             </p>
           </div>
         ) : null}

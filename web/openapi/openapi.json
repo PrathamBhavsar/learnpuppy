@@ -500,7 +500,7 @@
           {
             "description": "Still under every limit; keep teaching.",
             "properties": {
-              "active_minutes": {
+              "activeMinutes": {
                 "format": "int32",
                 "minimum": 0,
                 "type": "integer"
@@ -513,7 +513,7 @@
               }
             },
             "required": [
-              "active_minutes",
+              "activeMinutes",
               "status"
             ],
             "type": "object"
@@ -536,7 +536,7 @@
           {
             "description": "Within the gap after the last bout ended.",
             "properties": {
-              "remaining_minutes": {
+              "remainingMinutes": {
                 "format": "int32",
                 "minimum": 0,
                 "type": "integer"
@@ -549,7 +549,7 @@
               }
             },
             "required": [
-              "remaining_minutes",
+              "remainingMinutes",
               "status"
             ],
             "type": "object"
@@ -3222,6 +3222,56 @@
         ],
         "type": "object"
       },
+      "MethodSettingDto": {
+        "description": "One tunable method setting with its default and allowed range.",
+        "properties": {
+          "default": {
+            "format": "int32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "max": {
+            "format": "int32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "min": {
+            "format": "int32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "name": {
+            "type": "string"
+          },
+          "value": {
+            "format": "int32",
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "name",
+          "value",
+          "default",
+          "min",
+          "max"
+        ],
+        "type": "object"
+      },
+      "MethodSettingsDto": {
+        "properties": {
+          "settings": {
+            "items": {
+              "$ref": "#/components/schemas/MethodSettingDto"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "settings"
+        ],
+        "type": "object"
+      },
       "MethodStepDto": {
         "description": "What comes next on a `method_version >= 1` course (`lp_core::method::Step`), with its content\nfilled in from the course; never an answer, a `why`, or a rubric.",
         "oneOf": [
@@ -3348,7 +3398,7 @@
           },
           {
             "properties": {
-              "key_facts": {
+              "keyFacts": {
                 "items": {
                   "type": "string"
                 },
@@ -3370,7 +3420,7 @@
             "required": [
               "lesson",
               "title",
-              "key_facts",
+              "keyFacts",
               "step"
             ],
             "type": "object"
@@ -5119,6 +5169,23 @@
           "project",
           "cwd",
           "startedAt"
+        ],
+        "type": "object"
+      },
+      "SetMethodSettingRequest": {
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "value": {
+            "format": "int32",
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "name",
+          "value"
         ],
         "type": "object"
       },
@@ -9684,6 +9751,16 @@
               }
             },
             "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "No open bout, or the bout clock is locked"
           }
         },
         "summary": "What's next, due reviews served first (F05). Read-only: `Shown`, `Predicted` and the rest are\nlogged only when the learner acts on the step through its own endpoint, never here.",
@@ -11525,6 +11602,118 @@
           }
         },
         "summary": "Kept, missed or upcoming for each slot over the last two weeks.",
+        "tags": [
+          "courses"
+        ]
+      }
+    },
+    "/workspaces/{ws}/learning/settings": {
+      "get": {
+        "operationId": "get_workspaces_ws_learning_settings",
+        "parameters": [
+          {
+            "description": "Workspace id",
+            "in": "path",
+            "name": "ws",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MethodSettingsDto"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "summary": "Every tunable method setting with its default and allowed range (the plan's defaults ship as\nsettings, not as facts).",
+        "tags": [
+          "courses"
+        ]
+      },
+      "post": {
+        "operationId": "post_workspaces_ws_learning_settings",
+        "parameters": [
+          {
+            "description": "Workspace id",
+            "in": "path",
+            "name": "ws",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetMethodSettingRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MethodSettingsDto"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Workspace archived"
+          }
+        },
+        "summary": "Changes one setting for this workspace; the value must sit inside the setting's range.",
         "tags": [
           "courses"
         ]

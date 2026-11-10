@@ -105,6 +105,8 @@ use crate::error::{ErrorBody, ErrorCode, ErrorEnvelope, FieldError};
         crate::routes::learning::bout_override,
         crate::routes::learning::checkin_needed,
         crate::routes::learning::checkin,
+        crate::routes::learning::method_settings_get,
+        crate::routes::learning::method_settings_set,
         crate::routes::learning::schedule_get,
         crate::routes::learning::schedule_set,
         crate::routes::learning::schedule_suggest,

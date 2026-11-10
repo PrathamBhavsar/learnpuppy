@@ -27,10 +27,7 @@ export function SleepCheckin({
 
   if (suggestReviewOnly !== null) {
     return (
-      <section
-        data-testid="step-checkin-done"
-        className="flex flex-col gap-2"
-      >
+      <section data-testid="step-checkin-done" className="flex flex-col gap-2">
         <h2 className="font-heading text-[16px] font-medium">Thanks</h2>
         <p className="text-[13px]">
           {suggestReviewOnly

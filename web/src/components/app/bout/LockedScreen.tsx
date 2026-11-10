@@ -36,10 +36,7 @@ export function LockedScreen({
       <h2 className="font-heading text-[16px] font-medium">Locked</h2>
       <p className="text-[13px]">{COPY[status.status]}</p>
       {status.status === "gap" ? (
-        <p
-          data-testid="locked-time-left"
-          className="text-[13px] tabular-nums"
-        >
+        <p data-testid="locked-time-left" className="text-[13px] tabular-nums">
           Back in {status.remainingMinutes} min.
         </p>
       ) : null}

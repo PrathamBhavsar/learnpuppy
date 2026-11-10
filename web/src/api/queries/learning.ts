@@ -6,6 +6,7 @@ import type {
   CheckinRequest,
   CheckinResult,
   Clock,
+  MethodSettings,
   OverrideRequest,
   ProfileResult,
   ReadyAnswers,
@@ -48,6 +49,20 @@ export function useCheckinNeeded(ws: string) {
           signal,
         })
       ).needed,
+  })
+}
+
+/** Every tunable method setting with its default and allowed range. */
+export function useMethodSettings(ws: string) {
+  return useQuery({
+    queryKey: [...base(ws), "method-settings"],
+    queryFn: async ({ signal }): Promise<MethodSettings> =>
+      unwrap(
+        await learningApi.GET("/workspaces/{ws}/learning/settings", {
+          params: { path: { ws } },
+          signal,
+        })
+      ),
   })
 }
 
@@ -158,6 +173,23 @@ export function useLearningActions(ws: string) {
       onSuccess: () =>
         qc.invalidateQueries({ queryKey: [...base(ws), "checkin-needed"] }),
     }),
+    setMethodSetting: useMutation({
+      mutationFn: async (body: {
+        name: string
+        value: number
+      }): Promise<MethodSettings> =>
+        unwrap(
+          await learningApi.POST("/workspaces/{ws}/learning/settings", {
+            params: { path },
+            body,
+          })
+        ),
+      onSuccess: (settings) => {
+        qc.setQueryData([...base(ws), "method-settings"], settings)
+        // The clock renders against the saved limits.
+        refreshClock()
+      },
+    }),
     setSchedule: useMutation({
       mutationFn: async (body: SetScheduleRequest): Promise<Schedule> =>
         unwrap(
@@ -172,10 +204,10 @@ export function useLearningActions(ws: string) {
     suggestSlots: useMutation({
       mutationFn: async (wakeTime: string): Promise<SuggestSlotsResult> =>
         unwrap(
-          await learningApi.POST(
-            "/workspaces/{ws}/learning/schedule/suggest",
-            { params: { path }, body: { wakeTime } }
-          )
+          await learningApi.POST("/workspaces/{ws}/learning/schedule/suggest", {
+            params: { path },
+            body: { wakeTime },
+          })
         ),
     }),
     setProfile: useMutation({

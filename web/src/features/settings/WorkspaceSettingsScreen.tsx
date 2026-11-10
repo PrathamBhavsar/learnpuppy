@@ -41,6 +41,7 @@ import {
 import { cn } from "@/lib/utils"
 
 import { WS_SETTINGS_GUIDE_PARTS, WS_SETTINGS_INFO } from "./help"
+import { MethodSettingsSection } from "./MethodSettingsSection"
 import { Section } from "./Section"
 import { SettingRow } from "./SettingRow"
 
@@ -433,6 +434,14 @@ export function WorkspaceSettingsScreen({ ws }: { ws: string }) {
             description="Override a role for this workspace only. Roles left off inherit the global setting from Accounts."
           >
             <OverridesSection detail={detail} />
+          </Section>
+          <Section
+            id="method"
+            title="Study method"
+            info={WS_SETTINGS_INFO.method}
+            description="How long a bout runs, how much rest it needs and how strict the teach loop is. These are starting values, not facts: change any of them."
+          >
+            <MethodSettingsSection ws={detail.id} />
           </Section>
           <Section
             id="danger"
