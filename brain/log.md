@@ -53,6 +53,13 @@ Back to [Brain Index](/index.md). Related: [Overview](/overview.md), [Task DAG](
 - Cross-referenced the Alvar Method concepts to LearnPuppy's crate architecture (`lp-core` 3-phase fold, `lp-agent` ProberAgent/TeacherAgent/subagents, `lp-store` FSRS v5, `lp-service` profiles, `lp-server` SSE → React SPA).
 
 
+## 2026-11-04 — Gornik Learning Brain Section
+- Watched Aleks Gornik's *How I use AI to learn engineering (anti brain rot studying)* (youtu.be/GPM5MgFEkpk) via oembed metadata + full transcript fetched with `youtube-transcript-api` Python package (installed on host).
+- Verified speaker background: EE graduate, internships in AI/hardware/software, now Member of Technical Staff at AI startup working on LLM training. Fetched website (aleksgornik.com) and kit.com blog posts.
+- Identified 4 core methods: (1) Make concepts visual with AI-generated 3D models/interactive dashboards (Claude Code, GPT Codex), (2) Filter resources with AI prompts (syllabus + reading list → which chapters matter), (3) Find the essential 20% to get unstuck (graph neural network thesis story — broke deep learning down to "just get a training loop going in PyTorch"), (4) Find the best resources with AI sub-agents crawling the internet (found NASA Mars rover 3D models, satellite .stl files).
+- Created [Gornik Learning](/gornik-learning/index.md) brain section with 3 documents: index (summary + how I watched + relevance-to-LearnPuppy + cross-reference table to Alvar Method and Huberman Learning), four-methods (detailed breakdown of all 4 methods with examples, prompts, and connections to the other two learning frameworks), and transcript (full auto-caption transcript with timestamps).
+- Cross-referenced Gornik's methods to LearnPuppy (visualize ↔ lp-agent visual subagent, filter ↔ research subagent, 20% ↔ Probe phase, find resources ↔ lp-ingest transcript ingestor), Alvar Method (learn-visual, learn-verify, Probe phase, research subagent), and Huberman Learning (visual focus, self-testing, ~15% error rate, gap effects).
+
 ## 2026-11-04 — Huberman Learning Brain Section
 - Watched Andrew Huberman's *Optimal Protocols for Studying & Learning* (youtu.be/ddq8JIMhz7c, Huberman Lab Podcast) via oembed metadata + full episode transcript from hubermanlab.com (105,393 bytes).
 - Also fetched the *Essentials: Optimize Your Learning & Creativity* episode transcript (35,435 bytes) covering daily routine, circadian mechanisms, go/no-go circuits, and creativity.
