@@ -5,7 +5,7 @@ version = 2
 version = 2
 # MPL-2.0 (scraper's cssparser/selectors): file-level weak copyleft, used unmodified.
 # CDLA-Permissive-2.0: webpki-roots CA data.
-# Apache-2.0 WITH LLVM-exception, BSL-1.0: permissive licenses in transitive deps.
+# Apache-2.0 WITH LLVM-exception, BSL-1.0, Zlib: permissive licenses in transitive deps (Zlib: foldhash, via rusqlite).
 allow = [
     "Apache-2.0",
     "Apache-2.0 WITH LLVM-exception",
@@ -17,6 +17,7 @@ allow = [
     "MIT",
     "MPL-2.0",
     "Unicode-3.0",
+    "Zlib",
 ]
 confidence-threshold = 0.8
 
