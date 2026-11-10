@@ -172,15 +172,32 @@ describe("long and streaming messages", () => {
     expect(toggle).toHaveAttribute("aria-expanded", "false")
   })
 
-  it("updates streaming text while preserving existing slices", () => {
-    const { container, rerender } = render(
-      <StreamingText text={"x".repeat(32)} />
-    )
-    const first = container.querySelector("span")
-    rerender(<StreamingText text={"x".repeat(32) + "more"} />)
-    expect(container.querySelector("span")).toBe(first)
-    expect(screen.getByTestId("streaming-text")).toHaveTextContent(
-      "x".repeat(32) + "more"
-    )
+  it("renders streamed Markdown without raw syntax at every chunk", async () => {
+    const full =
+      "Intro **bold** and `code`.\n\n```rust\nfn main() {}\n```\n\n$$ x^2 $$\n\n| a | b |\n|---|---|\n| 1 | 2 |\n"
+    const { container, rerender } = render(<StreamingText text="" />)
+    const step = Math.ceil(full.length / 12)
+    for (let n = step; n <= full.length + step; n += step) {
+      rerender(<StreamingText text={full.slice(0, n)} />)
+      await waitFor(() =>
+        expect(
+          container.querySelector("[data-testid=streaming-text] .lp-prose")
+        ).not.toBeNull()
+      )
+      const shown = screen.getByTestId("streaming-text").textContent ?? ""
+      expect(shown).not.toMatch(/\*\*|`|\$\$/)
+    }
+  })
+
+  it("proves the guard: raw chunks show their syntax", () => {
+    const { container } = render(<Markdown>{"half **bold"}</Markdown>)
+    expect(container.textContent).toContain("**bold")
+  })
+
+  it("leaves settled Markdown byte-identical", () => {
+    const text = "done **bold** `x`\n\n```js\nlet a\n```"
+    const { container } = render(<LazyMarkdown>{text}</LazyMarkdown>)
+    expect(container.textContent).toContain("done")
+    expect(text).toBe("done **bold** `x`\n\n```js\nlet a\n```")
   })
 })
