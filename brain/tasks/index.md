@@ -2,28 +2,48 @@
 
 Back to [Brain Index](/index.md). Related: [Overview](/overview.md), [Architecture Index](/architecture/index.md), [ADR-0006 Web UI](/decisions/0006-web-ui-over-dioxus.md), [Pre-Merge Gate](/wisdom/pre-merge-gate.md).
 
-## 0. Active: Web UI Rollout (`V00`–`A70`, [ADR-0006](/decisions/0006-web-ui-over-dioxus.md))
+## 0. Web UI Rollout, done (`V00`–`A70`, [ADR-0006](/decisions/0006-web-ui-over-dioxus.md))
 
-The authoritative DAG, owned files and done-when criteria are in `docs/web/08-task-dag.md`; this table only tracks status. Branch flow: `staging <- pratham404/<task-id>` (`--no-ff`, `make gate` first).
+The authoritative DAG, owned files and done-when criteria are in `docs/web/08-task-dag.md`; this table only tracks status. All rows were audited against `docs/web/10-acceptance.md` on 2026-11-01 (`A70`, punch list zero P0/P1). Branch flow: `staging <- pratham404/<task-id>` (`--no-ff`, `make gate` first).
 
 | ID | Task | Depends On | Status |
 |---|---|---|---|
 | `V00` | Verify shadcn preset + disk plan (`docs/web/04-preset-facts.md`) | — | `done` |
 | `V01` | Repo surgery: delete `lp-ui`, `lp-app`, `lp-tui`, Dioxus `tests/`, root e2e configs, `scripts/export-icons.ts` | `V00` | `done` |
 | `V02` | `lp-service` (ported logic + tests, `paths`) and `lp-server` skeleton (`learnpuppy --version`, subcommands) | `V01` | `done` |
-| `F00` | `web/` Vite + React + shadcn scaffold, tokens, shell, gallery | `V00` | `pending` |
-| `B10` | Workspaces core: registry, meta, trash, migration, export/import | `V02` | `pending` |
-| `B11` | Server core: auth, errors, SSE hub, OpenAPI, assets, lock, shutdown | `V02` | `pending` |
-| `B20` | Read APIs: workspaces, graph, chats, review, digest, accounts, settings, search, trash | `B10`, `B11` | `pending` |
-| `F10` | API client, SSE manager, MSW, routing, palette, hotkeys, toasts | `F00`, `B11` | `pending` |
-| `B21` | Chat engine: turns, view, answers, jobs, uploads, recovery | `B20` | `pending` |
-| `B22` | Graph mutate/search/layout cache, ingest run, export/import jobs | `B20` | `pending` |
-| `F20`–`F24` | Feature screens: workspaces, graph canvas, classroom, review + digest, ingest/accounts/settings | `F10` (+ `B21`/`B22`) | `pending` |
-| `P30` | Motion + polish pass | `F20`–`F24` | `pending` |
-| `Q40` | a11y + RTL + perf pass | `P30` | `pending` |
-| `E50` | Full Playwright E2E + visual baselines | `Q40` | `pending` |
+| `F00` | `web/` Vite + React + shadcn scaffold, tokens, shell, gallery | `V00` | `done` |
+| `B10` | Workspaces core: registry, meta, trash, migration, export/import | `V02` | `done` |
+| `B11` | Server core: auth, errors, SSE hub, OpenAPI, assets, lock, shutdown | `V02` | `done` |
+| `B20` | Read APIs: workspaces, graph, chats, review, digest, accounts, settings, search, trash | `B10`, `B11` | `done` |
+| `F10` | API client, SSE manager, MSW, routing, palette, hotkeys, toasts | `F00`, `B11` | `done` |
+| `B21` | Chat engine: turns, view, answers, jobs, uploads, recovery | `B20` | `done` |
+| `B22` | Graph mutate/search/layout cache, ingest run, export/import jobs | `B20` | `done` |
+| `F20`–`F24` | Feature screens: workspaces, graph canvas, classroom, review + digest, ingest/accounts/settings | `F10` (+ `B21`/`B22`) | `done` |
+| `P30` | Motion + polish pass | `F20`–`F24` | `done` |
+| `Q40` | a11y + RTL + perf pass | `P30` | `done` |
+| `E50` | Full Playwright E2E + visual baselines | `Q40` | `done` |
 | `D60` | Docs/brain/CLAUDE.md sweep + legacy cleanup | `E50` | `done` |
-| `A70` | Opus audit vs `docs/web/10-acceptance.md` | `D60` | `pending` |
+| `A70` | Opus audit vs `docs/web/10-acceptance.md` | `D60` | `done` |
+
+## 0a. Cheap tutor (`T0`–`T9`, [plan](/cheap-tutor/index.md), [ADR-0007](/decisions/0007-course-as-data.md))
+
+| ID | Task | Status |
+|---|---|---|
+| `T0`–`T8` | Driver fixes, core types and gates, store, author/placer, service, routes, Course screen, FSRS cards, meter and budget | `done` |
+| `G1` | Benchmark gate: Opus low effort is the default Author | `done` |
+| `T9` | Real hour test by the owner | `owner`: runbook in [Real Hour](/learning-method/real-hour.md) |
+| `G2` | Owner verdict: did you learn? | `owner` |
+
+## 0b. Learning method (`M0`–`M14`, [plan](/learning-method/index.md), [ADR-0008](/decisions/0008-learning-method.md))
+
+| ID | Task | Status |
+|---|---|---|
+| `M0` | ADR-0008 | `done` (2026-11-10) |
+| `M1`–`M13` | Schema and mastery, runner and gates, bout and pacing, store, prompts and grading, course and learning services, routes, lesson steps UI, bout UI, close, schedule and profile, simulated bout | `done` |
+| `M10b` | Bout UI integration: `BoutShell` wired into the course session, server refuses `step` without an open bout, settings route and screen | `done` (2026-11-10) |
+| `G3` | Richer-schema benchmark, see [G3 result](/learning-method/g3-result.md) | `done` |
+| `M14` | Real bout by the owner: pre-test, post-test, one-week retest | `owner`: runbook in [Real Hour](/learning-method/real-hour.md) |
+| `G4` | Did it teach better? | `owner` |
 
 ---
 

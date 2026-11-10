@@ -17,3 +17,5 @@ pnpm-lock.yaml
 
 .coord/
 BOARD.md
+scratchpad/
+__pycache__/

@@ -3398,7 +3398,7 @@
           },
           {
             "properties": {
-              "key_facts": {
+              "keyFacts": {
                 "items": {
                   "type": "string"
                 },
@@ -3420,7 +3420,7 @@
             "required": [
               "lesson",
               "title",
-              "key_facts",
+              "keyFacts",
               "step"
             ],
             "type": "object"

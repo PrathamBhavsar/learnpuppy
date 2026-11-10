@@ -22,4 +22,6 @@ Rules:
 4. Each lesson has exactly {n} items, 4 mcq then 2 recall, levels 1 to 3 mixed. Options similar in length and all plausible.
 5. Use the learner's other languages and background only where you are sure the comparison is correct.
 6. Omit "predict" on a pure definition. Leave "rungs" empty unless `kind` is `procedural`. "aside" may be omitted.
+7. An angle re-teaches after a miss, so it must NOT state the answer to any item of its lesson. Use a different example or
+   analogy and leave the final step to the learner; never write an item's answer text inside an angle.
 Learner: {topic}

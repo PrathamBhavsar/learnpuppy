@@ -1,0 +1,176 @@
+#!/usr/bin/env python3
+"""Real-engine smoke run: one course, end to end, through the real server and the real CLIs.
+
+  cargo build -p lp-server && python3 scripts/real_smoke.py [--goal TEXT] [--steps 60]
+
+Starts `learnpuppy serve --dev --real` on a free port with a throwaway data root, then:
+  1. creates a workspace and a course (placement quiz is one cheap call),
+  2. answers placement and waits for the Author's strong call to write the lessons,
+  3. checks the server refuses a step with no open bout (bout_required),
+  4. passes the ready gate, then walks the session with stored steps only,
+  5. closes the session, ends the bout, and checks the gap now refuses a step,
+  6. prints token usage and the number of model calls the walk itself caused.
+
+It spends real quota: one strong call, a few cheap ones. Exit code 0 only if every check held.
+"""
+import argparse
+import json
+import os
+import subprocess
+import sys
+import tempfile
+import time
+import urllib.error
+import urllib.request
+from pathlib import Path
+
+REPO = Path(__file__).resolve().parent.parent
+BIN = REPO / "target/debug/learnpuppy"
+
+
+class Api:
+    def __init__(self, base):
+        self.base = base
+
+    def call(self, method, path, body=None):
+        data = None if body is None else json.dumps(body).encode()
+        req = urllib.request.Request(
+            f"{self.base}/api/v1{path}", data=data, method=method,
+            headers={"Content-Type": "application/json", "X-LP-CSRF": "1", "Origin": self.base},
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=900) as r:
+                raw = r.read()
+                return r.status, (json.loads(raw) if raw else None)
+        except urllib.error.HTTPError as e:
+            raw = e.read()
+            try:
+                return e.code, json.loads(raw)
+            except ValueError:
+                return e.code, {"raw": raw.decode(errors="replace")}
+
+
+def check(ok, what):
+    print(("ok   " if ok else "FAIL ") + what, flush=True)
+    if not ok:
+        raise SystemExit(f"check failed: {what}")
+
+
+def gate(body):
+    return ((body or {}).get("error") or {}).get("details", {}).get("gate")
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--goal", default="Read Rust code that uses Option and Result with confidence")
+    ap.add_argument("--steps", type=int, default=60)
+    args = ap.parse_args()
+    if not BIN.exists():
+        sys.exit("build first: cargo build -p lp-server")
+
+    home = tempfile.mkdtemp(prefix="lp-real-smoke-")
+    env = {**os.environ, "LEARNPUPPY_HOME": home}
+    proc = subprocess.Popen([str(BIN), "serve", "--dev", "--real", "--port", "0", "--no-open"],
+                            env=env, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True)
+    try:
+        launch = json.loads(proc.stdout.readline())
+        api = Api(launch["url"].split("/#")[0].rstrip("/"))
+        print(f"serving {api.base}, data root {home}", flush=True)
+
+        st, ws = api.call("POST", "/workspaces", {"name": "real smoke"})
+        check(st in (200, 201), f"workspace created ({st})")
+        w = f"/workspaces/{ws['id']}"
+
+        t0 = time.time()
+        st, created = api.call("POST", f"{w}/courses", {"goal": args.goal})
+        check(st in (200, 201), f"course created, placement quiz written in {time.time() - t0:.0f}s ({st})")
+        cid = created["id"]
+        answers = [{"item": i["id"], "text": (i["options"][0] if i["options"] else "I do not know")}
+                   for i in created["items"]]
+        st, _ = api.call("POST", f"{w}/courses/{cid}/placement", {"answers": answers})
+        check(st == 200, f"placement answered ({len(answers)} items)")
+
+        t0 = time.time()
+        while True:
+            st, status = api.call("GET", f"{w}/courses/{cid}/status")
+            if status.get("state") in ("ready", "refilling"):
+                break
+            check(status.get("state") != "failed", f"author did not fail ({status.get('reason')})")
+            if time.time() - t0 > 1500:
+                check(False, "author finished within 25 minutes")
+            time.sleep(5)
+        print(f"author done in {time.time() - t0:.0f}s", flush=True)
+
+        st, plan = api.call("GET", f"{w}/courses/{cid}/plan")
+        check(st == 200 and len(plan["lessons"]) >= 3, f"plan has {len(plan.get('lessons', []))} lessons")
+
+        st, body = api.call("POST", f"{w}/courses/{cid}/step")
+        check(st == 409 and gate(body) == "bout_required", "step refused without an open bout")
+
+        st, body = api.call("POST", f"{w}/learning/bout/start",
+                            {"course": cid, "ready": {"phoneAway": False, "tabsClosed": True, "focusSeconds": 30}})
+        check(st == 409 and gate(body) == "not_ready", "ready gate refuses an unchecked box")
+        st, clock = api.call("POST", f"{w}/learning/bout/start",
+                             {"course": cid, "ready": {"phoneAway": True, "tabsClosed": True, "focusSeconds": 30}})
+        check(st == 200 and clock["bout"], "bout started through the ready gate")
+        bout = clock["bout"]
+
+        st, before = api.call("GET", f"{w}/courses/{cid}/usage")
+        seen = {}
+        closed = False
+        for n in range(args.steps):
+            st, step = api.call("POST", f"{w}/courses/{cid}/step")
+            check(st == 200, f"step {n} ok ({st})")
+            kind = step["step"]
+            seen[kind] = seen.get(kind, 0) + 1
+            api.call("POST", f"{w}/learning/bout/heartbeat", {"bout": bout})
+            if kind == "confirm_plan":
+                api.call("POST", f"{w}/courses/{cid}/plan/confirm")
+            elif kind == "predict":
+                api.call("POST", f"{w}/courses/{cid}/predict", {"lesson": step["lesson"], "guess": (step["options"] or ["?"])[0]})
+            elif kind == "explain":
+                api.call("POST", f"{w}/courses/{cid}/explain-seen", {"lesson": step["id"]})
+            elif kind == "notes":
+                api.call("POST", f"{w}/courses/{cid}/note", {"lesson": step["lesson"], "text": "All clear"})
+            elif kind == "ask":
+                text = step["options"][0] if step["options"] else "I am not sure"
+                st, res = api.call("POST", f"{w}/courses/{cid}/quiz-answer", {
+                    "item": step["id"], "lesson": step["lesson"], "text": text,
+                    "confidence": 2, "ms": 4000, "reasoning": "guess", "gap": False})
+                check(st == 200, f"answer accepted ({st})")
+                leaked = {"answer", "why", "accept", "must_name", "mustName", "misconceptions"} & set(step)
+                check(not leaked, f"step carries no answer key ({sorted(leaked)})")
+            elif kind == "break":
+                api.call("POST", f"{w}/courses/{cid}/break", {"lesson": step["lesson"]})
+            elif kind == "feynman":
+                api.call("POST", f"{w}/courses/{cid}/feynman", {"lesson": step["lesson"], "explanation": "It is a way to handle a value that may be missing."})
+            elif kind == "close":
+                st, report = api.call("POST", f"{w}/courses/{cid}/close")
+                check(st == 200, f"close report written ({st})")
+                closed = True
+                break
+            else:
+                check(False, f"known step kind: {kind}")
+        print("steps seen:", seen, flush=True)
+        if not closed:
+            print("note: session did not reach Close within the step cap; ending the bout anyway", flush=True)
+
+        st, after = api.call("GET", f"{w}/courses/{cid}/usage")
+        walk = {k: after[k] - before[k] for k in ("strongIn", "strongOut", "cheapIn", "cheapOut")}
+        print("model usage caused by the walk:", walk, flush=True)
+
+        st, _ = api.call("POST", f"{w}/learning/bout/end", {"bout": bout})
+        check(st == 200, "bout ended")
+        st, body = api.call("POST", f"{w}/courses/{cid}/step")
+        check(st == 409 and gate(body) == "gap", "step refused inside the gap after the bout")
+        print(json.dumps({"ok": True, "closed": closed, "seen": seen, "walk": walk, "totals": after}))
+    finally:
+        proc.terminate()
+        try:
+            proc.wait(timeout=10)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+
+
+if __name__ == "__main__":
+    main()

@@ -110,12 +110,47 @@ pub enum ClaimVerdict {
     Unknown,
 }
 
-#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
-#[serde(default)]
+/// One checkable factual claim. The Author prompt asks for plain strings (`"claims":["..."]`), while
+/// a saved course stores the full object with its verdict, so both forms must load: a string is an
+/// `Unknown`-verdict claim awaiting the fact-check job.
+#[derive(Clone, Debug, Default, PartialEq, Serialize)]
 pub struct Claim {
     pub text: String,
     pub verdict: ClaimVerdict,
     pub source: Option<String>,
+}
+
+impl<'de> Deserialize<'de> for Claim {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        #[derive(Deserialize)]
+        #[serde(untagged)]
+        enum Raw {
+            Text(String),
+            Full {
+                #[serde(default)]
+                text: String,
+                #[serde(default)]
+                verdict: ClaimVerdict,
+                #[serde(default)]
+                source: Option<String>,
+            },
+        }
+        Ok(match Raw::deserialize(d)? {
+            Raw::Text(text) => Claim {
+                text,
+                ..Claim::default()
+            },
+            Raw::Full {
+                text,
+                verdict,
+                source,
+            } => Claim {
+                text,
+                verdict,
+                source,
+            },
+        })
+    }
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -482,6 +517,9 @@ fn mentions(a: &str, b: &str) -> bool {
 }
 
 /// Drop unusable items, record warnings, and report what needs repair.
+/// Answers shorter than this are too common in prose to count as a leak.
+const MIN_ANGLE_LEAK_CHARS: usize = 6;
+
 pub fn gate_course(course: &mut Course) -> GateReport {
     let mut rep = GateReport::default();
     let mut seen_q = HashSet::new();
@@ -524,6 +562,30 @@ pub fn gate_course(course: &mut Course) -> GateReport {
             }
             true
         });
+        // F13: an angle re-teaches after a miss without revealing the answer, so one that states
+        // any answer of its lesson verbatim defeats its purpose and is dropped.
+        let answers: Vec<String> = lesson
+            .items
+            .iter()
+            .flat_map(|i| std::iter::once(&i.answer).chain(i.accept.iter()))
+            .map(|a| norm_key(a))
+            .filter(|a| a.chars().count() >= MIN_ANGLE_LEAK_CHARS)
+            .collect();
+        let angles_before = lesson.angles.len();
+        lesson.angles.retain(|a| {
+            let hay = norm_key(a);
+            !answers.iter().any(|ans| hay.contains(ans.as_str()))
+        });
+        if lesson.angles.len() < angles_before {
+            rep.warnings.push(Finding {
+                lesson: Some(lid.clone()),
+                item: None,
+                reason: format!(
+                    "{} alternate explanation(s) stated an answer and were dropped",
+                    angles_before - lesson.angles.len()
+                ),
+            });
+        }
         if lesson.items.len() < MIN_ITEMS {
             rep.needs_repair.push(Finding {
                 lesson: Some(lid.clone()),
@@ -1056,6 +1118,47 @@ pub fn render_digest(course: &Course, state: &LearnerState) -> String {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn gate_drops_angles_that_state_an_answer() {
+        let json = r#"{"learner":"x","lessons":[{"id":"l1","title":"t","objective":"o","explain":"e",
+            "key_facts":["f"],"angles":["Think of a mailbox: the answer is borrowing.","Picture a library card and a lender."],
+            "items":[{"type":"mcq","q":"What lets code use a value without owning it?","options":["borrowing","moving","copying","dropping"],
+            "answer":"borrowing","why":"w","tests":0,"level":1,"misconceptions":["","a","b","c"]}]}]}"#;
+        let mut course = parse_course(json, "c", Vec::new()).unwrap();
+        let report = gate_course(&mut course);
+        assert_eq!(
+            course.lessons[0].angles,
+            vec!["Picture a library card and a lender."]
+        );
+        assert!(
+            report
+                .warnings
+                .iter()
+                .any(|w| w.reason.contains("stated an answer")),
+            "{report:?}"
+        );
+    }
+
+    /// The Author prompt asks for `"claims":["..."]`; every real G3 run (6 of 6) failed to parse
+    /// because `Claim` was struct-only. Both shapes must load, and a saved course must round-trip.
+    #[test]
+    fn claims_load_as_plain_strings_or_full_objects() {
+        let json = r#"{"learner":"x","lessons":[{"id":"l1","title":"t","objective":"o","explain":"e",
+            "key_facts":["f"],"items":[],
+            "claims":["Hola means hello.",{"text":"B","verdict":"confirmed","source":"s"},{"text":"C"}]}]}"#;
+        let course = parse_course(json, "c", Vec::new()).unwrap();
+        let claims = &course.lessons[0].claims;
+        assert_eq!(claims.len(), 3);
+        assert_eq!(claims[0].text, "Hola means hello.");
+        assert_eq!(claims[0].verdict, ClaimVerdict::Unverified);
+        assert_eq!(claims[1].verdict, ClaimVerdict::Confirmed);
+        assert_eq!(claims[1].source.as_deref(), Some("s"));
+        assert_eq!(claims[2].verdict, ClaimVerdict::Unverified);
+        let saved = serde_json::to_string(&course).unwrap();
+        let again: Course = serde_json::from_str(&saved).unwrap();
+        assert_eq!(again.lessons[0].claims, *claims);
+    }
+
     use super::*;
     use proptest::prelude::*;
 

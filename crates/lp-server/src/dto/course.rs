@@ -492,6 +492,7 @@ pub enum MethodStepDto {
     Feynman {
         lesson: String,
         title: String,
+        #[serde(rename = "keyFacts")]
         key_facts: Vec<String>,
     },
     Close,
@@ -764,4 +765,24 @@ pub struct ReviewDatesRequest {
 #[serde(rename_all = "camelCase")]
 pub struct MasteryCountDto {
     pub count_line: String,
+}
+
+#[cfg(test)]
+mod wire_shape_tests {
+    use super::*;
+
+    /// The SPA reads camelCase; a snake_case field inside a tagged enum variant is not covered by
+    /// the container's rename and once shipped as `key_facts`.
+    #[test]
+    fn feynman_step_uses_camel_case_key_facts() {
+        let v = serde_json::to_value(MethodStepDto::Feynman {
+            lesson: "l1".into(),
+            title: "t".into(),
+            key_facts: vec!["a".into()],
+        })
+        .unwrap();
+        assert_eq!(v["step"], "feynman");
+        assert_eq!(v["keyFacts"][0], "a", "{v}");
+        assert!(v.get("key_facts").is_none(), "{v}");
+    }
 }

@@ -2683,7 +2683,7 @@ export interface components {
             step: "break";
             title: string;
         } | {
-            key_facts: string[];
+            keyFacts: string[];
             lesson: string;
             /** @enum {string} */
             step: "feynman";
