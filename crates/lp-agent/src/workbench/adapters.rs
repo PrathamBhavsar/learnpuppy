@@ -502,8 +502,10 @@ mod tests {
             "http://[fe80::1]/",
             "http://user:pw@example.com/",
             "http://100.64.0.1/",
+            "http://0.1.2.3/",
             "http://198.18.0.1/",
             "http://240.0.0.1/",
+            "http://[64:ff9b::7f00:1]/",
             "http://[::127.0.0.1]/",
         ] {
             assert!(web.fetch(url).await.is_err(), "{url} should be rejected");
