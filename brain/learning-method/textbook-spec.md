@@ -28,7 +28,7 @@ Out of scope for U7: screens (U8), deleting a book, OCR of scanned pages, editin
 | D4 | Objectives and items reuse `lp_core::course::Item` unchanged; grading reuses the course grading (`grade` in `crates/lp-service/src/course/mod.rs`, `rating_for` in `lp-core`). | No duplicated domain logic (CLAUDE.md rule). |
 | D5 | Card ids are `t:{bookId}:{itemId}`; course cards are `c:{course}:{item}` (`card_id` in `course/mod.rs`). Cards are parked at `PARKED_DUE` until first answered, exactly like course cards. | Review queue never shows an unread chapter; prefixes never collide. |
 | D6 | Chapter objectives use the existing cheap role `placer` (`COURSE_ROLES` in `crates/lp-service/src/settings.rs`, default `claude-haiku-5-5`). No new role, no settings change. | Smallest change; the learner already controls the cheap model there. |
-| D7 | Budget: an **automatic** import makes at most `MAX_AUTO_CALLS = 40` cheap calls per book, counting the TOC call, every part and every retry. Chapters past the cap stay `queued`. A learner request (`POST …/import` with chapter indices) starts a new job with its own cap of 40 calls, recorded with `requested: true`. The usage route shows both totals. | Reconciles "capped at 40 per book" with "the rest are queued and imported on request". **Flag for the goldfish reviewer:** if the owner means a hard 40 for the book's lifetime, set `requested` calls to count against the same 40 and drop D7's second sentence; nothing else changes. |
+| D7 | **Closed.** Hard lifetime cap: at most `MAX_AUTO_CALLS = 40` cheap calls per book, shared by the automatic import and every requested import, counted from the ledger's `Usage` totals (`auto_calls + requested_calls`, never a per-job counter). The TOC call, every part and every retry count. A retry re-checks the cap before it is sent. A chapter whose parts would not all fit in the remaining budget is not started: it stays `queued`, visible, never half-written. `requested: true` stays on `Usage` lines only so the usage route can show the split. The owner may revise the number. | Matches U7 item 4, "lifetime 40 per book". A fresh per-request cap allowed unbounded spend and endless retries of a poison chapter. |
 | D8 | The upload route is `POST …/sources/textbook` in `crates/lp-server/src/routes/sources.rs`, reusing its multipart parser. Everything else is in the new `routes/textbook.rs`. | The task names both files. |
 | D9 | The PDF input cap in the extractor rises from 40 MiB to 50 MiB (`MAX_PDF_INPUT_BYTES` in `crates/lp-agent/src/workbench/adapters.rs`), matching `MAX_PDF_BYTES = 50 * 1024 * 1024` in `sources.rs`. | Today a 45 MB upload is accepted and then fails in `pdf_path`. |
 | D10 | Page text is not stored. A retry or a requested import reads the stored PDF again. | Keeps the workspace small; extraction is cheap compared with a model call. |
@@ -41,7 +41,7 @@ Register with `pub mod textbook;` in `crates/lp-core/src/lib.rs`. No IO, no cloc
 
 | Name | Value | Meaning |
 |---|---|---|
-| `MAX_AUTO_CALLS` | `40` | Cheap calls per automatic import (D7), and per requested import. |
+| `MAX_AUTO_CALLS` | `40` | Lifetime cheap calls per book across all imports (D7). The name is kept; it is not per job. |
 | `PART_WORDS` | `8_000` | A chapter over this many words is split. |
 | `MAX_PARTS` | `3` | Parts per chapter at most. |
 | `MAX_PART_WORDS` | `10_000` | Hard cap on words sent in one call; the rest of the part is cut and the chapter marked `truncated`. |
@@ -82,6 +82,13 @@ pub struct Objective {
     pub items: Vec<lp_core::course::Item>,                        // ids "ch{index:03}-o{n:02}-i{k}"
 }
 
+pub struct RawObjective {                                         // parsed model reply, before the gate
+    pub text: String,
+    pub start_page: u32,
+    pub end_page: u32,
+    pub items: Vec<lp_core::course::Item>,
+}
+
 pub struct BookMeta {
     pub id: String,                                               // "tb_" + 16 lowercase hex
     pub title: String,                                            // file stem, sanitised, at most 200 chars
@@ -120,6 +127,7 @@ pub struct ChapterView {                                          // fold output
 
 pub struct BookState {
     pub meta: Option<BookMeta>,
+    pub created_at: Option<i64>,                                  // ts of the first Imported line
     pub source: Option<MapSource>,
     pub chapters: Vec<ChapterView>,
     pub auto_calls: u32,
@@ -149,7 +157,7 @@ pub enum ChapterStatus { NotRead, Checked, Due }                  // for U8; ser
 | `pub fn split_parts(page_words: &[(u32, usize)]) -> Vec<(PageRange, bool)>` | Input is one entry per page of the chapter. Total under `PART_WORDS` gives one part. Otherwise `k = min(MAX_PARTS, ceil(total / PART_WORDS))` contiguous page groups with word counts as even as page boundaries allow (greedy on the running sum against `total * i / k`). The bool is true when that group has more than `MAX_PART_WORDS` words, so its text is cut. |
 | `pub fn objective_bounds(parts: usize) -> (usize, usize)` | `(ceil(MIN_OBJECTIVES / parts), MAX_OBJECTIVES / parts)`: 1 part gives (5, 12), 2 give (3, 6), 3 give (2, 4). |
 | `pub fn accept_objectives(chapter: u32, first_n: usize, part: PageRange, raw: Vec<RawObjective>) -> Vec<Objective>` | `RawObjective { text: String, start_page: u32, end_page: u32, items: Vec<Item> }` is the parsed reply. Ids are assigned here, numbered from `first_n`. Page ranges are clamped into `part` (an inverted range becomes `part`). Items are cut to `MAX_ITEMS_PER_OBJECTIVE`, and any item where `gate_item` returns a `Level::Drop` flaw is removed. An MCQ must have exactly 4 options with the answer among them. An objective left with no item is dropped. Text is cut to 300 chars. |
-| `pub fn fold_book(events: &[TextbookEvent]) -> BookState` | Replays the ledger in order. The first `Imported` and the first `Mapped` win; later ones are ignored, which is the idempotence guard. Per chapter, the first `ChapterDone` wins and is final. `ChapterFailed` and `ChapterSkipped` only count while the chapter is not `Ready`, so a later retry's `ChapterDone` overrides a failure. Usage sums into `auto_calls` or `requested_calls` by the `requested` flag. |
+| `pub fn fold_book(events: &[TextbookEvent]) -> BookState` | Replays the ledger in order. The first `Imported` and the first `Mapped` win; `created_at` is the first `Imported.ts`, and `BookSummary.created_at` and `TextbookSummaryDto.createdAt` read it; later ones are ignored, which is the idempotence guard. Per chapter, the first `ChapterDone` wins and is final. `ChapterFailed` and `ChapterSkipped` only count while the chapter is not `Ready`, so a later retry's `ChapterDone` overrides a failure. A `ChapterDone` for a chapter index that is not in the map is ignored. Usage sums into `auto_calls` or `requested_calls` by the `requested` flag. |
 | `pub fn pending_chapters(state: &BookState) -> Vec<u32>` | Chapters in `Pending` or (`Failed` and retryable), in index order, `kind == Chapter` only. |
 | `pub fn select_check(state: &BookState, chapter: u32, due: &BTreeSet<String>, reviewed: &BTreeSet<String>, seed: &str) -> Vec<String>` | Card ids come in; item ids go out. Pick one item per objective, at most `CHECK_ITEMS`. Order of objectives: those with a due card first, then never-reviewed ones, then the rest, each group in objective order. Within an objective, prefer a due item, then a never-reviewed one, then the first, with ties broken by a stable hash of `seed + item id`. Pure and deterministic. |
 | `pub fn chapter_status(view: &ChapterView, due: &BTreeSet<String>, book: &str) -> ChapterStatus` | `Due` if any of its item cards (`t:{book}:{item}`) is in `due`. Otherwise `Checked` if `view.checked`. Otherwise `NotRead`. |
@@ -175,7 +183,7 @@ impl FsTextbookStore {
     pub fn append_event(&self, book: &str, ev: &TextbookEvent) -> StoreResult<()>;
     pub fn events(&self, book: &str) -> StoreResult<Vec<TextbookEvent>>;  // missing file is Ok(vec![])
     pub fn exists(&self, book: &str) -> StoreResult<bool>;                // ledger has an Imported line
-    pub fn list(&self) -> StoreResult<Vec<String>>;                       // valid book ids, sorted
+    pub fn list(&self) -> StoreResult<Vec<String>>;                       // valid book ids with an Imported line, sorted
     pub fn save_source(&self, book: &str, pdf: &[u8]) -> StoreResult<()>; // write_atomic, under lock
     pub fn source_path(&self, book: &str) -> StoreResult<PathBuf>;
 }
@@ -198,12 +206,12 @@ Both prompts open with `PACKET_NOTE` (already in `lp_core::course`) and state th
 
 PDF port changes, in `crates/lp-agent/src/workbench/jobs.rs` (trait `Pdf`) and `adapters.rs` (`PdftotextPdf`):
 
-1. `fn page_texts(&self, path: &str, first: usize, last: usize) -> Result<Vec<String>, String>` with a default that calls `page_range`. In `PdftotextPdf` it is `page_range` without the "No text found in this PDF range" error: blank pages come back as empty strings, so an image-only page is skipped, not fatal. It must return exactly `last - first + 1` strings, or `Err`. `page_range` keeps its current behaviour for the chat job.
+1. `fn page_texts(&self, path: &str, first: usize, last: usize) -> Result<Vec<String>, String>` with a default that calls `page_range`. In `PdftotextPdf` it is `page_range` without the "No text found in this PDF range" error: blank pages come back as empty strings, so an image-only page is skipped, not fatal. It must return exactly `last - first + 1` strings, or `Err`: `page_range` pops a trailing blank page (`adapters.rs:391`), so `page_texts` pads the result with empty strings up to that count (an image-only last page must not shift the numbering) and returns `Err` if the extractor gave more. `page_range` keeps its current behaviour for the chat job.
 2. `fn outline(&self, path: &str) -> Result<Vec<lp_core::textbook::OutlineEntry>, String>` with a default `Ok(vec![])`. `PdftotextPdf` runs `pdftohtml -xml -i -q -stdout -f 1 -l 1 <arg>` through the existing `pdf_command` (same timeout, stall guard and 8 MiB output cap) and hands the output to `parse_outline_xml`. Checked on this machine with Poppler 26.06: the output carries `<outline><item page="N">Title</item>…</outline>`, where `N` is the physical page and nested `<outline>` means one level deeper. A PDF with no outline yields no `<outline>` element, which is `Ok(vec![])`. If `pdftohtml` is missing, `outline` returns `Ok(vec![])` with a `tracing::warn!`, and the import goes on with the TOC path.
 3. `fn parse_outline_xml(xml: &str) -> Vec<OutlineEntry>`, pure and private in `adapters.rs`. It scans only the `<outline>` blocks, tracks depth by nesting, decodes `&amp; &lt; &gt; &quot; &apos; &#N; &#xN;`, and skips items with no `page` attribute. No XML crate is needed.
 4. `MAX_PDF_INPUT_BYTES` goes to `50 << 20` (D9), and the message in `pdf_path` becomes "exceeds 50 MiB".
 
-`JobKind` (`crates/lp-core/src/ports.rs`) gains `Textbook`. Every exhaustive match must handle it. Verified sites: `Workbench::run` in `workbench/mod.rs` (it is unreachable there: return the error "textbook jobs run in TextbookService"), `kind_name`, `title_of` and `tool_kind` in `crates/lp-service/src/chat/jobs.rs` (`kind_name` gives `"textbook"`, `title_of` uses key `"title"`, `tool_kind` has no textbook tool), and `crates/lp-server/src/seed.rs` (it only builds records, so check it compiles). `workbench/tools.rs` uses `JobKind` without an exhaustive match and needs no change. The builder greps `JobKind::` again before committing.
+`JobKind` (`crates/lp-core/src/ports.rs`) gains `Textbook`. Every exhaustive match must handle it. Verified sites by grep: `Workbench::run` in `workbench/mod.rs` has **two** matches on `job.kind`: the `let name = match job.kind` at `workbench/mod.rs:128` (add `JobKind::Textbook => "textbook"`) and the dispatch match at about line 139 (unreachable there: return the error "textbook jobs run in TextbookService"); `Workbench::recover` skips Textbook (lines 192-207, both loops); `kind_name`, `title_of` and `tool_kind` in `crates/lp-service/src/chat/jobs.rs` (`kind_name` gives `"textbook"`, `title_of` uses key `"title"`, `tool_kind` has no textbook tool; also the string-to-kind match near `chat/jobs.rs:86` needs no textbook arm, as there is no tool), and `crates/lp-server/src/seed.rs` (it only builds records, so check it compiles). `workbench/tools.rs` uses `JobKind` without an exhaustive match and needs no change. The builder greps `JobKind::` again before committing.
 
 ## 6. Service (`crates/lp-service/src/textbook.rs`, new)
 
@@ -217,9 +225,9 @@ pub struct TextbookService<E> { inner: Arc<Inner<E>> }
 
 impl<E: LlmEngine + 'static> TextbookService<E> {
     pub fn new(root: PathBuf, stores: Arc<Stores>, engines: Engines<E>, pdf: Arc<dyn Pdf>,
-               device: String, notify: Arc<dyn Fn(JobRecord) + Send + Sync>) -> Self;  // runs recover()
+               device: String, notify: Arc<dyn Fn(JobRecord) + Send + Sync>) -> Self;  // does not recover; see Recover
     pub fn with_clock(self, clock: Clock) -> Self;
-    pub async fn upload(&self, file_name: &str, pdf: Bytes, busy: BusyGuard) -> Res<Upload>;
+    pub async fn upload(&self, file_name: &str, pdf: bytes::Bytes, busy: BusyGuard) -> Res<Upload>;
     pub async fn import(&self, book: &str, chapters: Option<Vec<u32>>, busy: BusyGuard) -> Res<String>; // job id
     pub fn abort(&self, job_id: &str) -> bool;                       // true if this service owned it
     pub async fn list(&self) -> Res<Vec<BookSummary>>;
@@ -233,7 +241,7 @@ impl<E: LlmEngine + 'static> TextbookService<E> {
 }
 ```
 
-`Engines<E>` is `crate::chat::Engines` (runtime.rs). `Pdf` is `lp_agent::workbench::Pdf`; production passes `Arc::new(PdftotextPdf)`. `BusyGuard` is `crate::workspace::registry::BusyGuard`, the same guard `ChatRuntime::job_updated` holds through `handle.busy()`. The job keeps it until it ends, so a workspace cannot be archived mid-import.
+`Engines<E>` is `crate::chat::Engines` (runtime.rs). `Pdf` is `lp_agent::workbench::Pdf`; production passes `Arc::new(PdftotextPdf)`. New dependencies for `crates/lp-service/Cargo.toml` (step 6): `uuid.workspace = true` (already in the workspace table) and `bytes = "1"` (add to the root `Cargo.toml` `[workspace.dependencies]` and reference it with `bytes.workspace = true`). `tokio-util` (`CancellationToken`) and `sha2` are already there. `BusyGuard` is `crate::workspace::registry::BusyGuard`, the same guard `ChatRuntime::job_updated` holds through `handle.busy()`. The job keeps it until it ends, so a workspace cannot be archived mid-import.
 
 Plain result structs (no serde, no HTTP):
 
@@ -263,11 +271,11 @@ graph TD
   mapped -->|"no"| outline["outline(): 0 calls"]
   outline -->|"entries"| save["append Mapped"]
   outline -->|"none"| toc["toc_chapters: 1 call, counted"]
-  toc -->|"ok"| save
-  toc -->|"fails"| chunks["chunk_chapters"] --> save
+  toc -->|"2 or more chapters"| save
+  toc -->|"fails or under 2"| chunks["chunk_chapters"] --> save
   save --> work["for each chapter in pending_chapters or the requested list"]
-  work --> cap{"calls this job < 40?"}
-  cap -->|"no"| finish
+  work --> cap{"lifetime calls + this chapter's parts <= 40?"}
+  cap -->|"no: chapter stays queued"| finish
   cap -->|"yes"| call["chapter_objectives per part"]
   call -->|"ok"| done["append ChapterDone, upsert parked cards"]
   call -->|"parse error, attempt 1"| call
@@ -280,23 +288,23 @@ graph TD
 - **Start.** `import` returns `Conflict("an import is already running for this book")` if `Inner.running` already has the book. Otherwise it creates `JobRecord { id: "tbj_{hex16}_{n}", chat_id: "", kind: Textbook, status: Running, delivery: Claimed, created_at: now, result: Some({title, bookId, progress}), usage: vec![] }`, where `n` is the count of this book's earlier jobs in `stores.jobs`. It writes the record with `stores.jobs.create_job`, calls `notify`, stores a `CancellationToken` in `Inner.running`, `tokio::spawn`s the runner, and returns the id. `chapters: Some(list)` is only valid for indices that exist and are not `Ready`; anything else is `Invalid`.
 - **Progress.** `result` is `{"title":"Import <book title>","bookId":…,"progress":{"phase":"pages"|"map"|"objectives","pagesRead":u32,"totalPages":u32,"chaptersDone":u32,"chaptersTotal":u32}}`. It is written with `update_job` and then `notify` at most once per 10 pages and once per chapter. `pagesRead` and `totalPages` use the same keys `progress_field` in `chat/runtime.rs` already reads, so `JobItemDto.pages_read` and `total_pages` fill with no change.
 - **Pages.** Pages are read with `page_texts` in 10-page windows (`MAX_PDF_PAGES_PER_READ`), each in `spawn_blocking`, checking the cancel token between windows. Each page goes through `sanitize_page`. The pages are held in memory for the job only (400 pages × 20,000 chars is at most 8 MB). `printed_offset` runs once; if `BookMeta.page_offset` differs, the ledger is not rewritten: the value is used for this job only.
-- **Map.** Done once per book, guarded by the first `Mapped`. Use the outline if it gives at least 2 chapters, else the TOC call, else chunks.
-- **Chapters.** Chapters run one at a time. `Front` and `Back` chapters, and chapters under `MIN_CHAPTER_WORDS`, get `ChapterSkipped` with no call. For the rest, `split_parts` runs, then one `chapter_objectives` call per part on `engines("placer")`, a fresh engine per call so `usage()` deltas are exact, read before and after as `CourseService::ask` does. Each call is bounded by `tokio::time::timeout(120 s)` and `select!` on the cancel token. After every call, `Usage { calls: 1, … }` is appended **whether the call succeeded or not**, because a call counts once it was sent. The parts' results are merged through `accept_objectives`, numbered across parts. Fewer than `MIN_KEPT_OBJECTIVES` counts as a parse failure. On success, `ChapterDone` is appended, then cards are upserted (6.4).
+- **Map.** Done once per book, guarded by the first `Mapped`. Use the outline if `chapters_from_outline` gives at least 2 chapters. Otherwise make the TOC call; if it fails, or `chapters_from_toc` yields fewer than 2 chapters, fall back to `chunk_chapters` (source `Chunks`). The same rule applies to a TOC result that parses but maps to fewer than 2 chapters: the call stays counted, the chunks are used.
+- **Chapters.** Chapters run one at a time. `Front` and `Back` chapters, and chapters under `MIN_CHAPTER_WORDS`, get `ChapterSkipped` with no call. For the rest, `split_parts` runs, then one `chapter_objectives` call per part on `engines("placer")`, a fresh engine per call so `usage()` deltas are exact, read before and after as `CourseService::ask` does. Each call is bounded by `tokio::time::timeout(120 s)` and `select!` on the cancel token. After every call, `Usage { calls: 1, … }` is appended **whether the call succeeded or not**, because a call counts once it was sent. The parts' results are merged through `accept_objectives`, numbered across parts. Fewer than `MIN_KEPT_OBJECTIVES` counts as a parse failure. On success, `ChapterDone` is appended, then cards are upserted (6.4). A crash between the two is repaired by 6.4's reconcile, not by re-calling the model.
 - **Retry.** A `CourseAgentError::Parse` (or a timeout) retries the whole chapter once (`MAX_ATTEMPTS`). The second failure appends `ChapterFailed { retryable: true }` and the job moves on. A `CourseAgentError::Engine(_)` appends `ChapterFailed { retryable: true, reason: "engine_unavailable" }`; two engine errors in a row end the job early, with `result.stopped = "engine_unavailable"`, and the remaining chapters stay pending.
-- **Cap.** Before each call, the job checks `calls_this_job < MAX_AUTO_CALLS`. At the cap it stops starting calls; the rest stay pending and show as `Queued`. A split chapter that would cross the cap is not started (no half chapters).
+- **Cap.** The budget is the ledger's lifetime total: `remaining = 40 - (auto_calls + requested_calls)` from `fold_book`, re-read from the ledger before every chapter and before every call, including a retry. Before a chapter starts, it needs `remaining >= parts` (its parts, plus one more for the one retry only if the budget allows). If not, the chapter is not started: it stays pending and shows as `Queued`, never half-written. Mid-chapter, if a part fails and the retry would exceed the cap, the chapter is abandoned as a whole: nothing from its earlier parts is stored (`ChapterDone` is only appended with all parts), and it ends `ChapterFailed { retryable: true, reason: "budget" }`. The usage route shows `callsCap: 40` and the remaining budget; once the cap is reached, `import` returns `Conflict("call budget used")`.
 - **End.** `status: Done`, with `result.summary = {ready, failed, skipped, queued, calls}` and `result.error` set only when the job could not run at all (PDF unreadable, store failure). The record is written, `notify` called, `Inner.running` cleared and the `BusyGuard` dropped.
 - **Cancel.** `abort(job_id)` cancels the token and returns true. The runner notices at the next window or call, appends nothing more, and sets `status: Failed`, `result.error = "cancelled"`. Chapters already `Ready` stay. The partial call that was in flight still has its `Usage` appended if a reply came back.
-- **Recover.** `TextbookService::new` runs `recover()`. Every `JobKind::Textbook` record still `Running` in `stores.jobs.all_report()` becomes `Done` with `result.error = "interrupted by a restart"`, and `notify` is called. The ledger is untouched; `POST …/import` resumes from `pending_chapters`.
+- **Recover.** `recover()` is a public method, not part of `new`, because the service is built lazily on the first textbook route and a restart would otherwise leave a stale `Running` job in `GET …/jobs`. The server calls `textbook_service(…).recover()` when a workspace is opened (the same place the workbench recovers), and `routes/jobs.rs` list builds the service too. Every `JobKind::Textbook` record still `Running` in `stores.jobs.all_report()` becomes `Done` with `result.error = "interrupted by a restart"`, and `notify` is called. The ledger is untouched; `POST …/import` resumes from `pending_chapters`.
 
 ### 6.3 Reading check
 
-1. `start_check(book, chapter)`: the chapter must be `Ready`, else `Conflict("chapter_not_ready")`. Read the due cards with `review::due_cards(tracker, now)` and the reviewed ones with `review::history` (both in `crates/lp-service/src/review.rs`), filtered to the `t:{book}:` prefix. Call `select_check` with `seed = check id`, where the check id is `rc_` + `uuid::Uuid::new_v4().simple()`. Append `CheckIssued`. **No engine is touched.**
+1. `start_check(book, chapter)`: the chapter must be `Ready`, else `Conflict("chapter_not_ready")`. Read the due cards with `review::due_cards(tracker, now)` filtered to the `t:{book}:` prefix. `review::history(tracker, card_id)` (`review.rs:227`) takes one card id and no `now`, so do not call it per card: take the reviewed set from `tracker.reviews()` once, collecting the `card_id`s that start with `t:{book}:`. Call `select_check` with `seed = check id`, where the check id is `rc_` + `uuid::Uuid::new_v4().simple()`. Append `CheckIssued`. **No engine is touched.**
 2. `answer(book, check, item, …)`: the check must exist in the fold and contain `item` (else `NotFound`). An `(check, item)` pair already answered gives `Conflict("already_answered")`. Grade with the course's `grade(item, text)`. Rating as in `CourseService::answer_sync`: `rating_for(correct, confidence)` for an MCQ or a correct recall, and none for a close or wrong recall until `self_grade`. Then `review::grade(tracker, device, card_id, rating, now)`; `StoreError::NotFound` (an item with no card) is ignored, as `grade_card` does. Append `Answered`. Return `CheckFeedback`, with `due` the card's new due date. Text limits are the course ones (`MAX_TEXT_CHARS`, confidence 1 to 5).
 3. `self_grade`: only for an answered recall item with no rating yet. Uses `rating_from_grade`, then `review::grade`.
 
 ### 6.4 Cards
 
-After each `ChapterDone`, every item gets a `FlashCard` with id `t:{book}:{item}`, `card: Card::new(PARKED_DUE)`, inserted only if `tracker.card(id)` is `None`, as `save_course` does. To avoid a second copy of the card builder, refactor `flash_card` in `crates/lp-service/src/course/mod.rs` into `pub(crate) fn card_for(id: &str, item: &Item, other_answers: &[&str]) -> Option<FlashCard>` (MCQ keeps its options; recall takes its answer plus 3 distinct others, or gets no card). `flash_card` becomes a thin caller, `textbook.rs` calls `card_for` with the chapter's other answers, and `PARKED_DUE` and `shuffled` become `pub(crate)`. Course behaviour must not change: the existing course tests stay green, untouched.
+Card creation is idempotent and reconciled in three places: after each `ChapterDone`, in `start_check` for the chapter being checked, and in `recover()` for every `Ready` chapter. A crash after `ChapterDone` but before the upsert therefore never leaves a Ready chapter without cards, so `grade_card` never meets `NotFound` for a textbook item. Every item gets a `FlashCard` with id `t:{book}:{item}`, `card: Card::new(PARKED_DUE)`, inserted only if `tracker.card(id)` is `None`, as `save_course` does. To avoid a second copy of the card builder, refactor `flash_card` in `crates/lp-service/src/course/mod.rs` into `pub(crate) fn card_for(id: &str, item: &Item, other_answers: &[&str]) -> Option<FlashCard>` (MCQ keeps its options; recall takes its answer plus 3 distinct others, or gets no card). `flash_card` becomes a thin caller, `textbook.rs` calls `card_for` with the chapter's other answers, and `PARKED_DUE` and `shuffled` become `pub(crate)`. Course behaviour must not change: the existing course tests stay green, untouched.
 
 ### 6.5 Errors and cost guarantees
 
@@ -309,6 +317,11 @@ After each `ChapterDone`, every item gets a `FlashCard` with id `t:{book}:{item}
 | Reading check on a chapter that is not `Ready` | `Conflict("chapter_not_ready")` |
 | Answer twice | `Conflict("already_answered")` |
 | Store failure | `Store` |
+| `page_texts` fails mid-import (decompress failure, extractor timeout, output cap) | The job ends `Done` with `result.error` = the extractor message (never page text); already `Ready` chapters stay; no further calls; the pages already read are dropped. The chapter in flight is not marked failed. |
+| A chapter's items yield no cards (a recall item without enough distractors for `card_for`) | The item stays in the objective and the check, but has no card. If every item of a `Ready` chapter has no card, it is `ChapterFailed { retryable: false, reason: "no_cards" }` instead of `ChapterDone`, so `chapter_status` is never stuck. A chapter with at least one card can reach `Due`. |
+| TOC yields fewer than 2 chapters | Fall back to `chunk_chapters` (6.2 Map). |
+| `book()` of a directory with `source.pdf` but no `Imported` line (crash during upload) | `NotFound`. `list()` omits it, and the next upload of the same bytes finds no ledger, overwrites the source and proceeds. |
+| Import of an already `Ready` chapter | Rejected as `Invalid`. Re-importing or refreshing a `Ready` chapter is out of scope for U7. |
 | Every page blank (scanned book) | the job ends `Done`, `error = "No text found. Scanned pages need OCR before import."`, no model call |
 
 Cost: `list`, `book`, `chapter`, `start_check`, `answer`, `self_grade` and `usage` never call `engines`. The only call sites are the TOC call and `chapter_objectives` inside the runner. Textbook usage lives in `textbook.jsonl`, and `CourseService::strong_stamps` only reads `courses/*/events.jsonl`, so the import never touches the G4 strong cap. No cheap hourly cap exists in code today, so there is nothing else to exempt.
@@ -364,6 +377,8 @@ CheckFeedbackDto    { correct, close, answer, why, due: i64|null }
 TextbookUsageDto    { cheapIn, cheapOut, autoCalls, requestedCalls, callsCap }
 ```
 
+**Plain-text rule:** `title`, `error`, `q`, `options`, `answer`, `why` and objective `text` are untrusted. Clients render them as plain text only (section 8).
+
 **Leak rule:** `ReadingCheckDto` and `ChapterDetailDto` never contain `answer`, `accept`, `why`, `mustName`, `misconceptions` or `correct`. A test serializes both to JSON and asserts none of those keys appear at any depth.
 
 Regenerate `web/openapi/openapi.json` with `learnpuppy openapi`, and its client with `web/scripts/gen-api.ts`. Never hand-merge them (U7 lands after U3, U4 and U5: rebase first).
@@ -374,6 +389,7 @@ Regenerate `web/openapi/openapi.json` with `learnpuppy openapi`, and its client 
 - Path safety: book ids are hex only; `source_path` is built by the store; `pdf_path` already prefixes `./` to a leading `-`.
 - Extracted text: `sanitize_page`, then the per-page and per-part caps, then `redact`, then the fence. No book text ever reaches a log line (`tracing` fields carry ids and counts only).
 - Subprocesses: only `pdfinfo`, `pdftotext` and `pdftohtml`, through `pdf_command` (null stdin, stderr dropped, timeout, stall guard, output cap, kill on exit).
+- Untrusted output: chapter titles (TOC call, outline) and `error` strings come from the PDF or the model, and so do `q`, `options`, `answer`, `why` and objective text. The backend serves them as JSON data, never as HTML, and adds no markup. U8 must render every one of these as plain text (React text children, no `dangerouslySetInnerHTML`, no markdown or HTML rendering of these fields); this is an acceptance item in U8. `error` strings carry extractor or engine messages only, never page text. Titles and objective text are passed through `sanitize_page` at accept time and cut to their length caps.
 - Server: the loopback bind and auth middleware are unchanged; no route returns file paths (the job `result` stores the `bookId`, not the PDF path).
 
 ## 9. Tests per crate
@@ -391,6 +407,7 @@ Every test must fail without its change (test plan rule 2).
 8. `split_parts_8k_boundary_and_three_part_cap`, including a 40k-word chapter marked truncated.
 9. `objective_bounds_per_parts`
 10. `accept_objectives_clamps_pages_drops_bad_items_and_numbers_ids`
+10b. `fold_created_at_is_first_imported_ts`
 11. `fold_first_mapped_and_first_done_win`: a doubled `Mapped` or `ChapterDone` yields no duplicates.
 12. `fold_retry_done_overrides_failed`
 13. `select_check_due_first_one_per_objective_deterministic`
@@ -404,11 +421,13 @@ Every test must fail without its change (test plan rule 2).
 3. `textbook_concurrent_appends_all_land`: 2 threads × 100 appends, 200 valid lines, all CRCs good.
 4. `textbook_two_workspaces_isolated`: two roots, an append in one leaves the other empty.
 5. `textbook_rejects_bad_book_ids`: `../x`, `tb_XYZ`, empty.
+6. `textbook_list_omits_dir_without_imported_line`
 
 **lp-agent**
 1. `parse_outline_xml_nested_and_entities` (adapters.rs)
 2. `pdftohtml_outline_real_fixture` (skips if Poppler is missing, as `real_pdf_reads_by_range` does)
 3. `page_texts_keeps_blank_pages`: an image-only page is an empty string, not an error.
+3b. `page_texts_pads_trailing_blank_page`: an image-only last page still gives `last-first+1` strings and later pages keep their numbers.
 4. `pdf_input_cap_is_50_mib`
 5. `chapter_objectives_fences_and_redacts`: the prompt seen by a fake engine has the injection sentence and a fake `api_key=…` inside the fence, and the key is masked.
 6. `chapter_objectives_rejects_empty_and_bad_json`
@@ -419,13 +438,18 @@ Every test must fail without its change (test plan rule 2).
 2. `no_outline_makes_exactly_one_toc_call`
 3. `one_call_per_chapter_and_split_parts_counted`: total calls equal chapters plus extra parts.
 4. `auto_import_never_exceeds_40_calls`: a 60-chapter fake book gives 40 calls and the rest `Queued`.
-5. `requested_import_finishes_queued_chapters`
+5. `requested_import_cannot_exceed_lifetime_40`: after an auto import at 40, a requested import makes 0 calls and returns `Conflict`; at 38 used, a 3-part chapter is not started and stays `Queued`.
+5b. `retry_rechecks_cap_at_39`: at 39 lifetime calls a failed chapter's retry is not sent (total stays 40) and nothing half-written is stored.
 6. `failed_chapter_retries_once_then_failed_retryable`
 7. `two_engine_errors_stop_job_early`
 8. `same_pdf_twice_no_duplicate_objectives_or_cards`: card count unchanged, one `Imported` line.
 9. `concurrent_identical_uploads_one_book`
 10. `cancel_marks_failed_and_keeps_ready_chapters`
-11. `restart_recovers_running_job_and_resume_imports_rest`
+10b. `page_texts_failure_mid_import_ends_job_with_error`
+10c. `chapter_with_no_cards_is_failed_not_stuck`
+10d. `toc_under_two_chapters_falls_back_to_chunks`
+10e. `crash_between_chapter_done_and_cards_is_reconciled`
+11. `restart_recovers_running_job_and_resume_imports_rest`: recovery happens at workspace open, before any textbook route is called.
 12. `workbench_recover_skips_textbook_jobs`: run `Workbench::recover` over a `Running` textbook job and assert it is untouched and no wake happens.
 13. `reading_check_and_answers_make_zero_calls`: counter at 0 for `list`, `book`, `chapter`, `start_check`, `answer` and `self_grade`.
 14. `answer_grades_by_code_and_updates_fsrs`: card leaves `PARKED_DUE`, history length 1.
@@ -441,6 +465,8 @@ Every test must fail without its change (test plan rule 2).
 4. `textbook_job_listed_and_job_updated_event_emitted`
 5. `textbook_abort_through_jobs_route`
 6. `reading_check_dto_has_no_answer_fields` (leak test over serialized JSON)
+6b. `titles_and_errors_are_served_as_plain_json_strings`: a title like `<img src=x onerror=1>` comes back byte-identical in a JSON string, content type `application/json`.
+6c. `jobs_list_after_restart_shows_no_running_textbook_job`
 7. `check_answer_idempotent_client_id`
 8. `chapter_not_ready_is_409_with_reason`
 9. `health_under_200ms_during_400_page_import`: a synthetic 400-page PDF, generated like `multi_page_pdf` in `adapters.rs`, with `GET /health` polled while the job runs. Marked `#[ignore]` only if Poppler is absent.
@@ -452,17 +478,17 @@ Every test must fail without its change (test plan rule 2).
 
 ## 10. Build order (file by file)
 
-Each step compiles and passes `make gate` on its own. Commit per step, or squash at the end.
+Each step compiles and passes `make gate` on its own, including `api-check` (`git diff --exit-code` on `web/openapi/openapi.json`). Any step that changes an OpenAPI schema or path (steps 7 and 8) regenerates `web/openapi/openapi.json` and the TypeScript client in the same commit (`learnpuppy openapi`, then `web/scripts/gen-api.ts`; never hand-merged). Commit per step, or squash at the end.
 
-1. `crates/lp-core/src/textbook.rs` (new) and `lib.rs`: types, constants, functions, lp-core tests and proptests.
-2. `crates/lp-core/src/ports.rs`: `JobKind::Textbook`. Fix every match: `crates/lp-agent/src/workbench/mod.rs` (`run`, and `recover` skips Textbook in both loops), `crates/lp-service/src/chat/jobs.rs` (`kind_name`, `title_of`, `tool_kind`), `crates/lp-server/src/seed.rs`. Add the `workbench_recover_skips_textbook_jobs` test in `crates/lp-agent/src/workbench/tests.rs`.
+1. `crates/lp-core/src/textbook.rs` (new) and `lib.rs`: types (including `RawObjective`), constants, functions, lp-core tests and proptests.
+2. `crates/lp-core/src/ports.rs`: `JobKind::Textbook`. Fix every match: `crates/lp-agent/src/workbench/mod.rs` (the name match at line 128, the dispatch match in `run`, and `recover` skipping Textbook in both loops), `crates/lp-service/src/chat/jobs.rs` (`kind_name`, `title_of`, `tool_kind`), `crates/lp-server/src/seed.rs`. Grep `JobKind::` again. If the enum is exposed in a DTO or schema, regenerate OpenAPI here. Add `workbench_recover_skips_textbook_jobs` in `crates/lp-agent/src/workbench/tests.rs`.
 3. `crates/lp-store/src/textbooks.rs` (new), `lib.rs`, store tests. Then `crates/lp-service/src/stores.rs`: the `textbooks` field.
-4. `crates/lp-agent/src/workbench/jobs.rs` (trait `Pdf`: `page_texts`, `outline`) and `adapters.rs` (`PdftotextPdf` impls, `parse_outline_xml`, the 50 MiB cap). Then `crates/lp-agent/src/course/textbook.rs` (new), `course/mod.rs` (`pub mod textbook;`), and `prompts/textbook_toc.md` and `prompts/textbook_objectives.md` (new). Re-export `Pdf` and `PdftotextPdf`: both are already `pub use`d from `workbench/mod.rs`.
+4. `crates/lp-agent/src/workbench/jobs.rs` (trait `Pdf`: `page_texts`, `outline`) and `adapters.rs` (`PdftotextPdf` impls, `parse_outline_xml`, the 50 MiB cap). Then `crates/lp-agent/src/course/textbook.rs` (new), `course/mod.rs` (`pub mod textbook;`), and `prompts/textbook_toc.md` and `prompts/textbook_objectives.md` (new).
 5. `crates/lp-service/src/course/mod.rs`: the `card_for` refactor, and `PARKED_DUE`, `shuffled` and `grade` made `pub(crate)`. Course tests must stay unchanged and green.
-6. `crates/lp-service/src/textbook.rs` (new) and `lib.rs`. `crates/lp-service/src/chat/runtime.rs`: `job_info` made `pub`, and `JobView` gains `book_id`, `chapters_done` and `chapters_total`. Service tests and the fixture (`crates/lp-service/tests/fixtures/`).
-7. `crates/lp-server/src/dto/textbook.rs` (new) and `dto/mod.rs`; `dto/chat.rs` `JobItemDto` gets the three new fields.
-8. `crates/lp-server/src/app.rs` (`textbook_service`, `role_engines`), `routes/sources.rs` (form mode enum, `POST …/sources/textbook`), `routes/textbook.rs` (new), `routes/mod.rs`, `routes/jobs.rs` (abort routing), `openapi.rs`. Route tests in `crates/lp-server/tests/api.rs`.
-9. Regenerate `web/openapi/openapi.json` and the TypeScript client, then run `make gate`.
+6. Add the `uuid` and `bytes` dependencies (section 6). `crates/lp-service/src/textbook.rs` (new) and `lib.rs`. `crates/lp-service/src/chat/runtime.rs`: `job_info` made `pub`, and `JobView` gains `book_id`, `chapters_done` and `chapters_total` (plain structs, so no OpenAPI change yet). Service tests and the fixture (`crates/lp-service/tests/fixtures/`).
+7. `crates/lp-server/src/dto/textbook.rs` (new) and `dto/mod.rs`; `dto/chat.rs` `JobItemDto` gets the three new fields. Register the new schemas in `openapi.rs`, then regenerate `web/openapi/openapi.json` and the client in this same commit.
+8. `crates/lp-server/src/app.rs` (`textbook_service`, `role_engines`, recover at workspace open), `routes/sources.rs` (form mode enum, `POST …/sources/textbook`), `routes/textbook.rs` (new), `routes/mod.rs`, `routes/jobs.rs` (abort routing, list builds the service), `openapi.rs` paths. Route tests in `crates/lp-server/tests/api.rs`. Regenerate OpenAPI and the client in this same commit.
+9. Run `make gate` and `make ci` end to end on the final tree, and confirm `git diff --exit-code web/openapi/openapi.json` is clean.
 10. `scripts/real_smoke.py` `--textbook` mode, and a [Review Log](/ui-polish/review.md) entry with the D7 answer and anything the builder changed from this spec.
 
 ## 11. Acceptance mapping
@@ -476,4 +502,31 @@ Each step compiles and passes `make gate` on its own. Commit per step, or squash
 | Reading check makes zero model calls | service test 13 |
 | Torn tail and concurrent append | store tests 2 and 3 |
 | Upload rejection and DTO leak | server tests 2 and 6 |
-| At most 40 calls per book at import | service test 4, usage route |
+| At most 40 calls per book, lifetime | service tests 4, 5 and 5b, usage route |
+
+## 12. Review log
+
+Two independent reviews (Reviewer 1: claude, Reviewer 2: agy) returned REVISE. D7 was closed by the owner's reviewer as a hard lifetime cap. Code claims were re-checked with grep on this worktree. The `OKF`-style claim sets below could not be verified beyond the cited paths, and where a reviewer asserted an outside fact it is marked.
+
+| Finding | Resolution |
+|---|---|
+| R1.1 and R2.5 cost cap, fresh 40 per request | Accepted. D7 rewritten as a lifetime cap counted from ledger `Usage` totals; section 6.2 Cap rewritten; tests 5 and 5b. |
+| R1.2 retry can pass the cap | Accepted. A retry re-checks the cap; test 5b. |
+| R2.5 multi-part chapter failing on its last part cannot retry | Accepted. A chapter starts only if all its parts fit; a part that cannot be retried abandons the whole chapter, nothing half-written, `reason: budget`. |
+| R1.3 stale Running job after restart | Accepted. `recover()` is called at workspace open and by the jobs list, not from lazy `new`. Test 11 and server test 6c. |
+| R1.4 crash between `ChapterDone` and card upsert | Accepted. Reconcile in 6.4 (after done, in `start_check`, in `recover`); test 10e. |
+| R1.5 `page_texts` count and trailing blank page | Verified: `page_range` pops a trailing blank page (`adapters.rs:391`). Padding rule and test 3b added. |
+| R1.6 missing `uuid` and `bytes` deps | Verified by grep: `lp-service` has neither. Added in step 6. The other items R1 listed as checked were not re-verified one by one. |
+| R1.7 directory without `Imported` line | Accepted. `book()` gives `NotFound`, `list()` omits it; store test 6. |
+| R1.8 untrusted `error` and titles | Accepted. Plain-text rule in sections 7.3 and 8, with a U8 acceptance duty and server test 6b. |
+| R1.9 security chain | No change needed. |
+| R1.10 `Ready` chapter re-import | Accepted as a note: out of scope for U7 (section 6.5). |
+| R2.1 build order breaks `api-check` | Verified in `Makefile` (`gate` runs `api-check`). Section 10 rewritten: OpenAPI regeneration is in steps 7 and 8, not a later step. |
+| R2.2 `workbench/mod.rs:128` match | Verified by grep (`let name = match job.kind`). Added to section 5 and step 2. |
+| R2.2 `RawObjective` missing from 3.2 | Accepted; added. |
+| R2.3 `review::history` signature | Verified (`review.rs:227`, `(tracker, card_id)`). 6.3 now uses `tracker.reviews()` once. |
+| R2.4 `createdAt` dropped in fold | Accepted. `BookState.created_at` from the first `Imported.ts`; fold test 10b. |
+| R2.6 stored XSS claim from untrusted PDF text | Partly accepted. The backend serves JSON and never HTML, so it cannot execute script itself; the risk is on the U8 render path, so the rule is plain-text rendering, enforced by U8 and a backend test of byte-identical strings. Sanitising or escaping content on the server was rejected: it would corrupt stored text and double-escape in React. |
+| R2.7 `page_texts` failing mid-import | Accepted. Failure row in 6.5, test 10b. |
+| R2.7 items without cards, chapter never `Due` | Accepted. A chapter with no cards at all fails as `no_cards`; test 10c. |
+| R2.7 TOC under 2 chapters | Accepted. Falls back to `chunk_chapters`; test 10d. |
