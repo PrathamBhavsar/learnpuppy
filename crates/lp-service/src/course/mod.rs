@@ -32,6 +32,7 @@ use lp_core::course::{
     fold_learner, match_answer, next_step, rating_for, rating_from_grade, render_packet,
     wants_refill, AskKind, Course, CourseEvent, Item, ItemKind, Lesson, Match, Step,
 };
+use lp_core::method::probe::{label_strand, next_probe_level, ProbeAnswer, Strand};
 use lp_core::plan::{shuffle_options, QuizOption};
 use lp_core::ports::{FlashCard, StoreError, TrackerStore};
 use parking_lot::Mutex;
@@ -105,10 +106,22 @@ pub enum CourseStatus {
     Refilling,
 }
 
+fn label_word(label: lp_core::method::probe::StrandLabel) -> &'static str {
+    use lp_core::method::probe::StrandLabel::*;
+    match label {
+        Known => "known",
+        Edge => "edge",
+        Unknown => "unknown",
+        Blocked => "blocked",
+    }
+}
+
 /// What the learner sees of placement: option order is seeded by `{course}:{item}`, so stable.
 fn placement_view(id: &str, p: &Placement) -> Vec<PlacementItem> {
+    let pending = probe_pending(p);
     p.items
         .iter()
+        .filter(|i| p.strands.is_empty() || pending.contains(&i.id))
         .map(|i| PlacementItem {
             id: i.id.clone(),
             kind: i.kind,
@@ -133,10 +146,24 @@ pub struct Created {
     pub items: Vec<PlacementItem>,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PlacementAnswer {
     pub item: String,
     pub text: String,
+    /// The learner said they were guessing: a right answer then counts as `edge`, never `known`.
+    #[serde(default)]
+    pub guessed: bool,
+    /// The learner said a prerequisite is missing; code never infers this from right or wrong.
+    #[serde(default)]
+    pub blocked: bool,
+}
+
+/// One round of placement: this round's graded answers and the questions still to ask. An empty
+/// `next` means placement is over and the course is being written.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PlacementRound {
+    pub graded: Vec<Graded>,
+    pub next: Vec<PlacementItem>,
 }
 
 /// One graded placement answer, shown right after submitting.
@@ -212,8 +239,77 @@ pub struct Usage {
 struct Placement {
     goal: String,
     items: Vec<Item>,
-    /// `None` until submitted.
+    /// `None` until placement is over.
     results: Option<Vec<Result1>>,
+    /// F02: one line on why the goal matters.
+    #[serde(default)]
+    why: String,
+    /// F06 strand probe; empty for a flat placement written before it (or when the strand call
+    /// failed and the plain placement stood in).
+    #[serde(default)]
+    strands: Vec<ProbeStrand>,
+}
+
+#[derive(Clone, Serialize, Deserialize)]
+struct ProbeStrand {
+    name: String,
+    /// Item ids at levels 1, 2 and 3.
+    items: [String; 3],
+    #[serde(default)]
+    answers: Vec<ProbeRec>,
+}
+
+#[derive(Clone, Serialize, Deserialize)]
+struct ProbeRec {
+    item: String,
+    given: String,
+    level: u8,
+    correct: bool,
+    guessed: bool,
+    blocked: bool,
+}
+
+impl ProbeRec {
+    fn answer(&self) -> ProbeAnswer {
+        ProbeAnswer {
+            level: self.level,
+            correct: self.correct,
+            guessed: self.guessed,
+            blocked: self.blocked,
+        }
+    }
+}
+
+impl ProbeStrand {
+    fn next_level(&self) -> Option<u8> {
+        let answers: Vec<ProbeAnswer> = self.answers.iter().map(ProbeRec::answer).collect();
+        next_probe_level(&answers)
+    }
+}
+
+/// The item ids the learner still has to answer in a probe, one per unsettled strand.
+fn probe_pending(p: &Placement) -> Vec<String> {
+    if p.results.is_some() {
+        return Vec::new();
+    }
+    p.strands
+        .iter()
+        .filter_map(|s| s.next_level().map(|l| s.items[usize::from(l) - 1].clone()))
+        .collect()
+}
+
+/// Each strand's label from what was answered.
+fn strand_labels(p: &Placement) -> Vec<Strand> {
+    p.strands
+        .iter()
+        .map(|s| {
+            let answers: Vec<ProbeAnswer> = s.answers.iter().map(ProbeRec::answer).collect();
+            Strand {
+                name: s.name.clone(),
+                label: label_strand(&answers),
+            }
+        })
+        .collect()
 }
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -430,19 +526,47 @@ impl<E: LlmEngine + 'static> CourseService<E> {
 
     // -------------------------------------------------------------- placement
 
-    /// Runs placement. If no AI can answer this returns `Unavailable` and leaves nothing behind.
-    pub async fn create(&self, goal: &str) -> Res<Created> {
-        let goal = goal.trim().to_string();
+    /// Starts a course: one cheap call writes the strand probe (or, if that comes back unusable,
+    /// the plain placement quiz). If no AI can answer this returns `Unavailable` and leaves nothing
+    /// behind. `why` is required (F02).
+    pub async fn create(&self, goal: &str, why: &str) -> Res<Created> {
+        let (goal, why) = (goal.trim().to_string(), why.trim().to_string());
         if goal.is_empty() || goal.chars().count() > MAX_TEXT_CHARS {
             return Err(CourseError::Invalid(format!(
                 "the goal must be 1 to {MAX_TEXT_CHARS} characters"
             )));
         }
+        if why.is_empty() || why.chars().count() > MAX_TEXT_CHARS {
+            return Err(CourseError::Invalid(format!(
+                "why this matters must be 1 to {MAX_TEXT_CHARS} characters"
+            )));
+        }
         let engine = (self.inner.engines)("placer");
         let before = engine.usage();
-        let items = lp_agent::course::place(&*engine, &goal)
-            .await
-            .map_err(|e| CourseError::Unavailable(format!("No AI could write placement: {e}")))?;
+        let (items, strands) = match lp_agent::course::place_strands(&*engine, &goal).await {
+            Ok(banks) => {
+                let mut items = Vec::new();
+                let mut strands = Vec::new();
+                for bank in banks {
+                    let ids = bank.levels.each_ref().map(|i| i.id.clone());
+                    items.extend(bank.levels);
+                    strands.push(ProbeStrand {
+                        name: bank.name,
+                        items: ids,
+                        answers: Vec::new(),
+                    });
+                }
+                (items, strands)
+            }
+            Err(_) => (
+                lp_agent::course::place(&*engine, &goal)
+                    .await
+                    .map_err(|e| {
+                        CourseError::Unavailable(format!("No AI could write placement: {e}"))
+                    })?,
+                Vec::new(),
+            ),
+        };
         let used = delta(before, engine.usage());
         let me = self.inner.clone();
         blk(move || {
@@ -452,6 +576,8 @@ impl<E: LlmEngine + 'static> CourseService<E> {
                 goal,
                 items,
                 results: None,
+                why,
+                strands,
             };
             let view = placement_view(&id, &p);
             me.write_json(&id, "placement.json", &p)?;
@@ -461,15 +587,17 @@ impl<E: LlmEngine + 'static> CourseService<E> {
         .await
     }
 
-    /// Grades placement with code, stores the results, saves the learner profile and starts the
-    /// Author in the background. Returns at once.
+    /// Grades one round of placement with code. A strand probe asks at most two questions per
+    /// strand, so this may return more questions (`next`); once none are left it stores the
+    /// results, saves the learner profile and starts the Author in the background. A flat
+    /// placement is one round.
     pub async fn submit_placement(
         &self,
         id: &str,
         answers: Vec<PlacementAnswer>,
-    ) -> Res<Vec<Graded>> {
+    ) -> Res<PlacementRound> {
         let (me, cid) = (self.inner.clone(), id.to_string());
-        let graded = blk(move || {
+        let (round, done) = blk(move || {
             let lk = me.lock_for(&cid);
             let _g = lk.lock();
             let mut p: Placement = me.read_json(&cid, "placement.json")?;
@@ -478,31 +606,96 @@ impl<E: LlmEngine + 'static> CourseService<E> {
                     "placement was already submitted".into(),
                 ));
             }
-            let mut results = Vec::new();
-            let mut graded = Vec::new();
-            for it in &p.items {
-                let given = answers
+            let given_for = |item: &str| {
+                answers
                     .iter()
-                    .find(|a| a.item == it.id)
-                    .map(|a| keep(&a.text))
-                    .unwrap_or_default();
-                let correct = grade(it, &given).0;
-                graded.push(Graded {
-                    item: it.id.clone(),
-                    correct,
-                    answer: it.answer.clone(),
-                    why: it.why.clone(),
-                });
-                results.push(Result1 {
-                    item: it.id.clone(),
-                    given,
-                    correct,
-                });
+                    .find(|a| a.item == item)
+                    .map(|a| (keep(&a.text), a.guessed, a.blocked))
+                    .unwrap_or_default()
+            };
+            // A stale or repeated submit (a double click, an old tab) names questions that are no
+            // longer pending; grading it would mark the next round blank, so refuse it untouched.
+            if !p.strands.is_empty()
+                && probe_pending(&p)
+                    .iter()
+                    .any(|id| !answers.iter().any(|a| &a.item == id))
+            {
+                return Err(CourseError::Invalid(
+                    "answer every question of this round".into(),
+                ));
+            }
+            let items = p.items.clone();
+            let mut graded = Vec::new();
+            let results: Vec<Result1>;
+            let mut profile_tail = String::new();
+            if p.strands.is_empty() {
+                let mut rs = Vec::new();
+                for it in &items {
+                    let (given, _, _) = given_for(&it.id);
+                    let correct = grade(it, &given).0;
+                    graded.push(Graded {
+                        item: it.id.clone(),
+                        correct,
+                        answer: it.answer.clone(),
+                        why: it.why.clone(),
+                    });
+                    rs.push(Result1 {
+                        item: it.id.clone(),
+                        given,
+                        correct,
+                    });
+                }
+                results = rs;
+            } else {
+                for strand in &mut p.strands {
+                    let Some(level) = strand.next_level() else {
+                        continue;
+                    };
+                    let item_id = strand.items[usize::from(level) - 1].clone();
+                    let Some(it) = items.iter().find(|i| i.id == item_id) else {
+                        continue;
+                    };
+                    let (given, guessed, blocked) = given_for(&item_id);
+                    let correct = grade(it, &given).0;
+                    graded.push(Graded {
+                        item: item_id.clone(),
+                        correct,
+                        answer: it.answer.clone(),
+                        why: it.why.clone(),
+                    });
+                    strand.answers.push(ProbeRec {
+                        item: item_id,
+                        given,
+                        level,
+                        correct,
+                        guessed,
+                        blocked,
+                    });
+                }
+                if !probe_pending(&p).is_empty() {
+                    me.write_json(&cid, "placement.json", &p)?;
+                    let next = placement_view(&cid, &p);
+                    return Ok((PlacementRound { graded, next }, false));
+                }
+                results = p
+                    .strands
+                    .iter()
+                    .flat_map(|s| s.answers.iter())
+                    .map(|r| Result1 {
+                        item: r.item.clone(),
+                        given: r.given.clone(),
+                        correct: r.correct,
+                    })
+                    .collect();
+                for s in strand_labels(&p) {
+                    profile_tail.push_str(&format!("\nStrand {}: {}", s.name, label_word(s.label)));
+                }
             }
             let right = results.iter().filter(|r| r.correct).count();
             let profile = format!(
-                "Goal: {}\nPlacement: {right} of {} right.",
+                "Goal: {}\nWhy: {}\nPlacement: {right} of {} right.{profile_tail}",
                 p.goal,
+                p.why,
                 results.len()
             );
             me.stores.courses.save_learner(&profile)?;
@@ -510,11 +703,19 @@ impl<E: LlmEngine + 'static> CourseService<E> {
             me.write_json(&cid, "placement.json", &p)?;
             me.rt.lock().writing.insert(cid.clone());
             me.set_state(&cid, "writing", "")?;
-            Ok(graded)
+            Ok((
+                PlacementRound {
+                    graded,
+                    next: Vec::new(),
+                },
+                true,
+            ))
         })
         .await?;
-        self.spawn_write(id);
-        Ok(graded)
+        if done {
+            self.spawn_write(id);
+        }
+        Ok(round)
     }
 
     /// The unanswered placement questions, same order and options as `create` returned them.
@@ -916,6 +1117,7 @@ async fn run_write<E: LlmEngine + 'static>(me: &Arc<Inner<E>>, id: &str) -> Res<
         Ok((p, profile, m2.reserve_strong()))
     })
     .await?;
+    let (why, strands) = (p.why.clone(), strand_labels(&p));
     let results: Vec<PlacementResult> = p
         .results
         .iter()
@@ -960,6 +1162,8 @@ async fn run_write<E: LlmEngine + 'static>(me: &Arc<Inner<E>>, id: &str) -> Res<
                 // A course written now follows the learning method; only courses already on disk
                 // stay at version 0 (no plan, no gates).
                 course.method_version = METHOD_VERSION;
+                course.why = why;
+                course.strands = strands;
                 m2.save_course(&course)
             }
             Err(e) => Err(CourseError::Unavailable(format!(

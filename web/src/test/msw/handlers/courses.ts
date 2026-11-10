@@ -66,7 +66,11 @@ export const courseHandlers = [
         why: k?.why ?? "",
       }
     })
-    return HttpResponse.json({ graded } satisfies Dto["GradedListDto"])
+    // The mock probe settles in one round; a test can override this route to ask a follow-up.
+    return HttpResponse.json({
+      graded,
+      next: [],
+    } satisfies Dto["GradedListDto"])
   }),
 
   http.get(`${API}/:id/misses`, ({ params }) => {

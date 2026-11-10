@@ -19,6 +19,7 @@ use super::*;
 
 const T0: i64 = 1_800_000_000_000;
 const DAY: i64 = 86_400_000;
+const WHY: &str = "I want to read other people's code";
 
 // ------------------------------------------------------------------ scripted engine
 
@@ -33,6 +34,8 @@ struct Shared {
     /// The Author waits for a permit (tests start it empty to hold the course in `Writing`).
     gate: Semaphore,
     batch: AtomicUsize,
+    /// The strand probe call answers with unusable text, so placement falls back to the plain quiz.
+    plain_only: std::sync::atomic::AtomicBool,
     /// Every clock read moves time on by 1 ms (so concurrent reviews get distinct timestamps).
     tick: std::sync::atomic::AtomicBool,
 }
@@ -45,6 +48,7 @@ impl Shared {
             garbage: Mutex::default(),
             gate: Semaphore::new(if hold { 0 } else { 10_000 }),
             batch: AtomicUsize::new(0),
+            plain_only: std::sync::atomic::AtomicBool::new(false),
             tick: std::sync::atomic::AtomicBool::new(false),
         })
     }
@@ -111,6 +115,23 @@ fn place_reply() -> String {
     json!({"items":items}).to_string()
 }
 
+/// Three strands, each with an mcq at levels 1 to 3; every answer is "red apple".
+fn strand_reply() -> String {
+    let strands: Vec<_> = (0..3)
+        .map(|si| {
+            let items: Vec<_> = (1..=3)
+                .map(|l| {
+                    json!({"type":"mcq","q":format!("Which statement about strand {si} level {l} holds?"),
+                        "options":["red apple","blue plum","pink pear","gray kiwi"],
+                        "answer":"red apple","why":format!("placement why s{si} l{l}"),"level":l})
+                })
+                .collect();
+            json!({"name":format!("Strand {si}"),"items":items})
+        })
+        .collect();
+    json!({"strands":strands}).to_string()
+}
+
 #[async_trait]
 impl LlmEngine for Mock {
     async fn stream_turn(
@@ -135,7 +156,13 @@ impl LlmEngine for Mock {
             });
         }
         let p = req.prompt;
-        let text = if p.contains("Write 5 placement questions") {
+        let text = if p.contains("Write a strand probe") {
+            if self.shared.plain_only.load(Ordering::Relaxed) {
+                "not json".into()
+            } else {
+                strand_reply()
+            }
+        } else if p.contains("Write 5 placement questions") {
             place_reply()
         } else if p.contains("Plan a course and write") {
             self.shared.gate.acquire().await.unwrap().forget();
@@ -248,31 +275,47 @@ impl World {
         &self.svc.inner
     }
 
-    /// Creates a course and submits placement with `misses` wrong answers; does not wait.
+    /// Creates a course and answers every placement round (the first `misses` questions of the
+    /// first round wrongly, all later ones rightly); does not wait for the Author.
     async fn start(&self, misses: usize) -> String {
-        let created = self.svc.create("learn spanish").await.unwrap();
-        let p: Placement = self
-            .inner()
-            .read_json(&created.id, "placement.json")
-            .unwrap();
-        let answers = p
-            .items
-            .iter()
-            .enumerate()
-            .map(|(i, it)| PlacementAnswer {
-                item: it.id.clone(),
-                text: if i < misses {
-                    "wrong".into()
-                } else {
-                    it.answer.clone()
-                },
-            })
-            .collect();
-        self.svc
-            .submit_placement(&created.id, answers)
-            .await
-            .unwrap();
+        let created = self.svc.create("learn spanish", WHY).await.unwrap();
+        self.answer_all(&created.id, misses).await;
         created.id
+    }
+
+    /// Answers placement rounds until the probe is over. Returns how many rounds it took.
+    async fn answer_all(&self, id: &str, misses: usize) -> usize {
+        let mut rounds = 0;
+        loop {
+            let pending = self.svc.pending_placement(id).await.unwrap();
+            if pending.is_empty() {
+                return rounds;
+            }
+            let p: Placement = self.inner().read_json(id, "placement.json").unwrap();
+            let answers = pending
+                .iter()
+                .enumerate()
+                .map(|(i, it)| PlacementAnswer {
+                    item: it.id.clone(),
+                    text: if rounds == 0 && i < misses {
+                        "wrong".into()
+                    } else {
+                        p.items
+                            .iter()
+                            .find(|x| x.id == it.id)
+                            .unwrap()
+                            .answer
+                            .clone()
+                    },
+                    ..PlacementAnswer::default()
+                })
+                .collect();
+            let round = self.svc.submit_placement(id, answers).await.unwrap();
+            rounds += 1;
+            if round.next.is_empty() {
+                return rounds;
+            }
+        }
     }
 
     async fn ready(&self) -> String {
@@ -629,9 +672,9 @@ async fn a_course_stuck_in_writing_after_a_restart_fails_and_can_be_retried() {
 #[tokio::test]
 async fn a_failed_write_is_retried_from_the_stored_placement() {
     let w = world();
-    let created = w.svc.create("learn rust").await.unwrap();
+    let created = w.svc.create("learn rust", WHY).await.unwrap();
     w.shared.limit("*", true);
-    w.svc.submit_placement(&created.id, vec![]).await.unwrap();
+    w.answer_all(&created.id, 0).await;
     for _ in 0..400 {
         if w.svc.status(&created.id).await.unwrap() != CourseStatus::Writing {
             break;
@@ -651,7 +694,7 @@ async fn a_failed_write_is_retried_from_the_stored_placement() {
 async fn create_fails_soft_and_leaves_no_course_behind() {
     let w = world();
     w.shared.limit("*", true);
-    let e = w.svc.create("learn spanish").await.unwrap_err();
+    let e = w.svc.create("learn spanish", WHY).await.unwrap_err();
     assert!(matches!(e, CourseError::Unavailable(_)), "{e:?}");
     assert!(w.svc.list().await.unwrap().is_empty());
     let courses = w.dir.path().join("courses");
@@ -662,7 +705,7 @@ async fn create_fails_soft_and_leaves_no_course_behind() {
 async fn a_course_stays_listed_before_it_is_written() {
     let w = world_with(true);
     assert!(w.svc.list().await.unwrap().is_empty());
-    let placing = w.svc.create("learn spanish").await.unwrap();
+    let placing = w.svc.create("learn spanish", WHY).await.unwrap();
     let listed = w.svc.list().await.unwrap();
     assert_eq!(listed.len(), 1);
     assert_eq!(
@@ -692,7 +735,7 @@ async fn a_newly_written_course_follows_the_learning_method() {
 #[tokio::test]
 async fn pending_placement_survives_a_reload_and_empties_once_submitted() {
     let w = world_with(true);
-    let created = w.svc.create("learn spanish").await.unwrap();
+    let created = w.svc.create("learn spanish", WHY).await.unwrap();
     // A reloaded page gets the same questions in the same option order.
     assert_eq!(
         w.svc.pending_placement(&created.id).await.unwrap(),
@@ -702,16 +745,7 @@ async fn pending_placement_survives_a_reload_and_empties_once_submitted() {
         w.svc.pending_placement("nope").await,
         Err(CourseError::NotFound(_))
     ));
-    let p: Placement = w.inner().read_json(&created.id, "placement.json").unwrap();
-    let answers = p
-        .items
-        .iter()
-        .map(|it| PlacementAnswer {
-            item: it.id.clone(),
-            text: it.answer.clone(),
-        })
-        .collect();
-    w.svc.submit_placement(&created.id, answers).await.unwrap();
+    w.answer_all(&created.id, 0).await;
     assert!(w
         .svc
         .pending_placement(&created.id)
@@ -727,11 +761,11 @@ async fn placement_misses_are_a_mini_lesson_while_the_course_is_written() {
     assert_eq!(w.svc.status(&id).await.unwrap(), CourseStatus::Writing);
     let misses = w.svc.placement_misses(&id).await.unwrap();
     assert_eq!(misses.len(), 2);
-    assert_eq!(misses[0].why, "placement why 0");
+    assert_eq!(misses[0].why, "placement why s0 l2");
     assert_eq!(misses[0].answer, "red apple");
     assert_eq!(w.svc.next(&id).await.unwrap(), StepView::Waiting);
     // The profile was saved and placement cannot be submitted twice.
-    assert!(w.stores.courses.load_learner().unwrap().contains("3 of 5"));
+    assert!(w.stores.courses.load_learner().unwrap().contains("4 of 6"));
     assert!(matches!(
         w.svc.submit_placement(&id, vec![]).await,
         Err(CourseError::Invalid(_))
@@ -739,6 +773,158 @@ async fn placement_misses_are_a_mini_lesson_while_the_course_is_written() {
     w.shared.gate.add_permits(10);
     w.wait_ready(&id).await;
     assert_eq!(w.svc.placement_misses(&id).await.unwrap().len(), 2);
+}
+
+fn answers_for(
+    w: &World,
+    id: &str,
+    pending: &[PlacementItem],
+    text: impl Fn(usize) -> (String, bool, bool),
+) -> Vec<PlacementAnswer> {
+    let p: Placement = w.inner().read_json(id, "placement.json").unwrap();
+    pending
+        .iter()
+        .enumerate()
+        .map(|(i, it)| {
+            let (given, guessed, blocked) = text(i);
+            let given = if given == "right" {
+                p.items
+                    .iter()
+                    .find(|x| x.id == it.id)
+                    .unwrap()
+                    .answer
+                    .clone()
+            } else {
+                given
+            };
+            PlacementAnswer {
+                item: it.id.clone(),
+                text: given,
+                guessed,
+                blocked,
+            }
+        })
+        .collect()
+}
+
+#[tokio::test]
+async fn the_probe_asks_the_middle_level_of_every_strand_first() {
+    let w = world_with(true);
+    let created = w.svc.create("learn spanish", WHY).await.unwrap();
+    let ids: Vec<_> = created.items.iter().map(|i| i.id.as_str()).collect();
+    assert_eq!(ids, ["s0-l2", "s1-l2", "s2-l2"]);
+}
+
+#[tokio::test]
+async fn the_probe_follows_each_strand_up_or_down_and_never_asks_more_than_six() {
+    let w = world_with(true);
+    let created = w.svc.create("learn spanish", WHY).await.unwrap();
+    let id = created.id;
+    // Strand 0 right, strand 1 wrong, strand 2 right but guessing.
+    let a = answers_for(&w, &id, &created.items, |i| match i {
+        0 => ("right".into(), false, false),
+        1 => ("wrong".into(), false, false),
+        _ => ("right".into(), true, false),
+    });
+    let r1 = w.svc.submit_placement(&id, a).await.unwrap();
+    assert_eq!(r1.graded.len(), 3);
+    // Strand 0 goes up to level 3, strand 1 down to level 1, strand 2 is settled.
+    let ids: Vec<_> = r1.next.iter().map(|i| i.id.as_str()).collect();
+    assert_eq!(ids, ["s0-l3", "s1-l1"]);
+    assert_eq!(w.svc.pending_placement(&id).await.unwrap(), r1.next);
+    let a = answers_for(&w, &id, &r1.next, |i| {
+        (if i == 0 { "right" } else { "wrong" }.into(), false, false)
+    });
+    let r2 = w.svc.submit_placement(&id, a).await.unwrap();
+    assert!(r2.next.is_empty());
+    let p: Placement = w.inner().read_json(&id, "placement.json").unwrap();
+    assert_eq!(p.results.as_ref().unwrap().len(), 5);
+    let labels: Vec<_> = strand_labels(&p).into_iter().map(|s| s.label).collect();
+    use lp_core::method::probe::StrandLabel::*;
+    assert_eq!(labels, [Known, Unknown, Edge]);
+    // The writing starts only now, and the course carries the why and the strands.
+    w.shared.gate.add_permits(10);
+    w.wait_ready(&id).await;
+    let c = w.course(&id);
+    assert_eq!(c.why, WHY);
+    assert_eq!(
+        c.strands.iter().map(|s| s.label).collect::<Vec<_>>(),
+        labels
+    );
+    assert!(w
+        .stores
+        .courses
+        .load_learner()
+        .unwrap()
+        .contains("Strand Strand 1: unknown"));
+}
+
+#[tokio::test]
+async fn a_repeated_or_partial_round_is_refused_and_changes_nothing() {
+    let w = world_with(true);
+    let created = w.svc.create("learn spanish", WHY).await.unwrap();
+    let id = created.id;
+    let right = |w: &World, items: &[PlacementItem]| {
+        answers_for(w, &id, items, |_| ("right".into(), false, false))
+    };
+    // A partial round is refused.
+    let mut partial = right(&w, &created.items);
+    partial.pop();
+    assert!(matches!(
+        w.svc.submit_placement(&id, partial).await,
+        Err(CourseError::Invalid(_))
+    ));
+    assert_eq!(w.svc.pending_placement(&id).await.unwrap(), created.items);
+    // The round goes through once; sending the same answers again must not grade round two blank.
+    let first = right(&w, &created.items);
+    let r1 = w.svc.submit_placement(&id, first.clone()).await.unwrap();
+    assert_eq!(r1.next.len(), 3);
+    assert!(matches!(
+        w.svc.submit_placement(&id, first).await,
+        Err(CourseError::Invalid(_))
+    ));
+    assert_eq!(w.svc.pending_placement(&id).await.unwrap(), r1.next);
+    let p: Placement = w.inner().read_json(&id, "placement.json").unwrap();
+    assert!(p.strands.iter().all(|s| s.answers.len() == 1));
+}
+
+#[tokio::test]
+async fn a_blocked_strand_is_labelled_blocked_and_settles_at_once() {
+    let w = world_with(true);
+    let created = w.svc.create("learn spanish", WHY).await.unwrap();
+    let a = answers_for(&w, &created.id, &created.items, |i| {
+        ("wrong".into(), false, i == 1)
+    });
+    let r = w.svc.submit_placement(&created.id, a).await.unwrap();
+    let ids: Vec<_> = r.next.iter().map(|i| i.id.as_str()).collect();
+    assert_eq!(ids, ["s0-l1", "s2-l1"]);
+    let p: Placement = w.inner().read_json(&created.id, "placement.json").unwrap();
+    assert_eq!(
+        strand_labels(&p)[1].label,
+        lp_core::method::probe::StrandLabel::Blocked
+    );
+}
+
+#[tokio::test]
+async fn why_is_required_and_a_failed_strand_call_falls_back_to_the_plain_quiz() {
+    let w = world_with(true);
+    for why in ["", "   "] {
+        assert!(matches!(
+            w.svc.create("learn spanish", why).await,
+            Err(CourseError::Invalid(_))
+        ));
+    }
+    assert!(w.svc.list().await.unwrap().is_empty());
+    w.shared.plain_only.store(true, Ordering::Relaxed);
+    let created = w.svc.create("learn spanish", WHY).await.unwrap();
+    // The plain quiz is five questions answered in one round, with no strands.
+    assert_eq!(created.items.len(), 5);
+    assert_eq!(w.answer_all(&created.id, 0).await, 1);
+    w.shared.gate.add_permits(10);
+    w.wait_ready(&created.id).await;
+    let c = w.course(&created.id);
+    assert!(c.strands.is_empty());
+    assert_eq!(c.why, WHY);
 }
 
 #[tokio::test]
@@ -1055,7 +1241,7 @@ async fn an_attempt_that_spent_no_tokens_is_not_charged() {
 #[tokio::test]
 async fn options_are_shuffled_by_item_id_and_stable() {
     let w = world();
-    let created = w.svc.create("learn spanish").await.unwrap();
+    let created = w.svc.create("learn spanish", WHY).await.unwrap();
     let p: Placement = w.inner().read_json(&created.id, "placement.json").unwrap();
     let id = w.ready().await;
     let c = w.course(&id);

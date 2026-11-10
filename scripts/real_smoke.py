@@ -82,13 +82,24 @@ def main():
         w = f"/workspaces/{ws['id']}"
 
         t0 = time.time()
-        st, created = api.call("POST", f"{w}/courses", {"goal": args.goal})
-        check(st in (200, 201), f"course created, placement quiz written in {time.time() - t0:.0f}s ({st})")
+        st, created = api.call("POST", f"{w}/courses", {"goal": args.goal, "why": "I read Rust at work and it slows me down"})
+        check(st in (200, 201), f"course created, strand probe written in {time.time() - t0:.0f}s ({st})")
         cid = created["id"]
-        answers = [{"item": i["id"], "text": (i["options"][0] if i["options"] else "I do not know")}
-                   for i in created["items"]]
-        st, _ = api.call("POST", f"{w}/courses/{cid}/placement", {"answers": answers})
-        check(st == 200, f"placement answered ({len(answers)} items)")
+        st, bad = api.call("POST", f"{w}/courses", {"goal": args.goal, "why": "  "})
+        check(st == 400, f"a course without a why is refused ({st})")
+
+        # The probe: one question per strand, then follow-ups for strands not settled. At most six.
+        items, asked, rounds = created["items"], 0, 0
+        while items:
+            rounds += 1
+            check(rounds <= 3, "the probe ends within three rounds")
+            answers = [{"item": i["id"], "text": (i["options"][0] if i["options"] else "I do not know"),
+                        "guessed": False, "blocked": False} for i in items]
+            asked += len(answers)
+            st, res = api.call("POST", f"{w}/courses/{cid}/placement", {"answers": answers})
+            check(st == 200, f"probe round {rounds} answered ({len(answers)} items)")
+            items = res["next"]
+        check(3 <= asked <= 6, f"the probe asked {asked} questions (3 to 6)")
 
         t0 = time.time()
         while True:
@@ -103,6 +114,10 @@ def main():
 
         st, plan = api.call("GET", f"{w}/courses/{cid}/plan")
         check(st == 200 and len(plan["lessons"]) >= 3, f"plan has {len(plan.get('lessons', []))} lessons")
+        check(plan.get("why", "").startswith("I read Rust"), "the plan carries the learner's why")
+        labels = [x["label"] for x in plan.get("strands", [])]
+        check(len(labels) == 3 and all(l in ("known", "edge", "unknown", "blocked") for l in labels),
+              f"the plan carries three strand labels ({labels})")
 
         st, body = api.call("POST", f"{w}/courses/{cid}/step")
         check(st == 409 and gate(body) == "bout_required", "step refused without an open bout")

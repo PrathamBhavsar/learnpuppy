@@ -39,6 +39,8 @@ pub struct CourseListDto {
 #[derive(Clone, Debug, Deserialize, ToSchema)]
 pub struct CreateCourseRequest {
     pub goal: String,
+    /// One line on why this goal matters to the learner (required).
+    pub why: String,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, ToSchema)]
@@ -101,6 +103,12 @@ pub struct PlacementListDto {
 pub struct PlacementAnswerDto {
     pub item: String,
     pub text: String,
+    /// The learner was guessing: a right answer counts as `edge`, never `known`.
+    #[serde(default)]
+    pub guessed: bool,
+    /// The learner is missing a prerequisite for this strand.
+    #[serde(default)]
+    pub blocked: bool,
 }
 
 #[derive(Clone, Debug, Deserialize, ToSchema)]
@@ -120,6 +128,8 @@ pub struct GradedDto {
 #[derive(Clone, Debug, Serialize, ToSchema)]
 pub struct GradedListDto {
     pub graded: Vec<GradedDto>,
+    /// The next round of the strand probe; empty once placement is over and the course is writing.
+    pub next: Vec<PlacementItemDto>,
 }
 
 #[derive(Clone, Debug, Serialize, ToSchema)]
@@ -409,13 +419,46 @@ pub struct PlanLessonDto {
 #[serde(rename_all = "camelCase")]
 pub struct CoursePlanDto {
     pub confirmed: bool,
+    /// The learner's one line on why this goal matters.
+    pub why: String,
+    /// Where the strand probe placed the learner, one entry per strand.
+    pub strands: Vec<StrandDto>,
     pub lessons: Vec<PlanLessonDto>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum StrandLabelDto {
+    Known,
+    Edge,
+    Unknown,
+    Blocked,
+}
+
+#[derive(Clone, Debug, Serialize, ToSchema)]
+pub struct StrandDto {
+    pub name: String,
+    pub label: StrandLabelDto,
 }
 
 impl From<&Course> for CoursePlanDto {
     fn from(c: &Course) -> Self {
         Self {
             confirmed: c.plan_confirmed_at.is_some(),
+            why: c.why.clone(),
+            strands: c
+                .strands
+                .iter()
+                .map(|s| StrandDto {
+                    name: s.name.clone(),
+                    label: match s.label {
+                        lp_core::method::probe::StrandLabel::Known => StrandLabelDto::Known,
+                        lp_core::method::probe::StrandLabel::Edge => StrandLabelDto::Edge,
+                        lp_core::method::probe::StrandLabel::Unknown => StrandLabelDto::Unknown,
+                        lp_core::method::probe::StrandLabel::Blocked => StrandLabelDto::Blocked,
+                    },
+                })
+                .collect(),
             lessons: c
                 .lessons
                 .iter()

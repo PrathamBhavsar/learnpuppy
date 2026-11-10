@@ -2,7 +2,7 @@
 
 Back to [Brain Index](/index.md). Sources: [Alvar Method](/alvar-method/index.md), [Huberman Learning](/huberman-learning/index.md). Details: [Features](/learning-method/features.md), [Architecture and Folders](/learning-method/architecture.md), [Task DAG](/learning-method/task-dag.md).
 
-**Status:** built through M13 and integrated (2026-11-10), see [ADR-0008](/decisions/0008-learning-method.md). Open and owner-only: M14, G4 and the T9/G2 baseline, runbook in [Real Hour](/learning-method/real-hour.md). G3 is done, see [G3 result](/learning-method/g3-result.md).
+**Status:** built through M13 and integrated (2026-11-10), including the course `why` (F02) and the strand probe (F06) at creation, see [ADR-0008](/decisions/0008-learning-method.md). Open and owner-only: M14, G4 and the T9/G2 baseline, runbook in [Real Hour](/learning-method/real-hour.md). G3 is done, see [G3 result](/learning-method/g3-result.md).
 
 ## Goal
 

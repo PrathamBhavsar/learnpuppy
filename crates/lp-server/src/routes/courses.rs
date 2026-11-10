@@ -155,12 +155,14 @@ pub async fn create(
     ApiJson(req): ApiJson<CreateCourseRequest>,
 ) -> Result<(StatusCode, Json<CreatedCourseDto>), ApiError> {
     text("goal", &req.goal, 1, MAX_GOAL)?;
+    text("why", &req.why, 1, MAX_GOAL)?;
     let s = svc(&st, &ws, true).await?;
-    let c = detached(async move { s.create(&req.goal).await }).await?;
+    let c = detached(async move { s.create(&req.goal, &req.why).await }).await?;
     Ok((StatusCode::CREATED, Json(c.into())))
 }
 
-/// Grades placement with code and starts writing the course in the background; poll `status`.
+/// Grades one placement round with code. While `next` is non-empty answer those questions the same
+/// way; once it is empty the course is being written in the background, poll `status`.
 #[utoipa::path(
     post,
     path = "/workspaces/{ws}/courses/{id}/placement",
@@ -194,10 +196,13 @@ pub async fn placement(
         .map(|a| PlacementAnswer {
             item: a.item,
             text: a.text,
+            guessed: a.guessed,
+            blocked: a.blocked,
         })
         .collect();
-    let graded = detached(async move { s.submit_placement(&id, answers).await }).await?;
-    let graded = graded
+    let round = detached(async move { s.submit_placement(&id, answers).await }).await?;
+    let graded = round
+        .graded
         .into_iter()
         .map(|g| GradedDto {
             item: g.item,
@@ -206,7 +211,8 @@ pub async fn placement(
             why: g.why,
         })
         .collect();
-    Ok(Json(GradedListDto { graded }))
+    let next = round.next.into_iter().map(Into::into).collect();
+    Ok(Json(GradedListDto { graded, next }))
 }
 
 /// The placement questions still to answer (empty once submitted), so a reloaded page can carry on.

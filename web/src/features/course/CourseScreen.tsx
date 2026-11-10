@@ -23,19 +23,25 @@ export function CourseScreen({ ws, id, onOpen }: Props) {
   const courses = useCourses(ws)
   const create = useCreateCourse(ws)
   const [goal, setGoal] = useState("")
+  const [why, setWhy] = useState("")
 
   if (id) return <CourseView ws={ws} id={id} onBack={() => onOpen(undefined)} />
 
   const start = () => {
     const value = goal.trim()
-    if (value === "" || create.isPending) return
-    create.mutate(value, {
-      onSuccess: (created) => {
-        setGoal("")
-        onOpen(created.id)
-      },
-      onError: (e) => toastError(e, "Could not start the course"),
-    })
+    const reason = why.trim()
+    if (value === "" || reason === "" || create.isPending) return
+    create.mutate(
+      { goal: value, why: reason },
+      {
+        onSuccess: (created) => {
+          setGoal("")
+          setWhy("")
+          onOpen(created.id)
+        },
+        onError: (e) => toastError(e, "Could not start the course"),
+      }
+    )
   }
 
   return (
@@ -63,9 +69,24 @@ export function CourseScreen({ ws, id, onOpen }: Props) {
           aria-label="Course goal"
           placeholder="e.g. Read Rust async code with confidence"
         />
+        <Textarea
+          value={why}
+          onChange={(e) => setWhy(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && !e.shiftKey) {
+              e.preventDefault()
+              start()
+            }
+          }}
+          rows={2}
+          maxLength={500}
+          disabled={create.isPending}
+          aria-label="Why this matters to you"
+          placeholder="Why does this matter to you? One line. You will see it before each session."
+        />
         <Button
           onClick={start}
-          disabled={goal.trim() === "" || create.isPending}
+          disabled={goal.trim() === "" || why.trim() === "" || create.isPending}
           className="self-start"
         >
           {create.isPending ? <Spinner /> : null}

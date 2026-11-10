@@ -2,12 +2,19 @@
 
 Back to [Brain Index](/index.md). Related: [Overview](/overview.md), [Task DAG](/tasks/index.md).
 
+## 2026-11-11 — Open items closed (pratham404/deps-sqlite)
+- Strand probe (F06) and course `why` (F02) are wired into course creation. `create(goal, why)` writes the probe with one cheap call (falls back to the plain quiz if that comes back unusable); `submit_placement` grades a round and returns `next`, binary-searching each strand with `lp_core::method::probe` (middle level first, then up or down, at most 6 questions). `guessed` makes a right answer `edge`, `blocked` labels the strand `blocked`. Labels and `why` are stored on the course and returned by `/plan`; the ready gate shows the `why`. Web: why field on create, follow-up rounds with a one-line verdict, guess and prerequisite checkboxes.
+- Review (the `ocr` step ran as a self-review via `ocr delegate`, no LLM endpoint): a repeated or partial probe round is refused without changing anything, so a double submit cannot grade the next round blank.
+- `rusqlite` 0.32 to 0.41 (`fallible_uint` keeps the u64/usize conversions), which fixes RUSTSEC-2026-0459; `Zlib` allowed in `deny.toml` for `foldhash`. `make deny` passes.
+- `make okf` picks a python3 that can import PyYAML (Make puts Homebrew's, without it, first on PATH).
+- Real smoke on real models: 6 probe questions, 10 lessons, why and three strand labels on the plan, zero model calls in the walk.
+
 ## 2026-11-10 — Finalize: plans closed, SSRF merged (pratham404/finalize)
 - Learning method (ADR-0008) integrated: server gates `step` on the bout clock and honours workspace settings, `BoutShell` wired into the course session, settings route and screen. G3 benchmark run on the shipped Author prompt, see [G3 result](/learning-method/g3-result.md); it found plain-string claims not loading and angles that state the answer, both fixed in lp-core.
 - SSRF: httpweb pins the normalised host, ignores proxies, blocks reserved and NAT64 ranges. `pratham404/H2-ssrf` merged (superseded by the broader fix).
-- Real-engine smoke (`scripts/real_smoke.py`) caught that no authored course ever got `method_version = 1`: `/plan` answered 404 and the app fell back to the old lesson view, so the bout shell and gates were unreachable. `run_write` now stamps new courses at version 1 (regression test `a_newly_written_course_follows_the_learning_method`). Courses already on disk stay at 0. Strand probe (F06) and course `why` (F02) are still not wired into create; the gates do not read them.
+- Real-engine smoke (`scripts/real_smoke.py`) caught that no authored course ever got `method_version = 1`: `/plan` answered 404 and the app fell back to the old lesson view, so the bout shell and gates were unreachable. `run_write` now stamps new courses at version 1 (regression test `a_newly_written_course_follows_the_learning_method`). Courses already on disk stay at 0.
 - Visual e2e: the spec now pins the clock (Sunday, UTC) because the review forecast labels days from today; learn baselines refreshed for the Courses/Schedule/Profile nav. `make e2e` green (110 + 17).
-- Known, not fixed: `cargo deny` advisory RUSTSEC-2026-0459 (bundled SQLite in `libsqlite3-sys` 0.30.1, needs `rusqlite` 0.41 and Rust 1.89), present on staging before this work; local attack vector only. `make okf` needs PyYAML on the `python3` that Make finds first (`/opt/homebrew/bin`); the bundle validates clean with the framework python.
+- Known then, fixed on 2026-11-11: the `cargo deny` advisory (rusqlite bump) and `make okf` PyYAML lookup.
 - Added LICENSE, SECURITY.md, CI, web check in the gate, `scripts/real_smoke.py`. Rescued untracked brain sections (alvar, huberman, gornik, learning-method).
 - Open, owner-only: T9, G2, M14, G4 (real hour and retest).
 

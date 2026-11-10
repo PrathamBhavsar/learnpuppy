@@ -18,8 +18,13 @@ test:
 
 OKF_VALIDATE ?= $(HOME)/.claude/skills/okf/scripts/validate.py
 
+# The first python3 that can import PyYAML (Homebrew's, first on PATH, often cannot).
+OKF_PYTHON ?= $(shell for p in python3 /usr/local/bin/python3 /Library/Frameworks/Python.framework/Versions/Current/bin/python3 /usr/bin/python3; do "$$p" -c 'import yaml' 2>/dev/null && { command -v "$$p"; break; }; done)
+
 okf:
-	@if [ -f "$(OKF_VALIDATE)" ]; then python3 "$(OKF_VALIDATE)" brain --strict; else echo 'okf validator not found at $(OKF_VALIDATE), skipping'; fi
+	@if [ ! -f "$(OKF_VALIDATE)" ]; then echo 'okf validator not found at $(OKF_VALIDATE), skipping'; \
+	elif [ -z "$(OKF_PYTHON)" ]; then echo 'no python3 with PyYAML found: pip install pyyaml'; exit 1; \
+	else "$(OKF_PYTHON)" "$(OKF_VALIDATE)" brain --strict; fi
 
 deny:
 	@if command -v cargo-deny >/dev/null; then $(CARGO) deny check; else echo 'cargo-deny not installed, skipping'; fi

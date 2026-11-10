@@ -42,6 +42,7 @@ The authoritative DAG, owned files and done-when criteria are in `docs/web/08-ta
 | `M1`–`M13` | Schema and mastery, runner and gates, bout and pacing, store, prompts and grading, course and learning services, routes, lesson steps UI, bout UI, close, schedule and profile, simulated bout | `done` |
 | `M10b` | Bout UI integration: `BoutShell` wired into the course session, server refuses `step` without an open bout, settings route and screen | `done` (2026-11-10) |
 | `G3` | Richer-schema benchmark, see [G3 result](/learning-method/g3-result.md) | `done` |
+| `M10c` | Real-engine smoke fixes: new courses are `method_version` 1; F02 `why` required on create and shown at the ready gate; F06 strand probe wired into create/placement (rounds, `guessed`/`blocked` flags, labels on the course and plan); `scripts/real_smoke.py` covers it | `done` (2026-11-11) |
 | `M14` | Real bout by the owner: pre-test, post-test, one-week retest | `owner`: runbook in [Real Hour](/learning-method/real-hour.md) |
 | `G4` | Did it teach better? | `owner` |
 

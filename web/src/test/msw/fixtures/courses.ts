@@ -148,6 +148,12 @@ const methodSteps: MethodStep[] = [
 
 export const methodPlan: CoursePlan = {
   confirmed: false,
+  why: "I want to read other people's async code",
+  strands: [
+    { name: "Futures", label: "known" },
+    { name: "Polling", label: "edge" },
+    { name: "Executors", label: "unknown" },
+  ],
   lessons: [
     { id: "l0", title: "Futures", kind: "definitional", dependsOn: [] },
     { id: "l1", title: "Polling", kind: "conceptual", dependsOn: ["l0"] },
