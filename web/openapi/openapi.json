@@ -5968,6 +5968,10 @@
             "description": "`ltr`, `rtl` or `auto`.",
             "type": "string"
           },
+          "readingFont": {
+            "description": "`sans`, `serif` or `mono`.",
+            "type": "string"
+          },
           "reduceMotion": {
             "type": "boolean"
           },
@@ -5980,6 +5984,7 @@
           "theme",
           "direction",
           "density",
+          "readingFont",
           "reduceMotion",
           "confirmDestructive",
           "autoOpenBrowser"

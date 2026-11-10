@@ -3,7 +3,7 @@
   margin: 0;
   background: transparent !important;
   font-family: var(--font-mono);
-  font-size: 12px;
+  font-size: var(--text-small);
   line-height: 1.5;
 }
 .lp-shiki .shiki span {
@@ -15,6 +15,9 @@
 
 /* Prose */
 .lp-prose {
+  font-family: var(--font-prose);
+  font-size: var(--text-body);
+  line-height: var(--text-body-lh);
   min-width: 0;
   overflow-wrap: anywhere;
 }
@@ -60,14 +63,14 @@
   line-height: 1.2;
 }
 .lp-prose h1 {
-  font-size: 20px;
+  font-size: var(--text-h3);
 }
 .lp-prose h2 {
-  font-size: 16px;
+  font-size: var(--text-lead);
 }
 .lp-prose h3,
 .lp-prose h4 {
-  font-size: 14px;
+  font-size: var(--text-body);
 }
 .lp-prose .katex-display {
   overflow-x: auto;

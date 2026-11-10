@@ -1,0 +1,47 @@
+/* Type ladder (docs/web/05) and the reading font (Settings > Reading font). Hand-written: tokens.css is generated. */
+@font-face {
+  font-family: "Geist Reading";
+  font-style: normal;
+  font-display: swap;
+  font-weight: 100 900;
+  src: url("./fonts/geist-latin-wght-normal.woff2") format("woff2-variations");
+}
+/* Size-adjusted fallback so the swap does not move text. */
+@font-face {
+  font-family: "Geist Reading Fallback";
+  src: local("Arial");
+  size-adjust: 104%;
+  ascent-override: 92%;
+  descent-override: 24%;
+  line-gap-override: 0%;
+}
+
+:root {
+  --text-meta: 11px;
+  --text-meta-lh: 1.45;
+  --text-small: 12px;
+  --text-small-lh: 1.45;
+  --text-dense: 13px;
+  --text-dense-lh: 1.45;
+  --text-body: 14px;
+  --text-body-lh: 1.55;
+  --text-lead: 16px;
+  --text-lead-lh: 1.45;
+  --text-h3: 20px;
+  --text-h3-lh: 1.2;
+  --text-h2: 24px;
+  --text-h2-lh: 1.2;
+  --text-h1: 32px;
+  --text-h1-lh: 1.2;
+
+  --font-prose-sans:
+    "Geist Reading", "Geist Reading Fallback", system-ui, sans-serif;
+  --font-prose-serif: ui-serif, Georgia, "Times New Roman", serif;
+  --font-prose: var(--font-prose-sans);
+}
+:root[data-reading-font="serif"] {
+  --font-prose: var(--font-prose-serif);
+}
+:root[data-reading-font="mono"] {
+  --font-prose: var(--font-mono);
+}
