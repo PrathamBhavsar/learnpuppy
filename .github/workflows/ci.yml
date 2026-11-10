@@ -1,0 +1,48 @@
+name: ci
+on:
+  push:
+    branches: [main, prod, staging]
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+env:
+  CARGO_TERM_COLOR: always
+  CARGO: cargo
+jobs:
+  rust:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+      - uses: Swatinem/rust-cache@v2
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
+      - name: System packages
+        run: sudo apt-get update && sudo apt-get install -y poppler-utils
+      # The server embeds web/dist at compile time, so build the SPA first.
+      - run: cd web && bun install --frozen-lockfile && bun run build
+      - run: make SHELL=/bin/bash fmt
+      - run: make SHELL=/bin/bash clippy
+      - run: make SHELL=/bin/bash test
+      - run: make SHELL=/bin/bash api-check
+      - uses: taiki-e/install-action@cargo-deny
+      - run: make SHELL=/bin/bash deny
+  web:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
+      - run: bun install --frozen-lockfile
+      - run: bun run check

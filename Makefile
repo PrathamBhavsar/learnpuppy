@@ -3,7 +3,7 @@ export INSTA_WORKSPACE_ROOT := $(CURDIR)
 export PATH := /opt/homebrew/bin:/opt/homebrew/opt/rustup/bin:$(HOME)/.cargo/bin:$(PATH)
 CARGO ?= /opt/homebrew/opt/rustup/bin/cargo
 
-.PHONY: fmt clippy test okf deny api-gen api-check gate ci disk-guard e2e perf release install
+.PHONY: fmt clippy test okf deny web-check api-gen api-check gate ci disk-guard e2e perf release install
 
 OPENAPI := web/openapi/openapi.json
 
@@ -16,11 +16,17 @@ clippy:
 test:
 	$(CARGO) test --workspace --all-targets
 
+OKF_VALIDATE ?= $(HOME)/.claude/skills/okf/scripts/validate.py
+
 okf:
-	python3 /Users/pratham/.claude/skills/okf/scripts/validate.py brain --strict
+	@if [ -f "$(OKF_VALIDATE)" ]; then python3 "$(OKF_VALIDATE)" brain --strict; else echo 'okf validator not found at $(OKF_VALIDATE), skipping'; fi
 
 deny:
 	@if command -v cargo-deny >/dev/null; then $(CARGO) deny check; else echo 'cargo-deny not installed, skipping'; fi
+
+# Web typecheck, lint, dead code, token and contrast checks, unit tests, build, bundle budget.
+web-check:
+	cd web && bun install --frozen-lockfile && bun run check
 
 # Regenerate the committed OpenAPI document from the server's utoipa definitions.
 api-gen:
@@ -32,7 +38,7 @@ api-check: api-gen
 	@git ls-files --error-unmatch $(OPENAPI) >/dev/null 2>&1 || { echo '$(OPENAPI) is not tracked: run make api-gen and git add it'; exit 1; }
 	@git diff --exit-code -- $(OPENAPI) || { echo '$(OPENAPI) is stale: run make api-gen and commit it'; exit 1; }
 
-gate: fmt clippy test okf api-check
+gate: fmt clippy test okf api-check web-check
 
 ci: gate deny
 
