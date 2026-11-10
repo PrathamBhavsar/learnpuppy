@@ -1476,6 +1476,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/workspaces/{ws}/learning/settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Every tunable method setting with its default and allowed range (the plan's defaults ship as
+         *     settings, not as facts).
+         */
+        get: operations["get_workspaces_ws_learning_settings"];
+        put?: never;
+        /** Changes one setting for this workspace; the value must sit inside the setting's range. */
+        post: operations["post_workspaces_ws_learning_settings"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/workspaces/{ws}/repair": {
         parameters: {
             query?: never;
@@ -1868,7 +1889,7 @@ export interface components {
         };
         BoutStatusDto: {
             /** Format: int32 */
-            active_minutes: number;
+            activeMinutes: number;
             /** @enum {string} */
             status: "active";
         } | {
@@ -1876,7 +1897,7 @@ export interface components {
             status: "bout_limit_reached";
         } | {
             /** Format: int32 */
-            remaining_minutes: number;
+            remainingMinutes: number;
             /** @enum {string} */
             status: "gap";
         } | {
@@ -2620,6 +2641,21 @@ export interface components {
             rungText?: string | null;
             title: string;
         };
+        /** @description One tunable method setting with its default and allowed range. */
+        MethodSettingDto: {
+            /** Format: int32 */
+            default: number;
+            /** Format: int32 */
+            max: number;
+            /** Format: int32 */
+            min: number;
+            name: string;
+            /** Format: int32 */
+            value: number;
+        };
+        MethodSettingsDto: {
+            settings: components["schemas"]["MethodSettingDto"][];
+        };
         /**
          * @description What comes next on a `method_version >= 1` course (`lp_core::method::Step`), with its content
          *     filled in from the course; never an answer, a `why`, or a rubric.
@@ -3131,6 +3167,11 @@ export interface components {
             source: string;
             /** Format: int64 */
             startedAt: number;
+        };
+        SetMethodSettingRequest: {
+            name: string;
+            /** Format: int32 */
+            value: number;
         };
         SetProfileRequest: {
             key: string;
@@ -5880,6 +5921,15 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
+            /** @description No open bout, or the bout clock is locked */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
         };
     };
     get_workspaces_ws_courses_id_usage: {
@@ -7134,6 +7184,87 @@ export interface operations {
                 };
             };
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    get_workspaces_ws_learning_settings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Workspace id */
+                ws: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MethodSettingsDto"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    post_workspaces_ws_learning_settings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Workspace id */
+                ws: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetMethodSettingRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MethodSettingsDto"];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Workspace archived */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };

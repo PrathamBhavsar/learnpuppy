@@ -16,11 +16,17 @@ use utoipa::ToSchema;
 #[serde(tag = "status", rename_all = "snake_case")]
 pub enum BoutStatusDto {
     /// Still under every limit; keep teaching.
-    Active { active_minutes: u32 },
+    Active {
+        #[serde(rename = "activeMinutes")]
+        active_minutes: u32,
+    },
     /// This bout hit the 90-minute limit: Close, then wait out the gap.
     BoutLimitReached,
     /// Within the gap after the last bout ended.
-    Gap { remaining_minutes: u32 },
+    Gap {
+        #[serde(rename = "remainingMinutes")]
+        remaining_minutes: u32,
+    },
     /// The day's minutes are spent; locked until the next day, override aside.
     DailyLimitReached,
 }
@@ -224,4 +230,45 @@ pub struct SetProfileRequest {
 #[derive(Clone, Debug, Serialize, ToSchema)]
 pub struct ProfileResultDto {
     pub entries: Vec<ProfileEntryDto>,
+}
+
+/// One tunable method setting with its default and allowed range.
+#[derive(Clone, Debug, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct MethodSettingDto {
+    pub name: String,
+    pub value: u32,
+    pub default: u32,
+    pub min: u32,
+    pub max: u32,
+}
+
+#[derive(Clone, Debug, Serialize, ToSchema)]
+pub struct MethodSettingsDto {
+    pub settings: Vec<MethodSettingDto>,
+}
+
+#[derive(Clone, Debug, Deserialize, ToSchema)]
+pub struct SetMethodSettingRequest {
+    pub name: String,
+    pub value: u32,
+}
+
+pub fn method_settings_dto(current: &MethodSettings) -> MethodSettingsDto {
+    let defaults = lp_service::learning::setting_values(&MethodSettings::default());
+    let values = lp_service::learning::setting_values(current);
+    let settings = lp_service::learning::SETTING_BOUNDS
+        .iter()
+        .zip(values.iter().zip(defaults.iter()))
+        .map(
+            |(&(name, min, max), (&(_, value), &(_, default)))| MethodSettingDto {
+                name: name.to_owned(),
+                value,
+                default,
+                min,
+                max,
+            },
+        )
+        .collect();
+    MethodSettingsDto { settings }
 }

@@ -103,8 +103,20 @@ impl LearningService {
     /// Saves one setting override; unknown names are rejected.
     pub fn set_setting(&self, name: &str, value: u32) -> Result<()> {
         let _g = self.lock.lock();
-        if !apply_setting(&mut MethodSettings::default(), name, value) {
+        let Some(&(_, min, max)) = SETTING_BOUNDS.iter().find(|(n, _, _)| *n == name) else {
             return Err(LearningError::Invalid(format!("unknown setting {name}")));
+        };
+        if value < min || value > max {
+            return Err(LearningError::Invalid(format!(
+                "{name} must be {min} to {max}"
+            )));
+        }
+        let mut next = self.settings()?;
+        apply_setting(&mut next, name, value);
+        if next.error_band_low_pct >= next.error_band_high_pct {
+            return Err(LearningError::Invalid(
+                "error_band_low_pct must stay below error_band_high_pct".into(),
+            ));
         }
         let mut sch = self.store.load_schedule()?;
         sch.settings.insert(name.into(), value);
@@ -113,16 +125,63 @@ impl LearningService {
     }
 }
 
-fn apply_setting(s: &mut MethodSettings, name: &str, v: u32) -> bool {
-    let field = match name {
+/// Every tunable method setting: name, minimum, maximum. Zero is allowed only where it means "off".
+pub const SETTING_BOUNDS: &[(&str, u32, u32)] = &[
+    ("bout_limit_minutes", 5, 180),
+    ("gap_between_bouts_minutes", 0, 720),
+    ("daily_limit_minutes", 15, 600),
+    ("idle_rewind_minutes", 1, 60),
+    ("gap_pause_seconds", 0, 60),
+    ("gap_pause_every_minutes", 0, 120),
+    ("mixed_pass_every", 0, 10),
+    ("target_error_rate_pct", 1, 50),
+    ("error_band_low_pct", 1, 50),
+    ("error_band_high_pct", 2, 90),
+    ("attempts_before_parking", 1, 10),
+    ("probe_strands", 1, 5),
+    ("probe_questions_per_strand", 1, 4),
+    ("probe_questions_max", 1, 20),
+    ("strong_calls_per_hour", 1, 10),
+];
+
+/// The current value of every tunable setting, in `SETTING_BOUNDS` order.
+pub fn setting_values(s: &MethodSettings) -> Vec<(&'static str, u32)> {
+    SETTING_BOUNDS
+        .iter()
+        .map(|&(name, _, _)| {
+            let mut probe = *s;
+            (name, *setting_field(&mut probe, name).expect("listed name"))
+        })
+        .collect()
+}
+
+fn setting_field<'a>(s: &'a mut MethodSettings, name: &str) -> Option<&'a mut u32> {
+    Some(match name {
         "bout_limit_minutes" => &mut s.bout_limit_minutes,
         "gap_between_bouts_minutes" => &mut s.gap_between_bouts_minutes,
         "daily_limit_minutes" => &mut s.daily_limit_minutes,
         "idle_rewind_minutes" => &mut s.idle_rewind_minutes,
         "gap_pause_seconds" => &mut s.gap_pause_seconds,
         "gap_pause_every_minutes" => &mut s.gap_pause_every_minutes,
-        _ => return false,
-    };
-    *field = v;
-    true
+        "mixed_pass_every" => &mut s.mixed_pass_every,
+        "target_error_rate_pct" => &mut s.target_error_rate_pct,
+        "error_band_low_pct" => &mut s.error_band_low_pct,
+        "error_band_high_pct" => &mut s.error_band_high_pct,
+        "attempts_before_parking" => &mut s.attempts_before_parking,
+        "probe_strands" => &mut s.probe_strands,
+        "probe_questions_per_strand" => &mut s.probe_questions_per_strand,
+        "probe_questions_max" => &mut s.probe_questions_max,
+        "strong_calls_per_hour" => &mut s.strong_calls_per_hour,
+        _ => return None,
+    })
+}
+
+fn apply_setting(s: &mut MethodSettings, name: &str, v: u32) -> bool {
+    match setting_field(s, name) {
+        Some(field) => {
+            *field = v;
+            true
+        }
+        None => false,
+    }
 }

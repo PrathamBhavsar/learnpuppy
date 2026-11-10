@@ -1759,6 +1759,18 @@ fn gate_of(r: &Reply) -> String {
         .to_owned()
 }
 
+/// Opens a bout through the real ready gate and returns its id.
+async fn start_bout(a: &Api, course: &str) -> String {
+    let r = a
+        .post(
+            &ws("/learning/bout/start"),
+            json!({"course": course, "ready": {"phoneAway": true, "tabsClosed": true, "focusSeconds": 30}}),
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::OK, "{}", r.text);
+    r.json()["bout"].as_str().expect("open bout").to_owned()
+}
+
 /// Every gate rejection the HTTP contract can actually reach is `409 conflict` with a stable
 /// `details.gate` code (docs/web/03 §Conventions); F07's order gate and F20's cycle gate are
 /// each exercised at least once here.
@@ -1792,6 +1804,13 @@ async fn method_course_runs_from_plan_to_close_with_gated_steps() {
         a.get(&ws("/courses/mc1/plan")).await.json()["confirmed"],
         true
     );
+
+    // F23: no step before a bout is open; the ready gate opens one.
+    let r = a.post_empty(&ws("/courses/mc1/step")).await;
+    assert_eq!(r.status, StatusCode::CONFLICT, "{}", r.text);
+    assert_eq!(gate_of(&r), "bout_required");
+    let bout = start_bout(&a, "mc1").await;
+    assert!(bout.starts_with("b_"), "{bout}");
 
     let step = a.post_empty(&ws("/courses/mc1/step")).await.json();
     assert_eq!(step["step"], "explain", "{step}");
@@ -1934,4 +1953,100 @@ async fn insert_prereq_rejects_a_cyclic_plan() {
         .await;
     assert_eq!(r.status, StatusCode::CONFLICT, "{}", r.text);
     assert_eq!(gate_of(&r), "prereq_cycle");
+}
+
+/// F23: a closed bout locks teaching behind the gap, and the lock is the server's, not the UI's.
+#[tokio::test]
+async fn step_is_refused_between_bouts_and_when_the_day_is_spent() {
+    let a = api();
+    let c = method_course("lk1");
+    a.stores(MAIN_WS).courses.save_course(&c).unwrap();
+    a.post_empty(&ws("/courses/lk1/plan/confirm")).await;
+    let bout = start_bout(&a, "lk1").await;
+    // The UI reads these camelCase names; a snake_case field here once shipped unnoticed.
+    let clock = a.get(&ws("/learning/clock")).await.json();
+    assert_eq!(clock["status"]["status"], "active", "{clock}");
+    assert!(clock["status"]["activeMinutes"].is_u64(), "{clock}");
+    assert_eq!(
+        a.post_empty(&ws("/courses/lk1/step")).await.status,
+        StatusCode::OK
+    );
+
+    let r = a
+        .post(&ws("/learning/bout/end"), json!({ "bout": bout }))
+        .await;
+    assert_eq!(r.status, StatusCode::OK, "{}", r.text);
+    let r = a.post_empty(&ws("/courses/lk1/step")).await;
+    assert_eq!(r.status, StatusCode::CONFLICT, "{}", r.text);
+    assert_eq!(gate_of(&r), "gap");
+    assert!(r.json()["error"]["details"]["remainingMinutes"].is_u64());
+
+    // The logged override lifts the gap and teaching resumes after a fresh ready gate.
+    let r = a
+        .post(
+            &ws("/learning/bout/override"),
+            json!({ "reason": "exam tomorrow" }),
+        )
+        .await;
+    assert!(r.status.is_success(), "{}", r.text);
+    start_bout(&a, "lk1").await;
+    assert_eq!(
+        a.post_empty(&ws("/courses/lk1/step")).await.status,
+        StatusCode::OK
+    );
+}
+
+/// The plan ships its numbers as tunable settings; every one is listed, bounded and saved.
+#[tokio::test]
+async fn method_settings_list_validate_and_persist_per_workspace() {
+    let a = api();
+    let r = a.get(&ws("/learning/settings")).await;
+    assert_eq!(r.status, StatusCode::OK, "{}", r.text);
+    let all = r.json()["settings"].as_array().unwrap().clone();
+    assert_eq!(all.len(), lp_service::learning::SETTING_BOUNDS.len());
+    let find = |v: &serde_json::Value, n: &str| {
+        v["settings"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|s| s["name"] == n)
+            .cloned()
+            .unwrap()
+    };
+    let before = find(&r.json(), "attempts_before_parking");
+    assert_eq!(
+        (before["value"].as_u64(), before["default"].as_u64()),
+        (Some(3), Some(3))
+    );
+
+    let r = a
+        .post(
+            &ws("/learning/settings"),
+            json!({"name": "attempts_before_parking", "value": 5}),
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::OK, "{}", r.text);
+    assert_eq!(find(&r.json(), "attempts_before_parking")["value"], 5);
+    // Persisted, and the clock renders against the saved limits.
+    let again = a.get(&ws("/learning/settings")).await.json();
+    assert_eq!(find(&again, "attempts_before_parking")["value"], 5);
+    a.post(
+        &ws("/learning/settings"),
+        json!({"name": "bout_limit_minutes", "value": 45}),
+    )
+    .await;
+    assert_eq!(
+        a.get(&ws("/learning/clock")).await.json()["boutLimitMinutes"],
+        45
+    );
+
+    for bad in [
+        json!({"name": "nope", "value": 1}),
+        json!({"name": "attempts_before_parking", "value": 0}),
+        json!({"name": "bout_limit_minutes", "value": 9999}),
+        json!({"name": "error_band_high_pct", "value": 5}),
+    ] {
+        let r = a.post(&ws("/learning/settings"), bad.clone()).await;
+        assert_eq!(r.status, StatusCode::BAD_REQUEST, "{bad}: {}", r.text);
+    }
 }
