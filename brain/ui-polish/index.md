@@ -1,6 +1,6 @@
 # UI Polish and Textbook Mode Plan
 
-Back to [Brain Index](/index.md). Details: [Task DAG](/ui-polish/tasks.md), [Test Plan](/ui-polish/test-plan.md), [Review Log](/ui-polish/review.md). Decision: [ADR-0009](/decisions/0009-ui-polish-borrow-ideas-not-code.md). Related: [Learning Method Plan](/learning-method/index.md), [Cheap Tutor Plan](/cheap-tutor/index.md).
+Back to [Brain Index](/index.md). Details: [Task DAG](/ui-polish/tasks.md), [Test Plan](/ui-polish/test-plan.md), [Review Log](/ui-polish/review.md), [Baseline](/ui-polish/baseline.md). Decision: [ADR-0009](/decisions/0009-ui-polish-borrow-ideas-not-code.md). Related: [Learning Method Plan](/learning-method/index.md), [Cheap Tutor Plan](/cheap-tutor/index.md).
 
 **Status:** planned 2026-11-11, not started. Review by the Elephant-Goldfish pass is logged in [Review Log](/ui-polish/review.md).
 

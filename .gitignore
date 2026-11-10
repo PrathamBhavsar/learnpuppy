@@ -19,3 +19,4 @@ pnpm-lock.yaml
 BOARD.md
 scratchpad/
 __pycache__/
+web/e2e/.shots/
