@@ -1,6 +1,7 @@
 import { type Page, expect, test } from "@playwright/test"
 
 // Visual baselines: screen x light/dark x LTR/RTL, threshold 0.1% (docs/web/07).
+// The clock is pinned (a Sunday, UTC) so date-labelled charts are stable.
 // Update with: bunx playwright test visual --update-snapshots
 const WS = "ws_rustasync"
 const SCREENS = [
@@ -29,6 +30,8 @@ for (const screen of SCREENS) {
           height: "height" in screen ? screen.height : 800,
         })
         await page.emulateMedia({ reducedMotion: "reduce" })
+        // The review forecast labels its 14 days from today; pin the date so baselines do not drift.
+        await page.clock.setFixedTime(new Date("2026-11-01T12:00:00Z"))
         await page.addInitScript(
           (t) => localStorage.setItem("lp-theme", t),
           theme
