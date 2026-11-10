@@ -6,6 +6,8 @@ import type { ClassroomView } from "@/api/pending-types"
 import { useStreamingTurn } from "@/hooks/use-streaming-turn"
 import { spring } from "@/lib/motion"
 
+import { ProbeDoneCard } from "./cards/ProbeDoneCard"
+import { QuizAskedCard } from "./cards/QuizAskedCard"
 import { COPY, toolLabel } from "./copy"
 import { Message, CallChips } from "./Message"
 import { StreamingText } from "./StreamingText"
@@ -69,6 +71,15 @@ export function MessageList({ chatId, view }: MessageListProps) {
               }
             />
           ))}
+          {view.pending ? <QuizAskedCard question={view.pending} /> : null}
+          {!view.pending &&
+          view.probeProgress.max > 0 &&
+          view.probeProgress.asked >= view.probeProgress.max ? (
+            <ProbeDoneCard
+              asked={view.probeProgress.asked}
+              max={view.probeProgress.max}
+            />
+          ) : null}
           {streaming ? (
             <div
               data-testid="message-streaming"

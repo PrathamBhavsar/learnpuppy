@@ -95,7 +95,10 @@ describe("think-out-loud field", () => {
     )
     await user.type(screen.getByLabelText("Your answer"), "x")
     await user.click(screen.getByTestId("recall-submit"))
-    expect(onSubmit).toHaveBeenCalledWith({ text: "x", readingNotes: "because" })
+    expect(onSubmit).toHaveBeenCalledWith({
+      text: "x",
+      readingNotes: "because",
+    })
     await waitFor(() =>
       expect(screen.getByLabelText("Explain your thinking")).toHaveValue("")
     )

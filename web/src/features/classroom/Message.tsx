@@ -1,10 +1,4 @@
-import {
-  CheckIcon,
-  CopyIcon,
-  MessageSquareQuoteIcon,
-  OctagonXIcon,
-  WrenchIcon,
-} from "lucide-react"
+import { CheckIcon, CopyIcon, OctagonXIcon, WrenchIcon } from "lucide-react"
 import { useState } from "react"
 
 import type { AnswerRecap, ClassroomMessage } from "@/api/pending-types"
@@ -12,6 +6,7 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 
+import { SteerCard } from "./cards/SteerCard"
 import { AnswerVerdict } from "./AnswerVerdict"
 import { COPY, formatTime, toolLabel } from "./copy"
 import { LazyMarkdown } from "./markdown/LazyMarkdown"
@@ -120,10 +115,26 @@ export function Message({ message, verdict, recap, animate }: MessageProps) {
     )
   }
 
-  if (role === "user" || role === "steer") {
+  if (role === "steer") {
     return (
       <div
-        data-testid={role === "steer" ? "message-steer" : "message-user"}
+        data-testid="message-steer"
+        data-message-id={message.id}
+        title={when}
+        className={cn(
+          "flex max-w-[85%] flex-col items-end gap-1 self-end",
+          rise
+        )}
+      >
+        <SteerCard text={message.text} />
+      </div>
+    )
+  }
+
+  if (role === "user") {
+    return (
+      <div
+        data-testid="message-user"
         data-message-id={message.id}
         className={cn("group/message flex flex-col items-end gap-1", rise)}
       >
@@ -138,12 +149,6 @@ export function Message({ message, verdict, recap, animate }: MessageProps) {
               title={when}
               className="min-w-0 border bg-secondary px-3 py-2 text-secondary-foreground"
             >
-              {role === "steer" ? (
-                <Badge variant="outline" className="mb-1 font-normal">
-                  <MessageSquareQuoteIcon aria-hidden />
-                  Steer
-                </Badge>
-              ) : null}
               <LazyMarkdown>{message.text}</LazyMarkdown>
             </div>
           </div>

@@ -50,10 +50,12 @@ test("answering a quiz shows the server's verdict in the conversation", async ({
   page,
 }) => {
   await page.goto(`${LEARN}/c_teach_quiz`)
+  await expect(page.getByTestId("card-quiz")).toBeVisible()
   await page.getByTestId("quiz-option-A").click()
   await page.getByTestId("quiz-submit").click()
   await expect(page.getByTestId("verdict-call_quiz_2")).toBeVisible()
   await expect(page.getByTestId("question-dock")).toBeHidden()
+  await expect(page.getByTestId("card-quiz")).toBeHidden()
 })
 
 test("quiz options answer to keys and Enter", async ({ page }) => {
