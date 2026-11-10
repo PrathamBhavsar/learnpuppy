@@ -12,6 +12,7 @@ import { useHotkey, useHotkeys } from "@/hooks/use-hotkey"
 import { classroomInfo } from "../info"
 import { ConfidenceSlider } from "./ConfidenceSlider"
 import { OptionList } from "./OptionList"
+import { ThinkingField, useThinking } from "./ThinkingField"
 
 type ChoiceQuestionProps = {
   pending: PendingQuestion
@@ -30,6 +31,7 @@ export function ChoiceQuestion({
   const scale = pending.confidenceScale ?? null
   const [picked, setPicked] = useState<string[]>([])
   const { text, setText, submit: submitDraft } = useDraft(pending.callId)
+  const think = useThinking(pending.callId)
   const [confidence, setConfidence] = useState(3)
 
   const toggle = (key: string) =>
@@ -44,13 +46,17 @@ export function ChoiceQuestion({
     (picked.length > 0 || (pending.allowFreeText && text.trim() !== ""))
   const submit = () => {
     if (!canSubmit) return
-    void submitDraft(() =>
-      onSubmit({
-        choice: picked,
-        text: text.trim() || undefined,
-        confidence: scale === null ? undefined : confidence,
-      })
-    )
+    void submitDraft(async () => {
+      const notes = think.text.trim()
+      await think.submit(() =>
+        onSubmit({
+          choice: picked,
+          text: text.trim() || undefined,
+          readingNotes: notes || undefined,
+          confidence: scale === null ? undefined : confidence,
+        })
+      )
+    })
   }
 
   useHotkey("mod+enter", submit, {
@@ -146,6 +152,12 @@ export function ChoiceQuestion({
           className="min-h-0"
         />
       ) : null}
+      <ThinkingField
+        callId={pending.callId}
+        busy={busy}
+        value={think.text}
+        onChange={think.setText}
+      />
       {scale !== null ? (
         <ConfidenceSlider
           value={confidence}
