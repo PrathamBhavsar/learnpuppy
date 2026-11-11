@@ -41,9 +41,11 @@ export function ReadingCheck({
   const [correct, setCorrect] = useState(0)
 
   const heading = useRef<HTMLElement>(null)
-  // Move focus into the card whenever the question, feedback or summary changes, so the keyboard path continues.
+  const nextButton = useRef<HTMLButtonElement>(null)
+  // Keep the keyboard moving: focus the card on a new question or the summary, the next button on a verdict.
   useEffect(() => {
-    heading.current?.focus()
+    if (feedback) nextButton.current?.focus()
+    else heading.current?.focus()
   }, [at, check, feedback])
 
   const start = actions.start
@@ -231,6 +233,7 @@ export function ReadingCheck({
       <div className="flex gap-2">
         {feedback ? (
           <Button
+            ref={nextButton}
             data-testid="reading-check-next"
             disabled={needsGrade}
             onClick={next}

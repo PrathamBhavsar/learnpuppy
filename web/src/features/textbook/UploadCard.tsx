@@ -24,7 +24,10 @@ export function UploadCard({
   const [over, setOver] = useState(false)
 
   useEffect(() => {
-    if (focus) button.current?.focus()
+    if (!focus) return
+    // The palette hands focus back to the page when it closes; wait for that, then take it.
+    const t = window.setTimeout(() => button.current?.focus(), 300)
+    return () => window.clearTimeout(t)
   }, [focus])
 
   const take = (file: File | undefined) => {

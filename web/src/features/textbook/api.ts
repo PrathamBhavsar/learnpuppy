@@ -10,12 +10,9 @@ import { keys } from "@/api/keys"
 import type { components } from "@/api/schema"
 
 type Dto = components["schemas"]
-export type Book = Dto["TextbookDto"]
-export type BookSummary = Dto["TextbookSummaryDto"]
 export type Chapter = Dto["ChapterRowDto"]
 export type Job = Dto["JobItemDto"]
 export type ReadingCheck = Dto["ReadingCheckDto"]
-export type CheckItem = Dto["CheckItemDto"]
 export type Feedback = Dto["CheckFeedbackDto"]
 
 const bookKey = (ws: string, book?: string) =>
@@ -71,25 +68,6 @@ export function useBooksDue(ws: string): number {
       n + (r.data?.chapters.filter((c) => c.status === "due").length ?? 0),
     0
   )
-}
-
-export function useChapterDetail(
-  ws: string,
-  book: string,
-  n: number,
-  enabled: boolean
-) {
-  return useQuery({
-    queryKey: [...bookKey(ws, book), "chapter", n],
-    enabled,
-    queryFn: async ({ signal }) =>
-      unwrap(
-        await api.GET("/workspaces/{ws}/textbooks/{book}/chapters/{n}", {
-          params: { path: { ws, book, n } },
-          signal,
-        })
-      ),
-  })
 }
 
 /** The workspace's jobs; the import's progress is the entry whose `bookId` matches. */

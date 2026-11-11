@@ -30,7 +30,7 @@ const find = (ws: unknown, id: unknown) =>
 /** One import step per poll: the next chapter becomes ready, and the last one finishes the job. */
 function advance(ws: string, b: MockBook) {
   const job = b.job
-  if (job?.status !== "running") return
+  if (job?.status !== "running" || b.paused) return
   const next = b.book.chapters.find((c) => c.state === "importing")
   if (next) {
     Object.assign(
@@ -86,13 +86,20 @@ export const textbookHandlers = [
     const ws = String(params["ws"])
     const form = await request.formData().catch(() => null)
     const file = form?.get("file")
-    if (!(file instanceof File) || !file.name.toLowerCase().endsWith(".pdf"))
+    if (typeof file === "string" || !file)
+      return apiError("validation", "Upload a PDF file")
+    // The server checks the `%PDF-` magic, not the name; jsdom also loses the name, so do the same here.
+    const bytes = await file.text()
+    if (!bytes.startsWith("%PDF-"))
       return apiError("validation", "Upload a PDF file")
     if (file.size > MAX_BYTES)
       return apiError("validation", "PDF is too large", {
         details: { maxBytes: MAX_BYTES },
       })
-    const id = `bk_${file.name.replace(/\W/g, "").toLowerCase()}`
+    const name =
+      file.name && file.name !== "blob" ? file.name : "Uploaded book.pdf"
+    // Same bytes, same book (the server keys on a SHA-256 of the file).
+    const id = `bk_${[...bytes].reduce((h, c) => (h * 31 + c.charCodeAt(0)) >>> 0, 7).toString(16)}`
     const existing = find(ws, id)
     if (existing) {
       const body: Dto["TextbookUploadDto"] = {
@@ -107,7 +114,7 @@ export const textbookHandlers = [
       id: nextId("tbj"),
       kind: "textbook",
       status: "running",
-      title: `Import ${file.name}`,
+      title: `Import ${name}`,
       chatId: "",
       createdAt: state.db.now,
       bookId: id,
@@ -118,7 +125,7 @@ export const textbookHandlers = [
     }
     const b = newBook(
       id,
-      file.name.replace(/\.pdf$/i, ""),
+      name.replace(/\.pdf$/i, ""),
       UPLOAD_CHAPTERS.map((c) => ({ ...c, state: "importing" as const })),
       state.db.now,
       job

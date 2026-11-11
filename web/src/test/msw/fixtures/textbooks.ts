@@ -7,12 +7,14 @@ export type MockBook = {
   book: Dto["TextbookDto"]
   createdAt: number
   job: Dto["JobItemDto"] | null
+  /** A test can freeze the import where it is. */
+  paused?: boolean
   /** Items by chapter index; `answer` and `why` stay here and only leave through feedback. */
   items: Map<number, MockItem[]>
   checks: Map<string, { chapter: number; answered: Set<string> }>
 }
 
-export type MockItem = Dto["CheckItemDto"] & { answer: string; why: string }
+type MockItem = Dto["CheckItemDto"] & { answer: string; why: string }
 
 type ChapterSeed = {
   title: string

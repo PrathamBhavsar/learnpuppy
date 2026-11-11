@@ -274,6 +274,18 @@ export const chatHandlers = [
         })
       }
     }
+    for (const b of state.db.textbooks.get(String(params["ws"])) ?? []) {
+      const job = b.job
+      if (!job || job.id !== params["id"]) continue
+      job.status = "failed"
+      job.error = "cancelled"
+      b.book.jobId = null
+      // Chapters not finished stay queued, as on the server.
+      for (const c of b.book.chapters)
+        if (c.state === "importing") c.state = "queued"
+      bus.emit("job.updated", { job }, String(params["ws"]))
+      return HttpResponse.json(job)
+    }
     return notFound("Job")
   }),
   http.post(`${API}/sources/pdf`, ({ params, request }) => {
