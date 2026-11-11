@@ -53,6 +53,22 @@ test("workspace switcher keeps the section and ⌘2 jumps", async ({ page }) => 
   await expect(page).toHaveURL(/\/w\/ws_rustasync\/review$/)
 })
 
+test("legacy classroom nav is hidden until the advanced toggle, direct URL still opens", async ({
+  page,
+}) => {
+  await openShell(page)
+  await expect(page.getByTestId("nav-review")).toBeVisible()
+  await expect(page.getByTestId("nav-learn")).toHaveCount(0)
+
+  await page.goto("/w/ws_rustasync/learn")
+  await expect(page.getByTestId("screen-learn")).toBeVisible()
+
+  await page.goto("/settings")
+  await page.getByTestId("legacy-classroom").click()
+  await page.goto(SHELL)
+  await expect(page.getByTestId("nav-learn")).toBeVisible()
+})
+
 test("g chords and ? shortcuts sheet", async ({ page }) => {
   await openShell(page)
   await page.keyboard.press("g")

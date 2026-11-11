@@ -23,7 +23,19 @@ async function openShell(path = `/w/${RUST}/graph`, name = "Rust async") {
 }
 
 describe("shell", () => {
+  it("hides the legacy classroom nav until the advanced toggle is on", async () => {
+    await openShell()
+    expect(screen.queryByTestId("nav-learn")).not.toBeInTheDocument()
+    act(() => useUi.getState().setLegacyClassroom(true))
+    expect(await screen.findByTestId("nav-learn")).toBeInTheDocument()
+    act(() => useUi.getState().setLegacyClassroom(false))
+    await waitFor(() =>
+      expect(screen.queryByTestId("nav-learn")).not.toBeInTheDocument()
+    )
+  })
+
   it("renders sidebar, topbar and section nav with badges from the API", async () => {
+    useUi.setState({ legacyClassroom: true })
     await openShell()
     for (const key of ["graph", "learn", "review", "digest", "ingest"]) {
       expect(screen.getByTestId(`nav-${key}`)).toBeInTheDocument()
@@ -57,6 +69,7 @@ describe("shell", () => {
 
   it("collapses with the [ key, labels disappear, and the choice persists", async () => {
     const user = userEvent.setup()
+    useUi.setState({ legacyClassroom: true })
     await openShell()
     await user.keyboard("[[")
     expect(screen.getByTestId("sidebar")).toHaveAttribute(

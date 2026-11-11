@@ -24,6 +24,7 @@ export function resetUi() {
     reduceMotion: false,
     density: "comfortable",
     readingFont: "sans",
+    legacyClassroom: false,
     sidebarCollapsed: false,
     lastWorkspace: null,
   })
