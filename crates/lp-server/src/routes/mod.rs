@@ -20,6 +20,7 @@ pub mod sources;
 pub mod system;
 #[cfg(feature = "test-hooks")]
 pub mod testhooks;
+pub mod textbook;
 pub mod workspaces;
 
 use axum::Router;
@@ -38,6 +39,7 @@ pub fn api() -> Router<AppState> {
         .merge(chats::routes())
         .merge(chats_write::routes())
         .merge(jobs::routes())
+        .merge(textbook::routes())
         .merge(artifacts::routes())
         .merge(sources::routes())
         .merge(review::routes())

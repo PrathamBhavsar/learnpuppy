@@ -2086,3 +2086,626 @@ async fn method_settings_list_validate_and_persist_per_workspace() {
         assert_eq!(r.status, StatusCode::BAD_REQUEST, "{bad}: {}", r.text);
     }
 }
+
+// ------------------------------------------------------------------ textbook mode (U7)
+
+struct TbPdf {
+    pages: Vec<String>,
+    outline: Vec<lp_core::textbook::OutlineEntry>,
+    delay: Duration,
+}
+
+impl lp_agent::workbench::Pdf for TbPdf {
+    fn pages(&self, _: &str) -> Result<Vec<String>, String> {
+        Ok(self.pages.clone())
+    }
+    fn page_count(&self, _: &str) -> Result<usize, String> {
+        Ok(self.pages.len())
+    }
+    fn page_texts(&self, _: &str, first: usize, last: usize) -> Result<Vec<String>, String> {
+        std::thread::sleep(self.delay);
+        Ok(self.pages[first - 1..last].to_vec())
+    }
+    fn outline(&self, _: &str) -> Result<Vec<lp_core::textbook::OutlineEntry>, String> {
+        Ok(self.outline.clone())
+    }
+}
+
+/// `n` one-page chapters of 400 words with an outline.
+fn tb_pdf(n: usize, delay_ms: u64) -> Arc<TbPdf> {
+    Arc::new(TbPdf {
+        pages: (1..=n)
+            .map(|i| format!("{}\n{i}", "ab ".repeat(400)))
+            .collect(),
+        outline: (1..=n)
+            .map(|i| lp_core::textbook::OutlineEntry {
+                title: format!("Chapter {i}"),
+                page: i as u32,
+                depth: 0,
+            })
+            .collect(),
+        delay: Duration::from_millis(delay_ms),
+    })
+}
+
+fn tb_api(chapters: usize, delay_ms: u64) -> Api {
+    let mut a = api();
+    a.state = a
+        .state
+        .clone()
+        .with_textbook_pdf(tb_pdf(chapters, delay_ms));
+    a
+}
+
+fn objectives_reply() -> String {
+    let objs: Vec<Value> = (1..=5)
+        .map(|i| {
+            json!({"text": format!("Explain concept {i}"), "start_page": 1, "end_page": 1,
+            "items": [
+                {"type":"mcq","q":format!("Which statement {i} about the text holds true here?"),
+                 "options":[format!("alpha {i}"),format!("bravo {i}"),format!("charlie {i}"),format!("delta {i}")],
+                 "answer":format!("alpha {i}"),"why":format!("because {i}")},
+                {"type":"recall","q":format!("Name concept {i} of the page"),
+                 "answer":format!("term {i}"),"accept":[],"why":"because","must_name":[]}]})
+        })
+        .collect();
+    json!({ "objectives": objs }).to_string()
+}
+
+fn queue_chapters(a: &Api, n: usize) {
+    for _ in 0..n {
+        a.state.faux().faux_text(&objectives_reply());
+    }
+}
+
+fn multipart(name: &str, file: &[u8], question: Option<&str>) -> (String, Vec<u8>) {
+    let b = "XBOUNDARYX";
+    let mut body = Vec::new();
+    body.extend(format!("--{b}\r\nContent-Disposition: form-data; name=\"file\"; filename=\"{name}\"\r\nContent-Type: application/pdf\r\n\r\n").into_bytes());
+    body.extend(file);
+    if let Some(q) = question {
+        body.extend(
+            format!("\r\n--{b}\r\nContent-Disposition: form-data; name=\"question\"\r\n\r\n{q}")
+                .into_bytes(),
+        );
+    }
+    body.extend(format!("\r\n--{b}--\r\n").into_bytes());
+    (format!("multipart/form-data; boundary={b}"), body)
+}
+
+impl Api {
+    async fn upload_textbook(&self, name: &str, file: &[u8], question: Option<&str>) -> Reply {
+        let (ct, body) = multipart(name, file, question);
+        let req = Request::builder()
+            .method(Method::POST)
+            .uri(format!("/api/v1{}", ws("/sources/textbook")))
+            .header(header::HOST, HOST)
+            .header(header::COOKIE, format!("lp_session={TOKEN}"))
+            .header(header::ORIGIN, ORIGIN)
+            .header("x-lp-csrf", "1")
+            .header(header::CONTENT_TYPE, ct)
+            .body(Body::from(body))
+            .unwrap();
+        let res = self.app().oneshot(req).await.unwrap();
+        let (parts, body) = res.into_parts();
+        Reply {
+            status: parts.status,
+            headers: parts.headers,
+            text: String::from_utf8(body.collect().await.unwrap().to_bytes().to_vec()).unwrap(),
+        }
+    }
+
+    /// Polls the book until its import job has ended.
+    async fn finished_book(&self, book: &str) -> Value {
+        for _ in 0..1000 {
+            let r = self.get(&ws(&format!("/textbooks/{book}"))).await;
+            let j = r.json();
+            if r.status == StatusCode::OK && j["jobId"].is_null() {
+                return j;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        panic!("import of {book} did not finish");
+    }
+
+    async fn imported_book(&self, tag: &str) -> String {
+        let r = self
+            .upload_textbook("b.pdf", format!("%PDF-1.4 {tag}").as_bytes(), None)
+            .await;
+        assert_eq!(r.status, StatusCode::ACCEPTED, "{}", r.text);
+        let book = r.json()["bookId"].as_str().unwrap().to_owned();
+        self.finished_book(&book).await;
+        book
+    }
+}
+
+fn keys_of(v: &Value, out: &mut Vec<String>) {
+    match v {
+        Value::Object(m) => {
+            for (k, v) in m {
+                out.push(k.clone());
+                keys_of(v, out);
+            }
+        }
+        Value::Array(a) => a.iter().for_each(|v| keys_of(v, out)),
+        _ => {}
+    }
+}
+
+fn assert_no_answer_keys(v: &Value) {
+    let mut all = Vec::new();
+    keys_of(v, &mut all);
+    for banned in [
+        "answer",
+        "accept",
+        "why",
+        "mustName",
+        "misconceptions",
+        "correct",
+    ] {
+        assert!(!all.iter().any(|k| k == banned), "`{banned}` leaked: {v}");
+    }
+}
+
+#[tokio::test]
+async fn textbook_upload_202_then_200_existing() {
+    let a = tb_api(3, 0);
+    queue_chapters(&a, 3);
+    let bytes = b"%PDF-1.4 one";
+    let r = a.upload_textbook("My Book.pdf", bytes, None).await;
+    assert_eq!(r.status, StatusCode::ACCEPTED, "{}", r.text);
+    let j = r.json();
+    let book = j["bookId"].as_str().unwrap().to_owned();
+    assert!(book.starts_with("tb_") && book.len() == 19);
+    assert_eq!(j["existing"], false);
+    assert!(j["jobId"].as_str().unwrap().starts_with("tbj_"));
+    assert_eq!(j["bytes"], bytes.len());
+    let done = a.finished_book(&book).await;
+    assert_eq!(done["title"], "My Book");
+    assert_eq!(done["mapSource"], "outline");
+    assert_eq!(done["callsCap"], 40);
+    assert_eq!(done["autoCalls"], 3);
+    assert_eq!(done["chapters"].as_array().unwrap().len(), 3);
+    assert!(done["chapters"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .all(|c| c["state"] == "ready" && c["status"] == "not_read" && c["objectives"] == 5));
+    // the same bytes again: 200, existing, nothing running, nothing new
+    let again = a.upload_textbook("renamed.pdf", bytes, None).await;
+    assert_eq!(again.status, StatusCode::OK, "{}", again.text);
+    let j = again.json();
+    assert_eq!(
+        (j["existing"].as_bool(), j["bookId"].as_str()),
+        (Some(true), Some(book.as_str()))
+    );
+    assert!(j["jobId"].is_null());
+    let list = a.get(&ws("/textbooks")).await.json();
+    assert_eq!(list["items"].as_array().unwrap().len(), 1);
+    assert_eq!(list["items"][0]["state"], "ready");
+    let usage = a.get(&ws(&format!("/textbooks/{book}/usage"))).await.json();
+    assert_eq!(
+        (usage["autoCalls"].as_u64(), usage["callsCap"].as_u64()),
+        (Some(3), Some(40))
+    );
+    let detail = a.get(&ws(&format!("/textbooks/{book}/chapters/1"))).await;
+    assert_eq!(detail.status, StatusCode::OK);
+    assert_eq!(detail.json()["objectives"].as_array().unwrap().len(), 5);
+    assert_no_answer_keys(&detail.json());
+}
+
+#[tokio::test]
+async fn textbook_upload_rejects_non_pdf_magic_name_and_413() {
+    let a = tb_api(3, 0);
+    for (name, body, q) in [
+        ("notes.txt", b"%PDF-1.4 x".to_vec(), None),
+        ("book.pdf", b"not a pdf".to_vec(), None),
+        ("book.pdf", b"%PDF-1.4 x".to_vec(), Some("what is this?")),
+    ] {
+        let r = a.upload_textbook(name, &body, q).await;
+        assert_eq!(r.status, StatusCode::BAD_REQUEST, "{name}: {}", r.text);
+        assert_eq!(r.code(), "validation");
+    }
+    let mut big = b"%PDF-1.4 ".to_vec();
+    big.resize(52 * 1024 * 1024, 0);
+    let r = a.upload_textbook("big.pdf", &big, None).await;
+    assert_eq!(r.status, StatusCode::PAYLOAD_TOO_LARGE);
+    assert_eq!(r.json()["error"]["details"]["maxBytes"], 50 * 1024 * 1024);
+    // nothing was stored for any of them
+    assert!(a.get(&ws("/textbooks")).await.json()["items"]
+        .as_array()
+        .unwrap()
+        .is_empty());
+    // an archived workspace refuses uploads
+    let r = a
+        .upload_textbook_to(ARCHIVED_WS, "book.pdf", b"%PDF-1.4 y")
+        .await;
+    assert_eq!(r.status, StatusCode::CONFLICT, "{}", r.text);
+}
+
+impl Api {
+    async fn upload_textbook_to(&self, ws_id: &str, name: &str, file: &[u8]) -> Reply {
+        let (ct, body) = multipart(name, file, None);
+        let req = Request::builder()
+            .method(Method::POST)
+            .uri(format!("/api/v1/workspaces/{ws_id}/sources/textbook"))
+            .header(header::HOST, HOST)
+            .header(header::COOKIE, format!("lp_session={TOKEN}"))
+            .header(header::ORIGIN, ORIGIN)
+            .header("x-lp-csrf", "1")
+            .header(header::CONTENT_TYPE, ct)
+            .body(Body::from(body))
+            .unwrap();
+        let res = self.app().oneshot(req).await.unwrap();
+        let (parts, body) = res.into_parts();
+        Reply {
+            status: parts.status,
+            headers: parts.headers,
+            text: String::from_utf8(body.collect().await.unwrap().to_bytes().to_vec()).unwrap(),
+        }
+    }
+}
+
+#[tokio::test]
+async fn textbook_routes_404_on_bad_ids() {
+    let a = tb_api(3, 0);
+    queue_chapters(&a, 3);
+    let book = a.imported_book("ids").await;
+    let missing = "tb_0000000000000000";
+    for path in [
+        "/textbooks/nope".to_string(),
+        "/textbooks/TB_ABCDEF0123456789".to_string(),
+        format!("/textbooks/{missing}"),
+        format!("/textbooks/{missing}/usage"),
+        format!("/textbooks/{missing}/chapters/0"),
+        format!("/textbooks/{book}/chapters/abc"),
+        format!("/textbooks/{book}/chapters/99"),
+        format!("/textbooks/{book}/chapters/-1"),
+        format!("/textbooks/{book}/usage/x"),
+    ] {
+        let r = a.get(&ws(&path)).await;
+        assert_eq!(r.status, StatusCode::NOT_FOUND, "{path}: {}", r.text);
+    }
+    for path in [
+        format!("/textbooks/{book}/chapters/abc/check"),
+        format!("/textbooks/{book}/chapters/99/check"),
+        format!("/textbooks/{missing}/chapters/0/check"),
+    ] {
+        let r = a.post_empty(&ws(&path)).await;
+        assert_eq!(r.status, StatusCode::NOT_FOUND, "{path}: {}", r.text);
+    }
+    let answer = json!({"item":"i","text":"t"});
+    for path in [
+        format!("/textbooks/{book}/checks/rc_x/answer"),
+        format!("/textbooks/{book}/checks/rc_{}/answer", "0".repeat(32)),
+        format!("/textbooks/{missing}/checks/rc_{}/answer", "0".repeat(32)),
+    ] {
+        let r = a.post(&ws(&path), answer.clone()).await;
+        assert_eq!(r.status, StatusCode::NOT_FOUND, "{path}: {}", r.text);
+    }
+    for (path, body) in [
+        (format!("/textbooks/{missing}/import"), json!({})),
+        ("/textbooks/nope/import".to_string(), json!({})),
+    ] {
+        let r = a.post(&ws(&path), body).await;
+        assert_eq!(r.status, StatusCode::NOT_FOUND, "{path}: {}", r.text);
+    }
+    // bad import input is 400, not 404
+    let r = a
+        .post(
+            &ws(&format!("/textbooks/{book}/import")),
+            json!({"chapters":[0]}),
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::BAD_REQUEST, "{}", r.text);
+}
+
+#[tokio::test]
+async fn textbook_job_listed_and_job_updated_event_emitted() {
+    let a = tb_api(3, 0);
+    queue_chapters(&a, 3);
+    let mut sub = a.state.hub.subscribe(Some(MAIN_WS), None);
+    let r = a.upload_textbook("b.pdf", b"%PDF-1.4 ev", None).await;
+    let (book, job) = (
+        r.json()["bookId"].as_str().unwrap().to_owned(),
+        r.json()["jobId"].as_str().unwrap().to_owned(),
+    );
+    a.finished_book(&book).await;
+    let mut seen = false;
+    while let Ok(Ok(ev)) = tokio::time::timeout(Duration::from_millis(500), sub.live.recv()).await {
+        let text = format!("{ev:?}");
+        if text.contains("JobUpdated") && text.contains(&job) && text.contains("textbook") {
+            seen = true;
+            break;
+        }
+    }
+    assert!(seen, "job.updated for the import job");
+    let jobs = a.get(&ws("/jobs")).await.json();
+    let item = jobs["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|j| j["id"] == job.as_str())
+        .unwrap();
+    assert_eq!(item["kind"], "textbook");
+    assert_eq!(item["chatId"], "");
+    assert_eq!(item["bookId"], book.as_str());
+    assert_eq!(item["chaptersDone"], 3);
+    assert_eq!(item["chaptersTotal"], 3);
+    assert_eq!(item["status"], "done");
+    assert_eq!(item["title"], "Import b");
+}
+
+#[tokio::test]
+async fn textbook_abort_through_jobs_route() {
+    // a slow extractor keeps the job running long enough to abort it
+    let a = tb_api(100, 40);
+    let r = a.upload_textbook("slow.pdf", b"%PDF-1.4 slow", None).await;
+    let job = r.json()["jobId"].as_str().unwrap().to_owned();
+    let aborted = a.post_empty(&ws(&format!("/jobs/{job}/abort"))).await;
+    assert_eq!(aborted.status, StatusCode::OK, "{}", aborted.text);
+    assert_eq!(aborted.json()["id"], job.as_str());
+    assert_eq!(aborted.json()["kind"], "textbook");
+    let mut last = Value::Null;
+    for _ in 0..500 {
+        let jobs = a.get(&ws("/jobs")).await.json();
+        last = jobs["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|j| j["id"] == job.as_str())
+            .cloned()
+            .unwrap();
+        if last["status"] != "running" {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+    assert_eq!(last["status"], "failed", "{last}");
+    assert_eq!(last["error"], "cancelled");
+    // a finished job cannot be aborted again
+    let again = a.post_empty(&ws(&format!("/jobs/{job}/abort"))).await;
+    assert_eq!(again.status, StatusCode::CONFLICT, "{}", again.text);
+}
+
+#[tokio::test]
+async fn reading_check_dto_has_no_answer_fields() {
+    let a = tb_api(2, 0);
+    queue_chapters(&a, 2);
+    let book = a.imported_book("leak").await;
+    let r = a
+        .post_empty(&ws(&format!("/textbooks/{book}/chapters/0/check")))
+        .await;
+    assert_eq!(r.status, StatusCode::OK, "{}", r.text);
+    let j = r.json();
+    assert!(j["checkId"].as_str().unwrap().starts_with("rc_"));
+    assert!(!j["items"].as_array().unwrap().is_empty());
+    assert_no_answer_keys(&j);
+    assert_no_answer_keys(&a.get(&ws(&format!("/textbooks/{book}"))).await.json());
+}
+
+#[tokio::test]
+async fn titles_and_errors_are_served_as_plain_json_strings() {
+    let a = tb_api(3, 0);
+    let title = "<img src=x onerror=1>";
+    let r = a
+        .upload_textbook(&format!("{title}.pdf"), b"%PDF-1.4 xss", None)
+        .await;
+    assert_eq!(r.status, StatusCode::ACCEPTED, "{}", r.text);
+    let book = r.json()["bookId"].as_str().unwrap().to_owned();
+    a.finished_book(&book).await;
+    let got = a.get(&ws(&format!("/textbooks/{book}"))).await;
+    assert!(got.headers[header::CONTENT_TYPE]
+        .to_str()
+        .unwrap()
+        .starts_with("application/json"));
+    assert_eq!(got.json()["title"], title);
+    assert!(
+        got.text.contains(&format!("\"{title}\"")),
+        "byte-identical, never escaped or wrapped: {}",
+        got.text
+    );
+    let list = a.get(&ws("/textbooks")).await;
+    assert_eq!(list.json()["items"][0]["title"], title);
+}
+
+#[tokio::test]
+async fn jobs_list_after_restart_shows_no_running_textbook_job() {
+    use lp_core::ports::{DeliveryStatus, JobKind, JobRecord, JobStatus, JobStore};
+    let a = tb_api(3, 0);
+    // a job a previous server left running (the ledger holds no calls for it)
+    a.stores(MAIN_WS)
+        .jobs
+        .create_job(&JobRecord {
+            id: "tbj_0123456789abcdef_0".into(),
+            chat_id: "".into(),
+            kind: JobKind::Textbook,
+            status: JobStatus::Running,
+            delivery: DeliveryStatus::Claimed,
+            created_at: 1,
+            result: Some(json!({"title":"Import x","bookId":"tb_0123456789abcdef"})),
+            usage: vec![],
+        })
+        .unwrap();
+    let jobs = a.get(&ws("/jobs")).await.json();
+    let item = jobs["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|j| j["id"] == "tbj_0123456789abcdef_0")
+        .unwrap();
+    assert_ne!(item["status"], "running", "{item}");
+    assert_eq!(item["error"], "interrupted by a restart");
+    assert_eq!(item["kind"], "textbook");
+}
+
+#[tokio::test]
+async fn check_answer_idempotent_client_id() {
+    let a = tb_api(2, 0);
+    queue_chapters(&a, 2);
+    let book = a.imported_book("idem").await;
+    let check = a
+        .post_empty(&ws(&format!("/textbooks/{book}/chapters/0/check")))
+        .await
+        .json();
+    let (cid, item) = (
+        check["checkId"].as_str().unwrap().to_owned(),
+        check["items"][0]["id"].as_str().unwrap().to_owned(),
+    );
+    let path = ws(&format!("/textbooks/{book}/checks/{cid}/answer"));
+    let body = json!({"item": item, "text": "zzz", "confidence": 3, "clientId": "c1"});
+    let first = a.post(&path, body.clone()).await;
+    assert_eq!(first.status, StatusCode::OK, "{}", first.text);
+    assert_eq!(first.json()["correct"], false);
+    let replay = a.post(&path, body).await;
+    assert_eq!(replay.status, StatusCode::OK, "{}", replay.text);
+    assert_eq!(replay.json()["answer"], first.json()["answer"]);
+    let other = a.post(&path, json!({"item": item, "text": "zzz"})).await;
+    assert_eq!(other.status, StatusCode::CONFLICT, "{}", other.text);
+    assert_eq!(
+        other.json()["error"]["details"]["reason"],
+        "already_answered"
+    );
+    let bad = a
+        .post(
+            &path,
+            json!({"item": item, "text": "x", "confidence": 9, "clientId": "c2"}),
+        )
+        .await;
+    assert_eq!(bad.status, StatusCode::BAD_REQUEST);
+    // the chapter now reads as checked
+    let book_json = a.get(&ws(&format!("/textbooks/{book}"))).await.json();
+    assert_eq!(book_json["chapters"][0]["status"], "checked");
+    // a recall item awaits the learner's own grade
+    let recall = check["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|i| i["kind"] == "recall" && i["id"] != item.as_str());
+    if let Some(recall) = recall {
+        let id = recall["id"].as_str().unwrap();
+        let r = a.post(&path, json!({"item": id, "text": "no idea"})).await;
+        assert_eq!(r.status, StatusCode::OK, "{}", r.text);
+        let g = a
+            .post(
+                &ws(&format!("/textbooks/{book}/checks/{cid}/self-grade")),
+                json!({"item": id, "grade": "good"}),
+            )
+            .await;
+        assert_eq!(g.status, StatusCode::NO_CONTENT, "{}", g.text);
+    }
+}
+
+#[tokio::test]
+async fn chapter_not_ready_is_409_with_reason() {
+    // no scripted replies: the engine fails twice in a row, so the import stops early
+    let a = tb_api(4, 0);
+    let book = a.imported_book("unready").await;
+    let b = a.get(&ws(&format!("/textbooks/{book}"))).await.json();
+    assert_eq!(b["chapters"][0]["state"], "failed");
+    assert_eq!(b["chapters"][3]["state"], "queued");
+    for n in [0, 3] {
+        let r = a
+            .post_empty(&ws(&format!("/textbooks/{book}/chapters/{n}/check")))
+            .await;
+        assert_eq!(r.status, StatusCode::CONFLICT, "{}", r.text);
+        assert_eq!(r.json()["error"]["code"], "conflict");
+        assert_eq!(r.json()["error"]["details"]["reason"], "chapter_not_ready");
+    }
+    // nothing is running, so a second import may start; with the engine still empty it fails again
+    queue_chapters(&a, 4);
+    let started = a
+        .post(&ws(&format!("/textbooks/{book}/import")), json!({}))
+        .await;
+    assert_eq!(started.status, StatusCode::ACCEPTED, "{}", started.text);
+    assert!(started.json()["jobId"]
+        .as_str()
+        .unwrap()
+        .starts_with("tbj_"));
+    let done = a.finished_book(&book).await;
+    assert!(done["requestedCalls"].as_u64().unwrap() > 0);
+    let r = a
+        .post_empty(&ws(&format!("/textbooks/{book}/chapters/3/check")))
+        .await;
+    assert_eq!(r.status, StatusCode::OK, "{}", r.text);
+}
+
+/// A minimal PDF of `count` text pages; Poppler rebuilds the missing xref table.
+fn synthetic_pdf(count: usize) -> Vec<u8> {
+    let kids = (0..count)
+        .map(|i| format!("{} 0 R", i + 3))
+        .collect::<Vec<_>>()
+        .join(" ");
+    let mut objs = vec![
+        "<< /Type /Catalog /Pages 2 0 R >>".to_owned(),
+        format!("<< /Type /Pages /Kids [{kids}] /Count {count} >>"),
+    ];
+    for i in 0..count {
+        objs.push(format!(
+            "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 200 200] /Contents {} 0 R /Resources << /Font << /F1 {} 0 R >> >> >>",
+            count + 3 + i,
+            count * 2 + 3
+        ));
+    }
+    for i in 0..count {
+        let s = format!(
+            "BT /F1 12 Tf 20 100 Td (page{} {}) Tj ET",
+            i + 1,
+            "word ".repeat(40)
+        );
+        objs.push(format!("<< /Length {} >>\nstream\n{s}\nendstream", s.len()));
+    }
+    objs.push("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>".into());
+    let mut pdf = String::from("%PDF-1.4\n");
+    for (i, o) in objs.iter().enumerate() {
+        pdf.push_str(&format!("{} 0 obj\n{o}\nendobj\n", i + 1));
+    }
+    pdf.push_str(&format!(
+        "trailer\n<< /Root 1 0 R /Size {} >>\n%%EOF\n",
+        count * 2 + 4
+    ));
+    pdf.into_bytes()
+}
+
+#[tokio::test]
+async fn health_under_200ms_during_400_page_import() {
+    if std::process::Command::new("pdftotext")
+        .arg("-v")
+        .output()
+        .is_err()
+    {
+        eprintln!("skipped: Poppler is missing");
+        return;
+    }
+    // the real extractor on a synthetic 400-page book
+    let a = api();
+    let r = a
+        .upload_textbook("big.pdf", &synthetic_pdf(400), None)
+        .await;
+    assert_eq!(r.status, StatusCode::ACCEPTED, "{}", r.text);
+    let (book, job) = (
+        r.json()["bookId"].as_str().unwrap().to_owned(),
+        r.json()["jobId"].as_str().unwrap().to_owned(),
+    );
+    let mut worst = Duration::ZERO;
+    let mut polls = 0;
+    let mut running = true;
+    while running {
+        let t = std::time::Instant::now();
+        let h = a.get("/health").await;
+        worst = worst.max(t.elapsed());
+        assert_eq!(h.status, StatusCode::OK);
+        polls += 1;
+        let jobs = a.get(&ws("/jobs")).await.json();
+        running = jobs["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|j| j["id"] == job.as_str() && j["status"] == "running");
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+    assert!(polls >= 3, "the import ran long enough to poll ({polls})");
+    assert!(worst < Duration::from_millis(200), "health took {worst:?}");
+    let b = a.get(&ws(&format!("/textbooks/{book}"))).await.json();
+    assert_eq!(b["totalPages"], 400);
+}

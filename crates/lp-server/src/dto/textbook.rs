@@ -12,6 +12,14 @@ use utoipa::ToSchema;
 
 use super::course::ItemKindDto;
 
+/// A PDF book, at most 50 MB.
+#[derive(ToSchema)]
+#[allow(dead_code)]
+pub struct TextbookUploadForm {
+    #[schema(value_type = String, format = Binary)]
+    pub file: Vec<u8>,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct TextbookUploadDto {

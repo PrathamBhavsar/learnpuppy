@@ -1495,8 +1495,9 @@ impl<E: LlmEngine + 'static> Job<E> {
             }
         }
         self.rec.result = Some(result);
-        self.write().await;
+        // Cleared first: once a reader sees the job finished, it can no longer be aborted here.
         self.me.running.lock().remove(&self.book);
+        self.write().await;
     }
 }
 

@@ -11,6 +11,7 @@ use super::chats_write::{checked_id, rejected, turn_ctx};
 use super::common::{blocking, open_writable};
 use crate::app::AppState;
 use crate::dto::chat::{NoteUploadDto, NoteUploadForm, PdfQuery, PdfUploadDto, PdfUploadForm};
+use crate::dto::textbook::{TextbookUploadDto, TextbookUploadForm};
 use crate::error::{ApiError, ApiQuery, ErrorCode, ErrorEnvelope};
 
 pub const MAX_PDF_BYTES: usize = 50 * 1024 * 1024;
@@ -20,18 +21,19 @@ pub fn routes() -> Router<AppState> {
     Router::new()
         .route("/workspaces/{ws}/sources/pdf", post(pdf))
         .route("/workspaces/{ws}/sources/note", post(note))
+        .route("/workspaces/{ws}/sources/textbook", post(textbook))
 }
 
-fn bad(message: &str) -> ApiError {
+pub(super) fn bad(message: &str) -> ApiError {
     ApiError::invalid("file", message)
 }
 
-fn too_large() -> ApiError {
+pub(super) fn too_large() -> ApiError {
     ApiError::new(ErrorCode::Validation, "PDF exceeds the 50 MB limit")
         .with_details(serde_json::json!({"maxBytes": MAX_PDF_BYTES}))
 }
 
-fn boundary(content_type: &str) -> Result<String, ApiError> {
+pub(super) fn boundary(content_type: &str) -> Result<String, ApiError> {
     let mut parts = content_type.split(';');
     if parts.next().map(str::trim) != Some("multipart/form-data") {
         return Err(bad("expected multipart/form-data"));
@@ -51,8 +53,23 @@ fn position(data: &[u8], needle: &[u8]) -> Option<usize> {
     data.windows(needle.len()).position(|w| w == needle)
 }
 
-/// Parse only the two fields this endpoint accepts; delimiters must be complete MIME lines.
-fn form(bytes: Bytes, boundary: &str, note: bool) -> Result<(Bytes, String), ApiError> {
+/// What a multipart upload endpoint accepts: a PDF with an optional question, a text note, or a
+/// textbook PDF (no question).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum FormMode {
+    Pdf,
+    Note,
+    Textbook,
+}
+
+/// Parse only the fields this endpoint accepts; delimiters must be complete MIME lines. Returns
+/// the file, the question (empty if none) and the client's file name.
+pub(super) fn form(
+    bytes: Bytes,
+    boundary: &str,
+    mode: FormMode,
+) -> Result<(Bytes, String, String), ApiError> {
+    let note = mode == FormMode::Note;
     let delimiter = format!("\r\n--{boundary}");
     let first = format!("--{boundary}\r\n");
     if !bytes.starts_with(first.as_bytes()) {
@@ -60,6 +77,7 @@ fn form(bytes: Bytes, boundary: &str, note: bool) -> Result<(Bytes, String), Api
     }
     let mut at = first.len();
     let mut file = None;
+    let mut file_name = String::new();
     let mut question = None;
     loop {
         let start = at;
@@ -123,9 +141,12 @@ fn form(bytes: Bytes, boundary: &str, note: bool) -> Result<(Bytes, String), Api
                         return Err(bad("file does not have PDF magic"));
                     }
                 }
+                file_name = name.to_owned();
                 file = Some(data);
             }
-            Some("question") if !note && question.is_none() && data.len() <= 20_000 => {
+            Some("question")
+                if mode == FormMode::Pdf && question.is_none() && data.len() <= 20_000 =>
+            {
                 question = Some(
                     std::str::from_utf8(&data)
                         .map_err(|_| bad("question must be UTF-8"))?
@@ -143,6 +164,7 @@ fn form(bytes: Bytes, boundary: &str, note: bool) -> Result<(Bytes, String), Api
     Ok((
         file.ok_or_else(|| bad("missing file field"))?,
         question.unwrap_or_default(),
+        file_name,
     ))
 }
 
@@ -194,7 +216,7 @@ async fn upload(
     let bytes = to_bytes(request.into_body(), MAX_FORM_BYTES)
         .await
         .map_err(|_| too_large())?;
-    let (file, question) = blocking(move || form(bytes, &b, false)).await?;
+    let (file, question, _) = blocking(move || form(bytes, &b, FormMode::Pdf)).await?;
     let bytes = file.len() as u64;
     let artifact_id = format!("source_{}", uuid::Uuid::new_v4().simple());
     let path = h
@@ -232,6 +254,67 @@ async fn upload(
             bytes,
         }),
     ))
+}
+
+/// Uploads a PDF book (U7). The server maps it into chapters in the background; the returned job
+/// reports progress. The same bytes twice find the same book (`200`, `existing: true`).
+#[utoipa::path(
+    post, path = "/workspaces/{ws}/sources/textbook", tag = "textbooks",
+    params(("ws" = String, Path)),
+    request_body(content = TextbookUploadForm, content_type = "multipart/form-data"),
+    responses((status = 202, description = "New book; the import job started", body = TextbookUploadDto),
+              (status = 200, description = "The book was already stored", body = TextbookUploadDto),
+              (status = 400, body = ErrorEnvelope),
+              (status = 413, description = "PDF exceeds 50 MB", body = ErrorEnvelope),
+              (status = 404, body = ErrorEnvelope), (status = 409, body = ErrorEnvelope))
+)]
+pub async fn textbook(
+    State(st): State<AppState>,
+    Path(ws): Path<String>,
+    request: Request,
+) -> Response {
+    match upload_textbook(st, ws, request).await {
+        Ok(reply) => reply.into_response(),
+        Err(error) => {
+            let large = error
+                .details
+                .as_ref()
+                .is_some_and(|d| d.get("maxBytes").is_some());
+            let mut response = error.into_response();
+            if large {
+                *response.status_mut() = StatusCode::PAYLOAD_TOO_LARGE;
+            }
+            response
+        }
+    }
+}
+
+async fn upload_textbook(
+    st: AppState,
+    ws: String,
+    request: Request,
+) -> Result<(StatusCode, Json<TextbookUploadDto>), ApiError> {
+    let h = open_writable(&st, &ws).await?;
+    let b = boundary(
+        request
+            .headers()
+            .get(header::CONTENT_TYPE)
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or_default(),
+    )?;
+    let bytes = to_bytes(request.into_body(), MAX_FORM_BYTES)
+        .await
+        .map_err(|_| too_large())?;
+    let (file, _, name) = blocking(move || form(bytes, &b, FormMode::Textbook)).await?;
+    let len = file.len() as u64;
+    let svc = st.textbook(&h).await?;
+    let up = svc.upload(&name, file, h.busy()).await?;
+    let status = if up.existing {
+        StatusCode::OK
+    } else {
+        StatusCode::ACCEPTED
+    };
+    Ok((status, Json(TextbookUploadDto::new(up, len))))
 }
 
 const MAX_NOTE_BYTES: usize = 1024 * 1024;
@@ -289,7 +372,7 @@ async fn upload_note(
     let bytes = to_bytes(request.into_body(), MAX_NOTE_BYTES + 64 * 1024)
         .await
         .map_err(|_| note_too_large())?;
-    let (file, _) = blocking(move || form(bytes, &b, true)).await?;
+    let (file, _, _) = blocking(move || form(bytes, &b, FormMode::Note)).await?;
     let bytes = file.len() as u64;
     let text = std::str::from_utf8(&file)
         .map_err(|_| bad("note must be UTF-8 text"))?

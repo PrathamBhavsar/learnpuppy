@@ -6104,6 +6104,19 @@
         ],
         "type": "object"
       },
+      "TextbookUploadForm": {
+        "description": "A PDF book, at most 50 MB.",
+        "properties": {
+          "file": {
+            "format": "binary",
+            "type": "string"
+          }
+        },
+        "required": [
+          "file"
+        ],
+        "type": "object"
+      },
       "TextbookUsageDto": {
         "properties": {
           "autoCalls": {
@@ -13083,6 +13096,615 @@
           "chats"
         ]
       }
+    },
+    "/workspaces/{ws}/sources/textbook": {
+      "post": {
+        "operationId": "post_workspaces_ws_sources_textbook",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "ws",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/TextbookUploadForm"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TextbookUploadDto"
+                }
+              }
+            },
+            "description": "The book was already stored"
+          },
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TextbookUploadDto"
+                }
+              }
+            },
+            "description": "New book; the import job started"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": ""
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "PDF exceeds 50 MB"
+          }
+        },
+        "summary": "Uploads a PDF book (U7). The server maps it into chapters in the background; the returned job\nreports progress. The same bytes twice find the same book (`200`, `existing: true`).",
+        "tags": [
+          "textbooks"
+        ]
+      }
+    },
+    "/workspaces/{ws}/textbooks": {
+      "get": {
+        "operationId": "get_workspaces_ws_textbooks",
+        "parameters": [
+          {
+            "description": "Workspace id",
+            "in": "path",
+            "name": "ws",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TextbookListDto"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "summary": "Imported books, newest first.",
+        "tags": [
+          "textbooks"
+        ]
+      }
+    },
+    "/workspaces/{ws}/textbooks/{book}": {
+      "get": {
+        "operationId": "get_workspaces_ws_textbooks_book",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "ws",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Book id, `tb_` + 16 hex",
+            "in": "path",
+            "name": "book",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TextbookDto"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "summary": "One book with its chapter map and per-chapter import state.",
+        "tags": [
+          "textbooks"
+        ]
+      }
+    },
+    "/workspaces/{ws}/textbooks/{book}/chapters/{n}": {
+      "get": {
+        "operationId": "get_workspaces_ws_textbooks_book_chapters_n",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "ws",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "book",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Chapter index",
+            "in": "path",
+            "name": "n",
+            "required": true,
+            "schema": {
+              "format": "int32",
+              "minimum": 0,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChapterDetailDto"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "summary": "One chapter with its learning objectives (never their quiz items).",
+        "tags": [
+          "textbooks"
+        ]
+      }
+    },
+    "/workspaces/{ws}/textbooks/{book}/chapters/{n}/check": {
+      "post": {
+        "operationId": "post_workspaces_ws_textbooks_book_chapters_n_check",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "ws",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "book",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Chapter index",
+            "in": "path",
+            "name": "n",
+            "required": true,
+            "schema": {
+              "format": "int32",
+              "minimum": 0,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReadingCheckDto"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "`details.reason` is `chapter_not_ready`"
+          }
+        },
+        "summary": "\"I read chapter N\": a quiz of stored items, one per objective. No model call.",
+        "tags": [
+          "textbooks"
+        ]
+      }
+    },
+    "/workspaces/{ws}/textbooks/{book}/checks/{check}/answer": {
+      "post": {
+        "operationId": "post_workspaces_ws_textbooks_book_checks_check_answer",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "ws",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "book",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "`rc_` + 32 hex",
+            "in": "path",
+            "name": "check",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CheckAnswerRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CheckFeedbackDto"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "`details.reason` is `already_answered`"
+          }
+        },
+        "summary": "Grades one answer by code and feeds the item's FSRS card. A retry with the same `clientId`\nreturns the stored feedback.",
+        "tags": [
+          "textbooks"
+        ]
+      }
+    },
+    "/workspaces/{ws}/textbooks/{book}/checks/{check}/self-grade": {
+      "post": {
+        "operationId": "post_workspaces_ws_textbooks_book_checks_check_self_grade",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "ws",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "book",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "check",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SelfGradeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Graded"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "summary": "The learner's own grade for a typed answer that was close or wrong.",
+        "tags": [
+          "textbooks"
+        ]
+      }
+    },
+    "/workspaces/{ws}/textbooks/{book}/import": {
+      "post": {
+        "operationId": "post_workspaces_ws_textbooks_book_import",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "ws",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "book",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ImportRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportStartedDto"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "`details.reason` is `import_running`, `nothing_to_import` or `call_budget_used`"
+          }
+        },
+        "summary": "Starts an import of the chapters still pending (or the listed ones) as a background job. The\nlifetime budget of 40 cheap calls per book applies; what does not fit stays queued.",
+        "tags": [
+          "textbooks"
+        ]
+      }
+    },
+    "/workspaces/{ws}/textbooks/{book}/usage": {
+      "get": {
+        "operationId": "get_workspaces_ws_textbooks_book_usage",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "ws",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "book",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TextbookUsageDto"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "summary": "Cheap-model tokens and calls spent on this book, against the lifetime cap.",
+        "tags": [
+          "textbooks"
+        ]
+      }
     }
   },
   "servers": [
@@ -13118,6 +13740,10 @@
     {
       "description": "Courses: stored lessons, placement, follow-ups",
       "name": "courses"
+    },
+    {
+      "description": "Textbook mode: PDF import, chapters, reading checks",
+      "name": "textbooks"
     },
     {
       "description": "Decision digest",

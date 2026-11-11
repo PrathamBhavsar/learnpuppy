@@ -94,6 +94,10 @@ pub(crate) async fn ensure_recovered(
     st: &AppState,
     h: &Arc<WorkspaceHandle>,
 ) -> Result<(), ApiError> {
+    // Textbook imports a dead server left running are repaired on the same occasion.
+    if let Err(error) = st.textbook(h).await {
+        tracing::warn!(workspace = h.id(), ?error, "textbook recovery failed");
+    }
     if st.chats.recovered(h.id()) {
         return Ok(());
     }
