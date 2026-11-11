@@ -860,3 +860,165 @@ mod learning_store {
         assert!(ca.append_session_log("c1", "../x", 1, "").is_err());
     }
 }
+
+mod textbook {
+    use super::*;
+    use lp_core::textbook::{BookMeta, TextbookEvent};
+
+    const BOOK: &str = "tb_0123456789abcdef";
+
+    fn imported(ts: i64) -> TextbookEvent {
+        TextbookEvent::Imported {
+            ts,
+            book: BookMeta {
+                id: BOOK.into(),
+                title: "T".into(),
+                file_name: "t.pdf".into(),
+                bytes: 3,
+                sha256: "0".repeat(64),
+                total_pages: 9,
+                page_offset: None,
+            },
+        }
+    }
+
+    fn skipped(ch: u32) -> TextbookEvent {
+        TextbookEvent::ChapterSkipped {
+            ts: 1,
+            chapter: ch,
+            reason: "short".into(),
+        }
+    }
+
+    #[test]
+    fn textbook_ledger_round_trip() {
+        let dir = tempfile::tempdir().unwrap();
+        let s = FsTextbookStore::new(dir.path());
+        assert!(s.events(BOOK).unwrap().is_empty());
+        assert!(!s.exists(BOOK).unwrap());
+        s.append_event(BOOK, &imported(1)).unwrap();
+        s.append_event(BOOK, &skipped(0)).unwrap();
+        assert_eq!(s.events(BOOK).unwrap(), vec![imported(1), skipped(0)]);
+        assert!(s.exists(BOOK).unwrap());
+        s.save_source(BOOK, b"%PDF-1.4").unwrap();
+        assert_eq!(
+            std::fs::read(s.source_path(BOOK).unwrap()).unwrap(),
+            b"%PDF-1.4"
+        );
+        use std::os::unix::fs::PermissionsExt;
+        let mode =
+            |p: std::path::PathBuf| std::fs::metadata(p).unwrap().permissions().mode() & 0o777;
+        assert_eq!(mode(s.source_path(BOOK).unwrap()), 0o600);
+        assert_eq!(mode(dir.path().join("textbooks").join(BOOK)), 0o700);
+        s.remove(BOOK).unwrap();
+        assert!(!s.exists(BOOK).unwrap());
+    }
+
+    #[test]
+    fn textbook_torn_tail_is_trimmed_on_next_append() {
+        let dir = tempfile::tempdir().unwrap();
+        let s = FsTextbookStore::new(dir.path());
+        s.append_event(BOOK, &imported(1)).unwrap();
+        s.append_event(BOOK, &skipped(0)).unwrap();
+        let path = dir
+            .path()
+            .join("textbooks")
+            .join(BOOK)
+            .join("textbook.jsonl");
+        let mut f = std::fs::OpenOptions::new()
+            .append(true)
+            .open(&path)
+            .unwrap();
+        f.write_all(b"deadbeef\t{\"type\":\"chapter_ski").unwrap();
+        drop(f);
+        assert_eq!(s.events(BOOK).unwrap().len(), 2);
+        s.append_event(BOOK, &skipped(1)).unwrap();
+        assert_eq!(
+            s.events(BOOK).unwrap(),
+            vec![imported(1), skipped(0), skipped(1)]
+        );
+    }
+
+    #[test]
+    fn textbook_concurrent_appends_all_land() {
+        let dir = tempfile::tempdir().unwrap();
+        let s = Arc::new(FsTextbookStore::new(dir.path()));
+        let threads: Vec<_> = (0..2)
+            .map(|t| {
+                let s = s.clone();
+                std::thread::spawn(move || {
+                    for i in 0..100 {
+                        s.append_event(BOOK, &skipped(t * 1000 + i)).unwrap();
+                    }
+                })
+            })
+            .collect();
+        threads.into_iter().for_each(|t| t.join().unwrap());
+        assert_eq!(s.events(BOOK).unwrap().len(), 200);
+        let raw = std::fs::read_to_string(
+            dir.path()
+                .join("textbooks")
+                .join(BOOK)
+                .join("textbook.jsonl"),
+        )
+        .unwrap();
+        assert_eq!(raw.lines().count(), 200);
+        assert_eq!(
+            crate::jsonl::read_all::<TextbookEvent>(
+                &dir.path()
+                    .join("textbooks")
+                    .join(BOOK)
+                    .join("textbook.jsonl")
+            )
+            .unwrap()
+            .len(),
+            200,
+            "every line has a good crc"
+        );
+    }
+
+    #[test]
+    fn textbook_two_workspaces_isolated() {
+        let (a, b) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+        let (sa, sb) = (
+            FsTextbookStore::new(a.path()),
+            FsTextbookStore::new(b.path()),
+        );
+        sa.append_event(BOOK, &imported(1)).unwrap();
+        assert!(sb.events(BOOK).unwrap().is_empty());
+        assert!(sb.list().unwrap().is_empty());
+        assert_eq!(sa.list().unwrap(), vec![BOOK.to_string()]);
+    }
+
+    #[test]
+    fn textbook_rejects_bad_book_ids() {
+        let dir = tempfile::tempdir().unwrap();
+        let s = FsTextbookStore::new(dir.path());
+        for bad in [
+            "../x",
+            "tb_XYZ",
+            "",
+            "tb_0123456789abcde/",
+            "tb_0123456789ABCDEF",
+        ] {
+            assert!(s.events(bad).is_err(), "{bad}");
+            assert!(s.append_event(bad, &imported(1)).is_err(), "{bad}");
+            assert!(s.save_source(bad, b"x").is_err(), "{bad}");
+            assert!(s.source_path(bad).is_err(), "{bad}");
+            assert!(s.exists(bad).is_err(), "{bad}");
+        }
+        assert!(!dir.path().join("textbooks").exists());
+    }
+
+    #[test]
+    fn textbook_list_omits_dir_without_imported_line() {
+        let dir = tempfile::tempdir().unwrap();
+        let s = FsTextbookStore::new(dir.path());
+        s.save_source(BOOK, b"%PDF-1.4").unwrap();
+        s.save_source("tb_ffffffffffffffff", b"%PDF-1.4").unwrap();
+        s.append_event("tb_ffffffffffffffff", &imported(1)).unwrap();
+        std::fs::create_dir_all(dir.path().join("textbooks").join("not-a-book")).unwrap();
+        assert_eq!(s.list().unwrap(), vec!["tb_ffffffffffffffff".to_string()]);
+        assert!(!s.exists(BOOK).unwrap());
+    }
+}
