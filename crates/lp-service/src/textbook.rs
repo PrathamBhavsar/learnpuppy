@@ -11,6 +11,7 @@
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::future::Future;
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -43,6 +44,9 @@ const CALL_TIMEOUT: Duration = Duration::from_secs(120);
 const ROLE: &str = "placer";
 /// Pages read at upload to find a book's printed page offset and its table of contents.
 const MAP_PAGES: usize = 60;
+/// Most model calls one import job may send: the hourly chapter limit times the calls a chapter can
+/// take (its parts, each tried twice). A backstop; the hourly limit normally stops a job first.
+const MAX_JOB_CALLS: u32 = MAX_MANUAL_IMPORTS_PER_HOUR * (MAX_PARTS as u32) * MAX_ATTEMPTS;
 const NO_TEXT: &str = "No text found. Scanned pages need OCR before import.";
 
 /// Stable `Conflict` codes; the server maps them to `details.reason`.
@@ -614,6 +618,13 @@ impl<E: LlmEngine + 'static> TextbookService<E> {
             Ok((st, n))
         })
         .await?;
+        // Each chapter once, in the order given: a repeated index must not repeat its calls.
+        let chapters = chapters.map(|list| {
+            let mut seen = HashSet::new();
+            list.into_iter()
+                .filter(|i| seen.insert(*i))
+                .collect::<Vec<u32>>()
+        });
         match &chapters {
             Some(list) => {
                 if list.len() > MAX_CHAPTERS {
@@ -628,6 +639,11 @@ impl<E: LlmEngine + 'static> TextbookService<E> {
                         Some(v) if v.state == ChapterState::Ready => {
                             return Err(TextbookError::Invalid(format!(
                                 "chapter {i} is already imported"
+                            )))
+                        }
+                        Some(v) if v.state == ChapterState::Skipped => {
+                            return Err(TextbookError::Invalid(format!(
+                                "chapter {i} has nothing to import"
                             )))
                         }
                         Some(v) if v.state == ChapterState::Failed && !v.retryable => {
@@ -688,6 +704,7 @@ impl<E: LlmEngine + 'static> TextbookService<E> {
             progress: Progress::default(),
             cancel,
             only: chapters,
+            calls: AtomicU32::new(0),
         };
         tokio::spawn(async move {
             let _busy = busy;
@@ -1289,6 +1306,8 @@ struct Job<E> {
     progress: Progress,
     cancel: CancellationToken,
     only: Option<Vec<u32>>,
+    /// Model calls this job has sent, against [`MAX_JOB_CALLS`].
+    calls: AtomicU32,
 }
 
 impl<E: LlmEngine + 'static> Job<E> {
@@ -1333,6 +1352,7 @@ impl<E: LlmEngine + 'static> Job<E> {
         F: FnOnce(Arc<E>) -> Fut,
         Fut: Future<Output = Result<T, CourseAgentError>>,
     {
+        self.calls.fetch_add(1, Ordering::SeqCst);
         let job = self.rec.id.to_string();
         model_call(&self.me, &self.book, &job, chapter, true, &self.cancel, f).await
     }
@@ -1378,7 +1398,12 @@ impl<E: LlmEngine + 'static> Job<E> {
                 continue;
             };
             let chapter = view.chapter.clone();
-            if view.state != ChapterState::Ready {
+            // Re-checked right before the work: only a pending chapter, or a failed one whose
+            // retry is unspent, may call a model. Anything else (a repeat, a skipped chapter, a
+            // chapter another run finished) is passed over.
+            let runnable = view.state == ChapterState::Pending
+                || (view.state == ChapterState::Failed && view.retryable);
+            if runnable {
                 self.set_current(Some(idx));
                 // Only this chapter's pages are read, 10 at a time.
                 let (first, last) = (chapter.pages.start as usize, chapter.pages.end as usize);
@@ -1413,6 +1438,12 @@ impl<E: LlmEngine + 'static> Job<E> {
                         break;
                     }
                     let parts = split_parts(&page_words);
+                    let worst = parts.len() as u32 * MAX_ATTEMPTS;
+                    if self.calls.load(Ordering::SeqCst) + worst > MAX_JOB_CALLS {
+                        stopped = Some("call_cap");
+                        self.set_current(None);
+                        break;
+                    }
                     match self.do_chapter(&chapter, &pages, &parts).await? {
                         ChapterResult::Cancelled => return Ok(Outcome::Cancelled),
                         ChapterResult::Engine { retryable } => {
@@ -2285,6 +2316,95 @@ mod tests {
         let job = r.open(&up.book, vec![0]).await;
         assert_eq!(r.engine.n(), 0);
         assert_eq!(job.result.unwrap()["error"], NO_TEXT);
+        assert_eq!(r.ready(&up.book), 0);
+    }
+
+    /// A job over `only`, built directly so its chapter list is not cleaned by `import`.
+    async fn raw_job(r: &Rig, book: &str, only: Vec<u32>, calls: u32) -> JobRecord {
+        let st = r.state(book);
+        let rec = JobRecord {
+            id: "tbj_raw_0".into(),
+            chat_id: "".into(),
+            kind: JobKind::Textbook,
+            status: JobStatus::Running,
+            delivery: DeliveryStatus::Claimed,
+            created_at: 1,
+            result: None,
+            usage: vec![],
+        };
+        r.stores.jobs.create_job(&rec).unwrap();
+        let job = Job {
+            me: r.svc.inner.clone(),
+            book: book.to_string(),
+            rec,
+            meta: st.meta.unwrap(),
+            progress: Progress::default(),
+            cancel: CancellationToken::new(),
+            only: Some(only),
+            calls: AtomicU32::new(calls),
+        };
+        job.run().await;
+        let (jobs, _) = r.stores.jobs.all_report().unwrap();
+        jobs.into_iter().find(|j| j.id == "tbj_raw_0").unwrap()
+    }
+
+    #[tokio::test]
+    async fn duplicate_chapter_indices_call_the_model_once() {
+        let r = rig(book(4, 400));
+        let up = r.upload().await;
+        r.open(&up.book, vec![2, 2, 2]).await;
+        assert_eq!(r.engine.n(), 1, "chapter 2 was imported once");
+        assert_eq!(r.ready(&up.book), 1);
+        assert_eq!(r.svc.usage(&up.book).await.unwrap().hour_used, 1);
+        // a failing chapter listed three times: one try plus one retry, not three
+        let r = rig_with(Arc::new(book(4, 400)), Box::new(|_, _| garbage()));
+        let up = r.upload().await;
+        r.open(&up.book, vec![2, 2, 2]).await;
+        assert_eq!(r.engine.n(), 2);
+        assert!(!r.state(&up.book).chapters[2].retryable);
+        // the job loop itself repeats nothing even when handed duplicates
+        let r = rig_with(Arc::new(book(4, 400)), Box::new(|_, _| garbage()));
+        let up = r.upload().await;
+        raw_job(&r, &up.book, vec![2, 2, 2], 0).await;
+        assert_eq!(r.engine.n(), 2, "the repeats see a spent chapter and pass");
+    }
+
+    #[tokio::test]
+    async fn skipped_chapters_are_rejected_and_never_called() {
+        let r = rig(book(3, 400));
+        let up = r.upload().await;
+        r.stores
+            .textbooks
+            .append_event(
+                &up.book,
+                &TextbookEvent::ChapterSkipped {
+                    ts: 1,
+                    chapter: 1,
+                    reason: "too_short".into(),
+                },
+            )
+            .unwrap();
+        let e = r.svc.import(&up.book, Some(vec![1]), r.guard()).await;
+        assert!(matches!(e, Err(TextbookError::Invalid(_))), "{e:?}");
+        raw_job(&r, &up.book, vec![1, 1], 0).await;
+        assert_eq!(r.engine.n(), 0, "the job loop passes a skipped chapter");
+        // and a book-wide import does not pick it up
+        let job = r.import_all(&up.book).await;
+        assert_eq!(r.engine.n(), 2, "chapters 0 and 2 only");
+        assert!(job.result.unwrap()["error"].is_null());
+    }
+
+    #[tokio::test]
+    async fn one_job_cannot_exceed_its_call_cap() {
+        let r = rig(book(3, 400));
+        let up = r.upload().await;
+        let job = raw_job(&r, &up.book, vec![0], MAX_JOB_CALLS - 1).await;
+        assert_eq!(
+            r.engine.n(),
+            0,
+            "a chapter that might not fit is not started"
+        );
+        assert_eq!(job.result.unwrap()["stopped"], "call_cap");
         assert_eq!(r.ready(&up.book), 0);
     }
 
