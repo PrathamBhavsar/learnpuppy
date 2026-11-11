@@ -9,6 +9,8 @@ export type MockBook = {
   job: Dto["JobItemDto"] | null
   /** A test can freeze the import where it is. */
   paused?: boolean
+  /** Wall-clock time of the last import step; steps are paced so progress is visible. */
+  tickAt?: number
   /** Items by chapter index; `answer` and `why` stay here and only leave through feedback. */
   items: Map<number, MockItem[]>
   checks: Map<string, { chapter: number; answered: Set<string> }>

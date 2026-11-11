@@ -16,6 +16,8 @@ import { apiError, latency, notFound } from "../respond"
 type Dto = components["schemas"]
 
 const API = "*/api/v1/workspaces/:ws"
+/** One chapter per this long, so a person (and a test) can see the bar move. */
+const STEP_MS = 600
 const MAX_BYTES = 50 * 1024 * 1024
 
 const booksOf = (ws: unknown): MockBook[] => {
@@ -31,6 +33,9 @@ const find = (ws: unknown, id: unknown) =>
 function advance(ws: string, b: MockBook) {
   const job = b.job
   if (job?.status !== "running" || b.paused) return
+  const now = Date.now()
+  if (b.tickAt !== undefined && now - b.tickAt < STEP_MS) return
+  b.tickAt = now
   const next = b.book.chapters.find((c) => c.state === "importing")
   if (next) {
     Object.assign(
