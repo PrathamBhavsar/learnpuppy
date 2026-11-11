@@ -808,7 +808,7 @@ impl<E: LlmEngine + 'static> TextbookService<E> {
                 }
                 return Err(TextbookError::Conflict(conflict::ALREADY_ANSWERED.into()));
             }
-            let (correct, close) = grade(it, &text);
+            let (correct, close) = grade_answer(it, &text);
             // A typed answer that is not an exact hit waits for the learner's own grade.
             let rating = (it.kind == ItemKind::Mcq || correct)
                 .then(|| lp_core::course::rating_for(correct, confidence));
@@ -879,6 +879,16 @@ impl<E: LlmEngine + 'static> TextbookService<E> {
         })
         .await
     }
+}
+
+/// `(correct, close)` for a textbook answer: a recall answer that names every `must_name` term is
+/// correct (code, no model); otherwise the exact or close match on the stored answer.
+fn grade_answer(it: &lp_core::course::Item, text: &str) -> (bool, bool) {
+    use lp_core::method::recall::{rubric_check, RubricResult};
+    if it.kind == ItemKind::Recall && rubric_check(it, text) == RubricResult::Match {
+        return (true, false);
+    }
+    grade(it, text)
 }
 
 fn feedback<E>(
@@ -2030,29 +2040,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn chapter_with_no_cards_is_failed_not_stuck() {
-        // every recall item has the same answer: no card can get three distinct distractors
-        let reply: Reply = Box::new(|_, p| {
-            let (a, b) = range_of(p);
-            let objs: Vec<Value> = (1..=4)
-                .map(|i| {
-                    json!({"text":format!("Know thing {i}"),"start_page":a,"end_page":b,
-                    "items":[{"type":"recall","q":format!("Name thing {i}"),"answer":"same",
-                              "accept":[],"why":"w","must_name":[]}]})
-                })
-                .collect();
-            Ok(json!({ "objectives": objs }).to_string())
-        });
-        let r = rig_with(Arc::new(book(3, 400)), reply);
-        let (book, _) = r.imported().await;
-        let st = r.state(&book);
-        assert!(st.chapters.iter().all(|c| c.state == ChapterState::Failed));
-        assert_eq!(st.chapters[0].error.as_deref(), Some("no_cards"));
-        assert!(pending_chapters(&st).is_empty(), "not retryable, not stuck");
-        assert_eq!(r.card_count(), 0);
-    }
-
-    #[tokio::test]
     async fn toc_under_two_chapters_falls_back_to_chunks() {
         let mut pdf = book(45, 100);
         pdf.outline.clear();
@@ -2553,12 +2540,40 @@ mod tests {
             q: "q".into(),
             ..Default::default()
         };
-        assert!(card_for("c:x:r", &recall, &["a", "b"]).is_none());
-        assert!(
-            card_for("c:x:r", &recall, &["a", "A", "b"]).is_none(),
-            "distinct only"
+        // A recall item is a typed card even with too few distractors, and carries its rubric.
+        let rubric = lp_core::course::Item {
+            must_name: vec!["alpha".into()],
+            ..recall.clone()
+        };
+        let c = card_for("c:x:r", &rubric, &[]).unwrap();
+        assert_eq!(c.kind, lp_core::ports::CardKind::Recall);
+        assert_eq!(c.must_name, vec!["alpha".to_string()]);
+        assert_eq!(
+            card_for("c:x:i1", &item, &[]).unwrap().kind,
+            lp_core::ports::CardKind::Mcq
         );
-        assert!(card_for("c:x:r", &recall, &["a", "b", "c"]).is_some());
+    }
+
+    #[test]
+    fn recall_is_graded_by_the_must_name_rubric() {
+        let it = lp_core::course::Item {
+            kind: ItemKind::Recall,
+            answer: "the powerhouse of the cell".into(),
+            must_name: vec!["mitochondria".into()],
+            ..Default::default()
+        };
+        assert_eq!(grade_answer(&it, "It is the Mitochondria!"), (true, false));
+        assert_eq!(grade_answer(&it, "the nucleus"), (false, false));
+        // No rubric: only the exact answer passes; a rubric miss never turns right.
+        let bare = lp_core::course::Item {
+            must_name: vec![],
+            ..it.clone()
+        };
+        assert_eq!(grade_answer(&bare, "mitochondria"), (false, false));
+        assert_eq!(
+            grade_answer(&bare, "the powerhouse of the cell"),
+            (true, false)
+        );
     }
 
     #[tokio::test]

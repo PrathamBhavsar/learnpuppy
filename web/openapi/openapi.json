@@ -245,10 +245,18 @@
       },
       "AnswerDto": {
         "properties": {
+          "answer": {
+            "description": "The expected answer, set for a `recall` card.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "correct": {
             "type": "boolean"
           },
           "correctKey": {
+            "description": "Empty for a `recall` card.",
             "type": "string"
           },
           "explanation": {
@@ -280,6 +288,13 @@
           "preview"
         ],
         "type": "object"
+      },
+      "AnswerMode": {
+        "enum": [
+          "mcq",
+          "recall"
+        ],
+        "type": "string"
       },
       "AnswerRecapDto": {
         "description": "A question the learner already answered, kept in the transcript so the prompt does not vanish\nafter the verdict: what was asked, what they picked, what was right (docs/web/06 §Learn).",
@@ -344,8 +359,11 @@
       "AnswerRequest": {
         "properties": {
           "choiceKey": {
-            "description": "`a`..`d`.",
-            "type": "string"
+            "description": "`a`..`d`. Required for an `mcq` card.",
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "clientId": {
             "type": "string"
@@ -366,10 +384,16 @@
               "integer",
               "null"
             ]
+          },
+          "text": {
+            "description": "The typed answer. Required for a `recall` card; graded by code.",
+            "type": [
+              "string",
+              "null"
+            ]
           }
         },
         "required": [
-          "choiceKey",
           "clientId"
         ],
         "type": "object"
@@ -744,6 +768,9 @@
           },
           {
             "properties": {
+              "answerMode": {
+                "$ref": "#/components/schemas/AnswerMode"
+              },
               "correctKey": {
                 "type": "string"
               },
@@ -779,6 +806,7 @@
             },
             "required": [
               "options",
+              "answerMode",
               "correctKey",
               "rationale",
               "stability",
@@ -4732,6 +4760,10 @@
       "QueueCardDto": {
         "description": "A due card to answer. The correct option and rationale are withheld until `answer`.",
         "properties": {
+          "answerMode": {
+            "$ref": "#/components/schemas/AnswerMode",
+            "description": "`mcq` (pick a choice) or `recall` (type the answer; send `text`)."
+          },
           "due": {
             "format": "int64",
             "type": "integer"
@@ -4747,6 +4779,7 @@
             "type": "string"
           },
           "options": {
+            "description": "Empty for a `recall` card.",
             "items": {
               "$ref": "#/components/schemas/ChoiceDto"
             },
@@ -4766,6 +4799,7 @@
           "id",
           "front",
           "options",
+          "answerMode",
           "kind",
           "due",
           "state"

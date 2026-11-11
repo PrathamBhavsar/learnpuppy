@@ -1,12 +1,28 @@
 //! FSRS review wire types (docs/web/03 §Review).
 
 use lp_core::fsrs::{Rating, State};
-use lp_core::ports::{FlashCard, FsrsReviewLog};
+use lp_core::ports::{CardKind, FlashCard, FsrsReviewLog};
 use lp_service::review;
 use serde::{Deserialize, Serialize};
 use utoipa::{IntoParams, ToSchema};
 
 const MS_DAY: f64 = 86_400_000.0;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum AnswerMode {
+    Mcq,
+    Recall,
+}
+
+impl AnswerMode {
+    pub fn of(c: &FlashCard) -> Self {
+        match c.kind {
+            CardKind::Mcq => Self::Mcq,
+            CardKind::Recall => Self::Recall,
+        }
+    }
+}
 
 /// An answer choice. `key` is `a`..`d` and is what `answer` takes.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
@@ -15,7 +31,11 @@ pub struct ChoiceDto {
     pub text: String,
 }
 
+/// Recall cards are typed, so they have no choices.
 fn choices(c: &FlashCard) -> Vec<ChoiceDto> {
+    if c.kind == CardKind::Recall {
+        return Vec::new();
+    }
     c.options
         .iter()
         .enumerate()
@@ -88,7 +108,10 @@ impl CardBriefDto {
 pub struct QueueCardDto {
     pub id: String,
     pub front: String,
+    /// Empty for a `recall` card.
     pub options: Vec<ChoiceDto>,
+    /// `mcq` (pick a choice) or `recall` (type the answer; send `text`).
+    pub answer_mode: AnswerMode,
     /// `decision` for cards made from an ingested decision, else `card`.
     pub kind: String,
     pub source_decision_id: Option<String>,
@@ -102,6 +125,7 @@ impl QueueCardDto {
             id: c.id.to_string(),
             front: c.front.clone(),
             options: choices(c),
+            answer_mode: AnswerMode::of(c),
             kind: if decision.is_some() {
                 "decision"
             } else {
@@ -175,8 +199,12 @@ pub struct PreviewListDto {
 #[derive(Clone, Debug, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct AnswerRequest {
-    /// `a`..`d`.
-    pub choice_key: String,
+    /// `a`..`d`. Required for an `mcq` card.
+    #[serde(default)]
+    pub choice_key: Option<String>,
+    /// The typed answer. Required for a `recall` card; graded by code.
+    #[serde(default)]
+    pub text: Option<String>,
     pub client_id: String,
     /// 1..=5.
     pub confidence: Option<u8>,
@@ -195,7 +223,10 @@ pub struct NextDto {
 #[serde(rename_all = "camelCase")]
 pub struct AnswerDto {
     pub correct: bool,
+    /// Empty for a `recall` card.
     pub correct_key: String,
+    /// The expected answer, set for a `recall` card.
+    pub answer: Option<String>,
     pub explanation: String,
     /// The grade the server suggests (1..=4).
     pub rating: u8,
@@ -205,13 +236,30 @@ pub struct AnswerDto {
 }
 
 impl AnswerDto {
-    pub fn new(c: &FlashCard, picked: usize, req: &AnswerRequest, now: i64) -> Self {
-        let correct = picked == usize::from(c.correct_index);
+    /// `picked` is the chosen option for an `mcq` card; `text` the typed answer for a `recall` one.
+    pub fn new(
+        c: &FlashCard,
+        picked: Option<usize>,
+        text: Option<&str>,
+        req: &AnswerRequest,
+        now: i64,
+    ) -> Self {
+        let recall = c.kind == CardKind::Recall;
+        let correct = if recall {
+            review::grade_recall(c, text.unwrap_or_default())
+        } else {
+            picked == Some(usize::from(c.correct_index))
+        };
         let rating = review::suggest_rating(correct, req.latency_ms, req.confidence);
         let after = lp_core::fsrs::review(&c.card, now, rating);
         Self {
             correct,
-            correct_key: review::option_key(usize::from(c.correct_index)).to_string(),
+            correct_key: if recall {
+                String::new()
+            } else {
+                review::option_key(usize::from(c.correct_index)).to_string()
+            },
+            answer: recall.then(|| c.options[usize::from(c.correct_index)].clone()),
             explanation: c.rationale.clone(),
             rating: rating as u8,
             next: NextDto {
@@ -316,6 +364,7 @@ pub struct CardDetailDto {
     #[serde(flatten)]
     pub card: CardBriefDto,
     pub options: Vec<ChoiceDto>,
+    pub answer_mode: AnswerMode,
     pub correct_key: String,
     pub rationale: String,
     pub stability: f64,
@@ -334,6 +383,7 @@ impl CardDetailDto {
         Self {
             card: CardBriefDto::new(c, decision, now),
             options: choices(c),
+            answer_mode: AnswerMode::of(c),
             correct_key: review::option_key(usize::from(c.correct_index)).to_string(),
             rationale: c.rationale.clone(),
             stability: c.card.stability,
@@ -362,6 +412,8 @@ mod tests {
             options: ["w".into(), "x".into(), "RIGHT".into(), "z".into()],
             correct_index: 2,
             rationale: "because it is".into(),
+            kind: Default::default(),
+            must_name: Vec::new(),
             card: Card::new(10),
         }
     }
@@ -381,24 +433,53 @@ mod tests {
     #[test]
     fn answer_marks_correctness_and_suggests_a_grade() {
         let req = |key: &str, ms| AnswerRequest {
-            choice_key: key.into(),
+            choice_key: Some(key.into()),
+            text: None,
             client_id: "u".into(),
             confidence: None,
             latency_ms: Some(ms),
         };
         let now = 1_000_000;
-        let ok = AnswerDto::new(&card(), 2, &req("c", 2_000), now);
+        let ok = AnswerDto::new(&card(), Some(2), None, &req("c", 2_000), now);
         assert!(ok.correct);
         assert_eq!((ok.correct_key.as_str(), ok.rating), ("c", 4));
         assert_eq!(ok.explanation, "because it is");
         assert_eq!(ok.preview.len(), 4);
         assert_eq!(ok.preview[0].label, "again");
-        let miss = AnswerDto::new(&card(), 0, &req("a", 2_000), now);
+        let miss = AnswerDto::new(&card(), Some(0), None, &req("a", 2_000), now);
         assert!(!miss.correct);
         assert_eq!(miss.rating, 1);
         assert!(miss.next.due < ok.next.due);
         let j = serde_json::to_value(&ok).unwrap();
         assert!(j["next"]["intervalDays"].is_number());
+    }
+
+    #[test]
+    fn recall_card_is_typed_and_graded_by_rubric_in_code() {
+        let mut c = card();
+        c.kind = CardKind::Recall;
+        c.must_name = vec!["mitochondria".into()];
+        let q = QueueCardDto::new(&c, None);
+        assert_eq!(q.answer_mode, AnswerMode::Recall);
+        assert!(q.options.is_empty());
+        let req = AnswerRequest {
+            choice_key: None,
+            text: Some("it is the mitochondria".into()),
+            client_id: "u".into(),
+            confidence: None,
+            latency_ms: None,
+        };
+        let ok = AnswerDto::new(&c, None, req.text.as_deref(), &req, 1_000);
+        assert!(ok.correct);
+        assert_eq!(ok.answer.as_deref(), Some("RIGHT"));
+        let miss = AnswerDto::new(&c, None, Some("the nucleus"), &req, 1_000);
+        assert!(!miss.correct);
+        assert_eq!(miss.rating, 1);
+        // An old card (no kind) still answers as multiple choice.
+        assert_eq!(
+            QueueCardDto::new(&card(), None).answer_mode,
+            AnswerMode::Mcq
+        );
     }
 
     #[test]

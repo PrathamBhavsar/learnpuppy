@@ -301,6 +301,8 @@ fn tracker_tables_round_trip() {
         options: ["a".into(), "b".into(), "c".into(), "d".into()],
         correct_index: 2,
         rationale: "r".into(),
+        kind: Default::default(),
+        must_name: Vec::new(),
         card: Card::new(10),
     };
     s.upsert_card(&card).unwrap();
@@ -380,6 +382,8 @@ fn fcard(id: &str) -> FlashCard {
         options: ["a".into(), "b".into(), "c".into(), "d".into()],
         correct_index: 0,
         rationale: String::new(),
+        kind: Default::default(),
+        must_name: Vec::new(),
         card: Card::new(0),
     }
 }
