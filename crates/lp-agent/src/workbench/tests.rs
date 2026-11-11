@@ -668,3 +668,41 @@ async fn each_job_kind_consumes_only_its_own_roles_engine() {
         assert!(job.result.unwrap().get("error").is_none());
     }
 }
+
+#[tokio::test]
+async fn workbench_recover_skips_textbook_jobs() {
+    let rig = Rig::new();
+    let rec = |id: &str, status, delivery| JobRecord {
+        id: id.into(),
+        chat_id: "".into(),
+        kind: JobKind::Textbook,
+        status,
+        delivery,
+        created_at: 0,
+        result: Some(json!({ "title": "Import" })),
+        usage: vec![],
+    };
+    rig.jobs
+        .create_job(&rec(
+            "tbj_running",
+            JobStatus::Running,
+            DeliveryStatus::Claimed,
+        ))
+        .unwrap();
+    rig.jobs
+        .create_job(&rec("tbj_done", JobStatus::Done, DeliveryStatus::Claimed))
+        .unwrap();
+    assert_eq!(rig.wb.recover().unwrap(), 0);
+    let (all, _) = rig.jobs.all_report().unwrap();
+    let get = |id: &str| all.iter().find(|j| j.id == id).unwrap().clone();
+    assert_eq!(get("tbj_running").status, JobStatus::Running);
+    assert_eq!(get("tbj_running").delivery, DeliveryStatus::Claimed);
+    assert_eq!(get("tbj_done").delivery, DeliveryStatus::Claimed);
+    assert_eq!(
+        get("tbj_running").result,
+        Some(json!({ "title": "Import" }))
+    );
+    // Nothing waits for a wake either.
+    let mut s = teach();
+    assert!(!rig.wb.deliver(&mut s).unwrap());
+}

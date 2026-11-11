@@ -20,6 +20,7 @@ pub fn kind_name(k: JobKind) -> &'static str {
         JobKind::Pdf => "pdf",
         JobKind::Visual => "visual",
         JobKind::Demo => "demo",
+        JobKind::Textbook => "textbook",
     }
 }
 
@@ -54,6 +55,7 @@ pub fn title_of(kind: JobKind, args: &Value) -> String {
     let key = match kind {
         JobKind::Research | JobKind::Pdf => "question",
         JobKind::Visual | JobKind::Demo => "description",
+        JobKind::Textbook => "title",
     };
     let brief = args
         .get(key)
