@@ -439,7 +439,8 @@ fn raw_dir_from_env() -> Option<PathBuf> {
 }
 
 /// agy reads NDJSON messages from stdin only with a stream-json output.
-const AGY_STREAM: [&str; 5] = [
+const AGY_STREAM: [&str; 6] = [
+    "--disable-slash-commands",
     "--input-format",
     "stream-json",
     "--output-format",
@@ -449,7 +450,12 @@ const AGY_STREAM: [&str; 5] = [
 
 /// Claude: ignore the user's `~/.claude` instructions, output style and settings (issue #413); only
 /// project and local scope (the empty sandbox) load. Auth lives outside the settings sources.
-const CLAUDE_ISOLATION: [&str; 2] = ["--setting-sources", "project,local"];
+/// `--disable-slash-commands` (confirmed in `claude --help`) drops skills and commands from the prompt.
+const CLAUDE_ISOLATION: [&str; 3] = [
+    "--setting-sources",
+    "project,local",
+    "--disable-slash-commands",
+];
 
 /// Codex: no user config (MCP servers, notify hooks, project trust), no session files.
 ///
@@ -457,8 +463,14 @@ const CLAUDE_ISOLATION: [&str; 2] = ["--setting-sources", "project,local"];
 /// turn ran `ls ~/.ssh`). Codex has no flag to narrow reads and a private `HOME` hangs its auth, so
 /// this is a documented residual (docs/web/12-cli-isolation-and-failures.md); agy has the same class
 /// of exposure behind `--sandbox`. kiro and opencode are tool-less, so they read nothing.
-const CODEX_BASE: [&str; 8] = [
+/// `--disable plugins` and `--disable multi_agent` are real features in `codex features list`; the
+/// web_search and skills toggles are not listed there, so they are skipped.
+const CODEX_BASE: [&str; 12] = [
     "exec",
+    "--disable",
+    "plugins",
+    "--disable",
+    "multi_agent",
     "--json",
     "--skip-git-repo-check",
     "--ignore-user-config",
@@ -1281,6 +1293,83 @@ mod tests {
         (dir, e)
     }
 
+    fn argv_for(kind: CliKind, model: Option<&str>) -> Vec<String> {
+        let e = SubprocessEngine::new(kind).unwrap();
+        let req = TurnRequest {
+            system: None,
+            prompt: "p".into(),
+            model: model.map(String::from),
+            effort: None,
+            tools: vec![],
+        };
+        e.turn_args(&req).unwrap().0
+    }
+
+    #[test]
+    fn claude_argv_snapshot() {
+        assert_eq!(
+            argv_for(CliKind::Claude, Some("m")),
+            [
+                "-p",
+                "--output-format",
+                "stream-json",
+                "--verbose",
+                "--strict-mcp-config",
+                "--tools",
+                "",
+                "--setting-sources",
+                "project,local",
+                "--disable-slash-commands",
+                "--model",
+                "m"
+            ]
+        );
+    }
+
+    #[test]
+    fn codex_argv_snapshot() {
+        let a = argv_for(CliKind::Codex, Some("m"));
+        let sandbox = a[a.iter().position(|x| x == "-C").unwrap() + 1].clone();
+        assert_eq!(
+            a,
+            [
+                "exec",
+                "--disable",
+                "plugins",
+                "--disable",
+                "multi_agent",
+                "--json",
+                "--skip-git-repo-check",
+                "--ignore-user-config",
+                "--ephemeral",
+                "-s",
+                "read-only",
+                "-C",
+                &sandbox,
+                "-m",
+                "m",
+                "-"
+            ]
+        );
+    }
+
+    #[test]
+    fn agy_argv_snapshot() {
+        assert_eq!(
+            argv_for(CliKind::Agy, Some("m")),
+            [
+                "--disable-slash-commands",
+                "--input-format",
+                "stream-json",
+                "--output-format",
+                "stream-json",
+                "--sandbox",
+                "--model",
+                "m"
+            ]
+        );
+    }
+
     fn pid_alive(pid: &str) -> bool {
         std::process::Command::new("kill")
             .args(["-0", pid])
@@ -1464,7 +1553,7 @@ esac"#;
             )
             .await
             .unwrap();
-        assert!(resp.text.contains("argc=5 "), "{}", resp.text);
+        assert!(resp.text.contains("argc=6 "), "{}", resp.text);
         assert!(resp.text.contains("shape=yes end=yes"), "{}", resp.text);
         assert!(!resp.text.contains("help you"), "{}", resp.text);
         let bytes: usize = resp.text.split("bytes=").nth(1).unwrap()[..7]
