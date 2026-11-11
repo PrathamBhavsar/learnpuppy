@@ -176,9 +176,13 @@ export const textbookHandlers = [
     const body: Dto["ReadingCheckDto"] = {
       checkId,
       chapter: n,
-      items: (b.items.get(n) ?? []).map(
-        ({ answer: _a, why: _w, ...item }) => item
-      ),
+      items: (b.items.get(n) ?? []).map((i) => ({
+        id: i.id,
+        objectiveId: i.objectiveId,
+        kind: i.kind,
+        q: i.q,
+        options: i.options,
+      })),
     }
     return HttpResponse.json(body)
   }),

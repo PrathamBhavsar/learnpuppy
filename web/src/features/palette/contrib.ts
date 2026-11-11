@@ -6,6 +6,7 @@ import {
   MonitorIcon,
   MoonIcon,
   PlayIcon,
+  UploadIcon,
   RefreshCwIcon,
   SettingsIcon,
   SunIcon,
@@ -150,6 +151,14 @@ export function usePaletteCommands(currentPath: string): void {
         keywords: ["cards", "due", "spaced repetition"],
         icon: LayersIcon,
         run: () => goto(`/w/${ws}/review`),
+      },
+      {
+        id: "action-upload-textbook",
+        group: "Actions",
+        label: "Upload a textbook",
+        keywords: ["pdf", "book", "chapter", "reading check", "textbooks"],
+        icon: UploadIcon,
+        run: () => goto(`/w/${ws}/textbook?upload=1`),
       },
       {
         id: "action-relayout",
