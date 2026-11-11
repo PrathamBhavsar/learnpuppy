@@ -15,7 +15,7 @@ use std::collections::{HashMap, HashSet};
 
 use serde::{Deserialize, Serialize};
 
-use crate::course::{ClaimVerdict, Course, CourseEvent, Lesson, LessonKind};
+use crate::course::{ClaimVerdict, Course, CourseEvent, ItemKind, Lesson, LessonKind};
 use mastery::{fact_key, FactKey, FactStatus, MasteryState};
 
 /// Starting values from the plan (`brain/learning-method/architecture.md` section 6); every
@@ -175,7 +175,10 @@ pub enum Action {
 pub struct RunnerState {
     pub predicted: HashSet<String>,
     pub notes_written: HashSet<String>,
+    /// Lessons whose Feynman gate is over: a correct pass, or `FEYNMAN_MAX_TRIES` tries used.
     pub feynman_done: HashSet<String>,
+    /// Lessons that used every Feynman try without a correct pass; advanced anyway, miss kept.
+    pub feynman_missed: HashSet<String>,
     pub break_offered: HashSet<String>,
     /// The rung index that was current the last time this lesson's explanation (or rung) was
     /// shown; `None` if never shown. A mismatch with the current rung means re-explain (F16).
@@ -190,6 +193,9 @@ pub struct RunnerState {
     /// Count of resolved quiz turns across the whole course, for F17's every-Nth check.
     pub quiz_count: u32,
 }
+
+/// The Feynman gate lets a learner try this many times, then advances and records the miss.
+pub const FEYNMAN_MAX_TRIES: u32 = 2;
 
 fn advance_rung(progress: usize, correct: bool, len: usize) -> usize {
     if len == 0 {
@@ -226,6 +232,7 @@ pub fn fold_runner(course: &Course, events: &[CourseEvent]) -> RunnerState {
     }
 
     let mut st = RunnerState::default();
+    let mut feynman_tries: HashMap<&str, u32> = HashMap::new();
     let record_outcome = |item: &str, correct: bool, gap: bool, st: &mut RunnerState| {
         st.quiz_count += 1;
         let Some(m) = meta.get(item) else { return };
@@ -254,8 +261,18 @@ pub fn fold_runner(course: &Course, events: &[CourseEvent]) -> RunnerState {
             CourseEvent::NoteWritten { lesson, .. } => {
                 st.notes_written.insert(lesson.clone());
             }
-            CourseEvent::FeynmanGraded { lesson, .. } => {
-                st.feynman_done.insert(lesson.clone());
+            CourseEvent::FeynmanGraded {
+                lesson, correct, ..
+            } => {
+                let tries = feynman_tries.entry(lesson.as_str()).or_default();
+                *tries += 1;
+                if *correct {
+                    st.feynman_done.insert(lesson.clone());
+                    st.feynman_missed.remove(lesson);
+                } else if *tries >= FEYNMAN_MAX_TRIES && !st.feynman_done.contains(lesson) {
+                    st.feynman_done.insert(lesson.clone());
+                    st.feynman_missed.insert(lesson.clone());
+                }
             }
             CourseEvent::BreakOffered { lesson, .. } => {
                 st.break_offered.insert(lesson.clone());
@@ -286,6 +303,25 @@ pub fn fold_runner(course: &Course, events: &[CourseEvent]) -> RunnerState {
     st
 }
 
+/// Does `lesson` author a `Recall` item for this fact?
+fn has_recall_item(lesson: &Lesson, fact: usize) -> bool {
+    lesson
+        .items
+        .iter()
+        .any(|it| it.kind == ItemKind::Recall && it.tests == Some(fact))
+}
+
+/// A fact clears the mastery bar when it is `Confirmed` or `Parked`, or when it is `McPassed`
+/// and there is no `Recall` item that could confirm it (nothing more to ask). Otherwise it
+/// still needs a recall, served after a recap.
+fn fact_passed(lesson: &Lesson, mastery: &MasteryState, fact: usize) -> bool {
+    match mastery.status(&lesson.id, fact) {
+        FactStatus::Confirmed | FactStatus::Parked => true,
+        FactStatus::McPassed => !has_recall_item(lesson, fact),
+        FactStatus::Open | FactStatus::Taught => false,
+    }
+}
+
 fn mastery_bar_gate(
     course: &Course,
     lesson_id: &str,
@@ -298,12 +334,7 @@ fn mastery_bar_gate(
         .key_facts
         .iter()
         .enumerate()
-        .filter(|(i, _)| {
-            !matches!(
-                mastery.status(lesson_id, *i),
-                FactStatus::McPassed | FactStatus::Confirmed | FactStatus::Parked
-            )
-        })
+        .filter(|(i, _)| !fact_passed(lesson, mastery, *i))
         .map(|(_, f)| f.clone())
         .collect();
     if open.is_empty() {
@@ -463,18 +494,33 @@ pub fn next_step(
             };
         }
 
-        // Quiz phase: the first non-passed, non-parked fact drives item selection.
-        let Some(fact_idx) = (0..lesson.key_facts.len()).find(|&i| {
-            !matches!(
-                mastery.status(lid, i),
-                FactStatus::McPassed | FactStatus::Confirmed | FactStatus::Parked
-            )
-        }) else {
+        // Quiz phase: the first fact still needing a multiple choice drives item selection; once
+        // every fact has one, the first fact still needing its recall does.
+        let fact_idx = (0..lesson.key_facts.len())
+            .find(|&i| {
+                matches!(
+                    mastery.status(lid, i),
+                    FactStatus::Open | FactStatus::Taught
+                )
+            })
+            .or_else(|| (0..lesson.key_facts.len()).find(|&i| !fact_passed(lesson, mastery, i)));
+        let Some(fact_idx) = fact_idx else {
             // The mastery bar disagreed (shouldn't happen since it was just checked above);
             // move on rather than getting stuck.
             continue;
         };
         let fk = fact_key(lid, fact_idx);
+
+        // A multiple choice pass needs teaching between it and the recall (F14): show the
+        // lesson again before serving the `Recall` item.
+        if mastery.status(lid, fact_idx) == FactStatus::McPassed
+            && !mastery.recall_ready(lid, fact_idx)
+        {
+            return Step::Explain {
+                lesson: lid.clone(),
+                rung,
+            };
+        }
         let attempts = runner.fact_attempts.get(&fk).copied().unwrap_or(0);
 
         if attempts == 2 && !runner.break_offered.contains(lid) {
@@ -483,12 +529,22 @@ pub fn next_step(
             };
         }
 
-        let candidates: Vec<&crate::course::Item> = lesson
+        // An unpassed fact is asked as a multiple choice (recall cannot confirm before one), a
+        // McPassed fact as a recall. Fall back to any item testing the fact if none of that kind.
+        let want = if mastery.status(lid, fact_idx) == FactStatus::McPassed {
+            ItemKind::Recall
+        } else {
+            ItemKind::Mcq
+        };
+        let mut candidates: Vec<&crate::course::Item> = lesson
             .items
             .iter()
             .filter(|it| it.tests == Some(fact_idx))
             .filter(|it| !flagged.contains(it.id.as_str()) && !runner.parked.contains(&it.id))
             .collect();
+        if want == ItemKind::Recall || candidates.iter().any(|it| it.kind == want) {
+            candidates.retain(|it| it.kind == want);
+        }
         let Some(&item) = (match runner.fact_last_item.get(&fk) {
             Some(last) => candidates
                 .iter()
@@ -691,18 +747,259 @@ mod tests {
         );
     }
 
+    fn advance_l00(c: &Course, mastery: &MasteryState) -> Result<(), GateError> {
+        let action = Action::AdvanceLesson {
+            lesson: "l00".into(),
+        };
+        check_action(c, &[], mastery, &Settings::default(), &[], false, &action)
+    }
+
+    fn recall_item(id: &str, tests: usize) -> Item {
+        Item {
+            id: id.into(),
+            kind: ItemKind::Recall,
+            q: format!("{id}?"),
+            answer: "a".into(),
+            tests: Some(tests),
+            ..Item::default()
+        }
+    }
+
+    fn recall_graded(item: &str, correct: bool) -> CourseEvent {
+        CourseEvent::RecallGraded {
+            ts: 0,
+            item: item.into(),
+            correct,
+            source: "model".into(),
+        }
+    }
+
     #[test]
-    fn mc_passed_or_parked_facts_pass_the_gate() {
+    fn confirmed_or_parked_facts_pass_the_gate() {
         let c = course(1);
+        let mut mastery = MasteryState::default();
+        mastery
+            .facts
+            .insert(fact_key("l00", 0), FactStatus::Confirmed);
+        mastery.facts.insert(fact_key("l00", 1), FactStatus::Parked);
+        assert!(advance_l00(&c, &mastery).is_ok());
+    }
+
+    /// R1: McPassed is not enough when a Recall item could confirm the fact.
+    #[test]
+    fn mc_passed_with_a_recall_item_blocks_the_gate() {
+        let mut c = course(1);
+        c.lessons[0].items = vec![recall_item("l00-r0", 0)];
         let mut mastery = MasteryState::default();
         mastery
             .facts
             .insert(fact_key("l00", 0), FactStatus::McPassed);
         mastery.facts.insert(fact_key("l00", 1), FactStatus::Parked);
-        let action = Action::AdvanceLesson {
+        assert_eq!(
+            advance_l00(&c, &mastery).unwrap_err(),
+            GateError::MasteryBarOpen {
+                lesson: "l00".into(),
+                open_facts: vec!["f0".into()],
+            }
+        );
+        mastery
+            .facts
+            .insert(fact_key("l00", 0), FactStatus::Confirmed);
+        assert!(advance_l00(&c, &mastery).is_ok());
+    }
+
+    /// R1 compatibility: no Recall item authored means McPassed counts as passed.
+    #[test]
+    fn mc_passed_without_a_recall_item_passes_the_gate() {
+        let c = course(1);
+        let mut mastery = MasteryState::default();
+        mastery
+            .facts
+            .insert(fact_key("l00", 0), FactStatus::McPassed);
+        mastery
+            .facts
+            .insert(fact_key("l00", 1), FactStatus::McPassed);
+        assert!(advance_l00(&c, &mastery).is_ok());
+    }
+
+    /// R1: after the multiple choice passes, a recap is shown, then the Recall item is served,
+    /// and a right recall confirms the fact.
+    #[test]
+    fn mc_passed_fact_is_recapped_then_recalled_then_confirmed() {
+        let mut c = course(1);
+        c.plan_confirmed_at = Some(1);
+        c.lessons[0].key_facts = vec!["f0".into()];
+        c.lessons[0].items = vec![
+            mcq_item("l00-i0", 0, ["", "", "", ""]),
+            recall_item("l00-r0", 0),
+        ];
+        let settings = Settings::default();
+        let mut events = vec![
+            shown("l00"),
+            CourseEvent::NoteWritten {
+                ts: 0,
+                lesson: "l00".into(),
+                text: String::new(),
+            },
+            answer("l00-i0", true),
+        ];
+        let step_of = |ev: &[CourseEvent]| {
+            let m = mastery::fold_mastery(&c, ev);
+            next_step(&c, ev, &m, &settings, &[], false)
+        };
+        // Same turn as the MC: teaching comes first.
+        assert_eq!(
+            step_of(&events),
+            Step::Explain {
+                lesson: "l00".into(),
+                rung: None
+            }
+        );
+        events.push(shown("l00"));
+        assert_eq!(
+            step_of(&events),
+            Step::Ask {
+                item: "l00-r0".into(),
+                lesson: "l00".into(),
+                kind: AskKind::New,
+                angle: None
+            }
+        );
+        events.push(recall_graded("l00-r0", true));
+        let m = mastery::fold_mastery(&c, &events);
+        assert_eq!(m.status("l00", 0), FactStatus::Confirmed);
+    }
+
+    /// R1: a method_version = 1 course walked by an always-right learner ends with every fact
+    /// Confirmed (not stuck at McPassed) and then reaches Close.
+    #[test]
+    fn walk_reaches_confirmed_for_every_fact() {
+        let c = walk_course(3, 2);
+        let (events, mastery) = walk(&c, true);
+        for l in &c.lessons {
+            for i in 0..l.key_facts.len() {
+                assert_eq!(
+                    mastery.status(&l.id, i),
+                    FactStatus::Confirmed,
+                    "{}#{i}",
+                    l.id
+                );
+            }
+        }
+        assert!(events
+            .iter()
+            .any(|e| matches!(e, CourseEvent::RecallGraded { correct: true, .. })));
+    }
+
+    fn walk_course(n_lessons: usize, n_facts: usize) -> Course {
+        let lessons = (0..n_lessons)
+            .map(|li| {
+                let mut items = Vec::new();
+                for fi in 0..n_facts {
+                    items.push(mcq_item(&format!("l{li}-i{fi}"), fi, ["", "", "", ""]));
+                    items.push(recall_item(&format!("l{li}-r{fi}"), fi));
+                }
+                Lesson {
+                    id: format!("l{li}"),
+                    key_facts: (0..n_facts).map(|fi| format!("f{fi}")).collect(),
+                    depends_on: if li == 0 {
+                        vec![]
+                    } else {
+                        vec![format!("l{}", li - 1)]
+                    },
+                    items,
+                    ..Lesson::default()
+                }
+            })
+            .collect();
+        Course {
+            id: "c".into(),
+            method_version: 1,
+            plan_confirmed_at: Some(1),
+            lessons,
+            ..Course::default()
+        }
+    }
+
+    /// Drives `next_step` with an always-right learner until `Close`, panicking if it never gets
+    /// there. Returns the log and the final mastery.
+    fn walk(c: &Course, feynman_ok: bool) -> (Vec<CourseEvent>, MasteryState) {
+        let settings = Settings::default();
+        let mut events: Vec<CourseEvent> = Vec::new();
+        let budget = c.lessons.len() * c.lessons[0].key_facts.len() * 8 + 30;
+        for _ in 0..budget {
+            let mastery = mastery::fold_mastery(c, &events);
+            match next_step(c, &events, &mastery, &settings, &[], false) {
+                Step::Close => return (events, mastery),
+                Step::ConfirmPlan => unreachable!(),
+                Step::Predict { lesson } => events.push(CourseEvent::Predicted {
+                    ts: 0,
+                    lesson,
+                    guess: "x".into(),
+                }),
+                Step::Explain { lesson, .. } => events.push(shown(&lesson)),
+                Step::Notes { lesson } => events.push(CourseEvent::NoteWritten {
+                    ts: 0,
+                    lesson,
+                    text: String::new(),
+                }),
+                Step::Ask { item, lesson, .. } => {
+                    let kind = c
+                        .lessons
+                        .iter()
+                        .find(|l| l.id == lesson)
+                        .and_then(|l| l.items.iter().find(|i| i.id == item))
+                        .map(|i| i.kind);
+                    events.push(match kind {
+                        Some(ItemKind::Recall) => recall_graded(&item, true),
+                        _ => answer(&item, true),
+                    });
+                }
+                Step::Break { lesson } => events.push(CourseEvent::BreakOffered { ts: 0, lesson }),
+                Step::Feynman { lesson } => events.push(CourseEvent::FeynmanGraded {
+                    ts: 0,
+                    lesson,
+                    correct: feynman_ok,
+                    explanation: String::new(),
+                }),
+            }
+        }
+        panic!("walk did not reach Close");
+    }
+
+    /// R1: Feynman is gated on `correct`; two misses advance and record the miss.
+    #[test]
+    fn feynman_gate_needs_correct_or_two_tries() {
+        let mut c = course(1);
+        c.plan_confirmed_at = Some(1);
+        let mastery = MasteryState {
+            facts: [
+                (fact_key("l00", 0), FactStatus::Confirmed),
+                (fact_key("l00", 1), FactStatus::Confirmed),
+            ]
+            .into(),
+            ..MasteryState::default()
+        };
+        let fey = |correct: bool| CourseEvent::FeynmanGraded {
+            ts: 0,
+            lesson: "l00".into(),
+            correct,
+            explanation: "x".into(),
+        };
+        let step =
+            |ev: &[CourseEvent]| next_step(&c, ev, &mastery, &Settings::default(), &[], false);
+        let again = Step::Feynman {
             lesson: "l00".into(),
         };
-        assert!(check_action(&c, &[], &mastery, &Settings::default(), &[], false, &action).is_ok());
+        assert_eq!(step(&[fey(false)]), again);
+        assert_eq!(step(&[fey(false), fey(false)]), Step::Close);
+        assert_eq!(step(&[fey(true)]), Step::Close);
+        assert!(fold_runner(&c, &[fey(false), fey(false)])
+            .feynman_missed
+            .contains("l00"));
+        assert!(fold_runner(&c, &[fey(false), fey(true)])
+            .feynman_missed
+            .is_empty());
     }
 
     // ---------------------------------------------------------------- one table test per gate
@@ -994,7 +1291,8 @@ mod tests {
         };
         c.lessons[1].angles = vec![];
         let mastery_l00 = MasteryState {
-            facts: [(fact_key("l00", 0), FactStatus::McPassed)].into(),
+            facts: [(fact_key("l00", 0), FactStatus::Confirmed)].into(),
+            ..MasteryState::default()
         };
         let events = [
             shown("l00"),
@@ -1035,10 +1333,11 @@ mod tests {
         c.plan_confirmed_at = Some(1);
         let mastery = MasteryState {
             facts: [
-                (fact_key("l00", 0), FactStatus::McPassed),
-                (fact_key("l00", 1), FactStatus::McPassed),
+                (fact_key("l00", 0), FactStatus::Confirmed),
+                (fact_key("l00", 1), FactStatus::Confirmed),
             ]
             .into(),
+            ..MasteryState::default()
         };
         assert_eq!(
             next_step(&c, &[], &mastery, &Settings::default(), &[], false),
@@ -1226,7 +1525,12 @@ mod tests {
                 let id = format!("l{li}");
                 let deps = if li == 0 { vec![] } else { vec![format!("l{}", li - 1)] };
                 let items: Vec<Item> = (0..n_facts)
-                    .map(|fi| mcq_item(&format!("l{li}-i{fi}"), fi, ["", "", "", ""]))
+                    .flat_map(|fi| {
+                        [
+                            mcq_item(&format!("l{li}-i{fi}"), fi, ["", "", "", ""]),
+                            recall_item(&format!("l{li}-r{fi}"), fi),
+                        ]
+                    })
                     .collect();
                 lessons.push(Lesson {
                     id,
@@ -1256,7 +1560,11 @@ mod tests {
                     Step::Predict { lesson } => events.push(CourseEvent::Predicted { ts: 0, lesson, guess: "x".into() }),
                     Step::Explain { lesson, .. } => events.push(shown(&lesson)),
                     Step::Notes { lesson } => events.push(CourseEvent::NoteWritten { ts: 0, lesson, text: String::new() }),
-                    Step::Ask { item, .. } => events.push(answer(&item, true)),
+                    Step::Ask { item, .. } => events.push(if item.contains("-r") {
+                        recall_graded(&item, true)
+                    } else {
+                        answer(&item, true)
+                    }),
                     Step::Break { lesson } => events.push(CourseEvent::BreakOffered { ts: 0, lesson }),
                     Step::Feynman { lesson } => events.push(CourseEvent::FeynmanGraded { ts: 0, lesson, correct: true, explanation: String::new() }),
                 }

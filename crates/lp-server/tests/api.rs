@@ -1897,8 +1897,30 @@ async fn method_course_runs_from_plan_to_close_with_gated_steps() {
     assert_eq!(r.status, StatusCode::OK, "{}", r.text);
     assert_eq!(r.json(), json!({"status": "graded", "correct": true}));
 
-    // A single correct mcq already clears F14's mastery bar; the lesson is a goal lesson, so a
-    // Feynman pass is required before Close.
+    // A correct mcq only reaches mc-passed: the lesson is recapped, then its recall item is
+    // served, and only a right recall confirms the fact (R1).
+    let step = a.post_empty(&ws("/courses/mc1/step")).await.json();
+    assert_eq!(step["step"], "explain", "{step}");
+    assert_eq!(
+        a.post(&ws("/courses/mc1/explain-seen"), json!({"lesson": "l00"}))
+            .await
+            .status,
+        StatusCode::NO_CONTENT
+    );
+    let step = a.post_empty(&ws("/courses/mc1/step")).await.json();
+    assert_eq!(step["step"], "ask", "{step}");
+    assert_eq!(step["id"], "l00-i1");
+    assert_eq!(step["kind"], "recall");
+    let r = a
+        .post(
+            &ws("/courses/mc1/quiz-answer"),
+            json!({"item": "l00-i1", "lesson": "l00", "text": "the dog barks", "reasoning": "", "gap": false}),
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::OK, "{}", r.text);
+    assert_eq!(r.json(), json!({"status": "graded", "correct": true}));
+
+    // The lesson is a goal lesson, so a Feynman pass is required before Close.
     let step = a.post_empty(&ws("/courses/mc1/step")).await.json();
     assert_eq!(step["step"], "feynman", "{step}");
 
@@ -1907,7 +1929,7 @@ async fn method_course_runs_from_plan_to_close_with_gated_steps() {
     assert!(m.json()["countLine"]
         .as_str()
         .unwrap()
-        .contains("confirmed"));
+        .starts_with("1 of 1 confirmed"));
 
     a.state
         .faux()
