@@ -47,6 +47,15 @@ pub trait Pdf: Send + Sync {
             .take(last - first + 1)
             .collect())
     }
+    /// Text of pages `first..=last`, exactly `last - first + 1` strings: a blank (image-only)
+    /// page is an empty string, never an error. Used by textbook import.
+    fn page_texts(&self, path: &str, first: usize, last: usize) -> Result<Vec<String>, String> {
+        self.page_range(path, first, last)
+    }
+    /// The PDF outline as physical-page entries; empty when there is none.
+    fn outline(&self, _path: &str) -> Result<Vec<lp_core::textbook::OutlineEntry>, String> {
+        Ok(vec![])
+    }
 }
 
 pub const MAX_PDF_PAGES_PER_READ: usize = 10;

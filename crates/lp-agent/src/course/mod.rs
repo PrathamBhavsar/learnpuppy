@@ -22,6 +22,7 @@ use serde::Deserialize;
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 
+pub mod textbook;
 pub mod verify;
 
 const AUTHOR: &str = include_str!("prompts/author.md");
