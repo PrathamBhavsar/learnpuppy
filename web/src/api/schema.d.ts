@@ -1715,8 +1715,9 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Uploads a PDF book (U7). The server maps it into chapters in the background; the returned job
-         *     reports progress. The same bytes twice find the same book (`200`, `existing: true`).
+         * Uploads a PDF book (U7). The server maps it into chapters (the outline, or one cheap call
+         *     without one) and imports nothing: a chapter is imported when the learner opens it. The same
+         *     bytes twice find the same book (`200`, `existing: true`).
          */
         post: operations["post_workspaces_ws_sources_textbook"];
         delete?: never;
@@ -1840,8 +1841,9 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Starts an import of the chapters still pending (or the listed ones) as a background job. The
-         *     lifetime budget of 40 cheap calls per book applies; what does not fit stays queued.
+         * Starts an import of the listed chapters (or every chapter still pending) as a background job.
+         *     This is how a chapter gets imported: the learner opens it. Each chapter gets one try plus one
+         *     retry, and a book allows 8 chapter imports in a rolling hour; what does not fit stays pending.
          */
         post: operations["post_workspaces_ws_textbooks_book_import"];
         delete?: never;
@@ -2191,9 +2193,11 @@ export interface components {
         /** @enum {string} */
         ChapterKindDto: "chapter" | "front" | "back";
         ChapterRowDto: {
+            /** @description Importing it may start now: not imported yet, or failed with its retry unused. */
+            canImport: boolean;
             /** Format: int32 */
             endPage: number;
-            /** @description A short code (`parse`, `budget`, `no_cards`, `engine_unavailable`, …); never page text. */
+            /** @description A short code (`parse`, `timeout`, `no_cards`, `engine_unavailable`, …); never page text. */
             error?: string | null;
             /** Format: int32 */
             index: number;
@@ -2212,7 +2216,7 @@ export interface components {
             truncated: boolean;
         };
         /** @enum {string} */
-        ChapterStateDto: "pending" | "importing" | "ready" | "failed" | "skipped" | "queued";
+        ChapterStateDto: "pending" | "importing" | "ready" | "failed" | "skipped";
         /** @enum {string} */
         ChapterStatusDto: "not_read" | "checked" | "due";
         ChatDeltaData: {
@@ -3583,13 +3587,15 @@ export interface components {
         TextbookDto: {
             /** Format: int32 */
             autoCalls: number;
-            /**
-             * Format: int32
-             * @description Lifetime cheap-call cap per book.
-             */
-            callsCap: number;
             chapters: components["schemas"]["ChapterRowDto"][];
             fileName: string;
+            /** Format: int32 */
+            hourCap: number;
+            /**
+             * Format: int32
+             * @description Chapter imports in the last hour, and the most a book allows in any rolling hour.
+             */
+            hourUsed: number;
             id: string;
             /** @description The running import job. */
             jobId?: string | null;
@@ -3628,9 +3634,11 @@ export interface components {
             bookId: string;
             /** Format: int64 */
             bytes: number;
+            /**
+             * @description Always false after the upload returns: upload maps the book and starts no job. A chapter is
+             *     imported when the learner opens it (`POST …/import` with that chapter).
+             */
             existing: boolean;
-            /** @description The import job, `null` when the book was already stored and nothing is running. */
-            jobId?: string | null;
         };
         /** @description A PDF book, at most 50 MB. */
         TextbookUploadForm: {
@@ -3640,12 +3648,22 @@ export interface components {
         TextbookUsageDto: {
             /** Format: int32 */
             autoCalls: number;
-            /** Format: int32 */
-            callsCap: number;
             /** Format: int64 */
             cheapIn: number;
             /** Format: int64 */
             cheapOut: number;
+            /** Format: int32 */
+            hourCap: number;
+            /**
+             * Format: int32
+             * @description Chapter imports in the last hour, and the most a book allows in any rolling hour.
+             */
+            hourUsed: number;
+            /**
+             * Format: int64
+             * @description Epoch ms when the oldest counted import leaves the hour; set only while at the cap.
+             */
+            nextSlotAt?: number | null;
             /** Format: int32 */
             requestedCalls: number;
         };
@@ -8181,8 +8199,8 @@ export interface operations {
                     "application/json": components["schemas"]["TextbookUploadDto"];
                 };
             };
-            /** @description New book; the import job started */
-            202: {
+            /** @description New book, mapped into chapters; no import started */
+            201: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -8502,7 +8520,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
-            /** @description `details.reason` is `import_running`, `nothing_to_import` or `call_budget_used` */
+            /** @description `details.reason` is `import_running`, `nothing_to_import`, `import_rate_limited` or `chapter_retry_used` */
             409: {
                 headers: {
                     [name: string]: unknown;

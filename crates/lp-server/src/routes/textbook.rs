@@ -59,7 +59,10 @@ impl From<TextbookError> for ApiError {
                 let message = match code.as_str() {
                     conflict::IMPORT_RUNNING => "an import is already running for this book",
                     conflict::NOTHING_TO_IMPORT => "nothing is left to import",
-                    conflict::BUDGET_USED => "the call budget of this book is used up",
+                    conflict::RATE_LIMITED => {
+                        "this book allows 8 chapter imports per hour; try again later"
+                    }
+                    conflict::RETRY_USED => "this chapter already used its one retry",
                     conflict::CHAPTER_NOT_READY => "this chapter is not imported yet",
                     conflict::ALREADY_ANSWERED => "this question was already answered",
                     _ => "conflict",
@@ -168,15 +171,16 @@ pub async fn chapter(
     Ok(Json(svc.chapter(&book, n).await?.into()))
 }
 
-/// Starts an import of the chapters still pending (or the listed ones) as a background job. The
-/// lifetime budget of 40 cheap calls per book applies; what does not fit stays queued.
+/// Starts an import of the listed chapters (or every chapter still pending) as a background job.
+/// This is how a chapter gets imported: the learner opens it. Each chapter gets one try plus one
+/// retry, and a book allows 8 chapter imports in a rolling hour; what does not fit stays pending.
 #[utoipa::path(
     post, path = "/workspaces/{ws}/textbooks/{book}/import", tag = "textbooks",
     params(("ws" = String, Path), ("book" = String, Path)),
     request_body = ImportRequest,
     responses((status = 202, body = ImportStartedDto), (status = 400, body = ErrorEnvelope),
               (status = 404, body = ErrorEnvelope),
-              (status = 409, description = "`details.reason` is `import_running`, `nothing_to_import` or `call_budget_used`", body = ErrorEnvelope))
+              (status = 409, description = "`details.reason` is `import_running`, `nothing_to_import`, `import_rate_limited` or `chapter_retry_used`", body = ErrorEnvelope))
 )]
 pub async fn import(
     State(st): State<AppState>,

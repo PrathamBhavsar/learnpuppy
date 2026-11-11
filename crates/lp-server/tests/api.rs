@@ -2230,14 +2230,25 @@ impl Api {
         panic!("import of {book} did not finish");
     }
 
+    /// Uploads a book, then opens every chapter and waits for the import.
     async fn imported_book(&self, tag: &str) -> String {
         let r = self
             .upload_textbook("b.pdf", format!("%PDF-1.4 {tag}").as_bytes(), None)
             .await;
-        assert_eq!(r.status, StatusCode::ACCEPTED, "{}", r.text);
+        assert_eq!(r.status, StatusCode::CREATED, "{}", r.text);
         let book = r.json()["bookId"].as_str().unwrap().to_owned();
+        self.import_chapters(&book, json!({})).await;
         self.finished_book(&book).await;
         book
+    }
+
+    /// `POST …/import`; returns the job id.
+    async fn import_chapters(&self, book: &str, body: Value) -> String {
+        let r = self
+            .post(&ws(&format!("/textbooks/{book}/import")), body)
+            .await;
+        assert_eq!(r.status, StatusCode::ACCEPTED, "{}", r.text);
+        r.json()["jobId"].as_str().unwrap().to_owned()
     }
 }
 
@@ -2270,29 +2281,62 @@ fn assert_no_answer_keys(v: &Value) {
 }
 
 #[tokio::test]
-async fn textbook_upload_202_then_200_existing() {
+async fn textbook_upload_201_maps_only_then_200_existing() {
     let a = tb_api(3, 0);
     queue_chapters(&a, 3);
     let bytes = b"%PDF-1.4 one";
     let r = a.upload_textbook("My Book.pdf", bytes, None).await;
-    assert_eq!(r.status, StatusCode::ACCEPTED, "{}", r.text);
+    assert_eq!(r.status, StatusCode::CREATED, "{}", r.text);
     let j = r.json();
     let book = j["bookId"].as_str().unwrap().to_owned();
     assert!(book.starts_with("tb_") && book.len() == 19);
     assert_eq!(j["existing"], false);
-    assert!(j["jobId"].as_str().unwrap().starts_with("tbj_"));
+    assert!(j.get("jobId").is_none(), "upload starts no job: {j}");
     assert_eq!(j["bytes"], bytes.len());
-    let done = a.finished_book(&book).await;
-    assert_eq!(done["title"], "My Book");
-    assert_eq!(done["mapSource"], "outline");
-    assert_eq!(done["callsCap"], 40);
-    assert_eq!(done["autoCalls"], 3);
-    assert_eq!(done["chapters"].as_array().unwrap().len(), 3);
-    assert!(done["chapters"]
+    // mapped, nothing imported, no model call, no job
+    let mapped = a.get(&ws(&format!("/textbooks/{book}"))).await.json();
+    assert_eq!(mapped["title"], "My Book");
+    assert_eq!(mapped["mapSource"], "outline");
+    assert!(mapped["jobId"].is_null());
+    assert_eq!(
+        (mapped["hourUsed"].as_u64(), mapped["hourCap"].as_u64()),
+        (Some(0), Some(8))
+    );
+    assert_eq!(
+        (
+            mapped["autoCalls"].as_u64(),
+            mapped["requestedCalls"].as_u64()
+        ),
+        (Some(0), Some(0))
+    );
+    assert!(mapped.get("callsCap").is_none());
+    assert!(mapped["chapters"]
         .as_array()
         .unwrap()
         .iter()
-        .all(|c| c["state"] == "ready" && c["status"] == "not_read" && c["objectives"] == 5));
+        .all(|c| c["state"] == "pending" && c["canImport"] == true && c["objectives"] == 0));
+    assert!(
+        !a.get(&ws("/jobs")).await.json()["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|j| j["kind"] == "textbook"),
+        "no textbook job after upload"
+    );
+    // opening chapter 1 imports that chapter and no other
+    a.import_chapters(&book, json!({"chapters":[1]})).await;
+    let done = a.finished_book(&book).await;
+    let states: Vec<&str> = done["chapters"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|c| c["state"].as_str().unwrap())
+        .collect();
+    assert_eq!(states, ["pending", "ready", "pending"]);
+    assert_eq!(done["chapters"][1]["objectives"], 5);
+    assert_eq!(done["chapters"][1]["canImport"], false);
+    assert_eq!(done["requestedCalls"], 1);
+    assert_eq!(done["hourUsed"], 1);
     // the same bytes again: 200, existing, nothing running, nothing new
     let again = a.upload_textbook("renamed.pdf", bytes, None).await;
     assert_eq!(again.status, StatusCode::OK, "{}", again.text);
@@ -2301,18 +2345,31 @@ async fn textbook_upload_202_then_200_existing() {
         (j["existing"].as_bool(), j["bookId"].as_str()),
         (Some(true), Some(book.as_str()))
     );
-    assert!(j["jobId"].is_null());
+    assert!(j.get("jobId").is_none());
     let list = a.get(&ws("/textbooks")).await.json();
     assert_eq!(list["items"].as_array().unwrap().len(), 1);
-    assert_eq!(list["items"][0]["state"], "ready");
+    assert_eq!(list["items"][0]["state"], "partial");
     let usage = a.get(&ws(&format!("/textbooks/{book}/usage"))).await.json();
     assert_eq!(
-        (usage["autoCalls"].as_u64(), usage["callsCap"].as_u64()),
-        (Some(3), Some(40))
+        (
+            usage["requestedCalls"].as_u64(),
+            usage["hourUsed"].as_u64(),
+            usage["hourCap"].as_u64()
+        ),
+        (Some(1), Some(1), Some(8))
     );
+    assert!(usage["nextSlotAt"].is_null());
     let detail = a.get(&ws(&format!("/textbooks/{book}/chapters/1"))).await;
     assert_eq!(detail.status, StatusCode::OK);
     assert_eq!(detail.json()["objectives"].as_array().unwrap().len(), 5);
+    // a ready chapter is not imported twice
+    let r = a
+        .post(
+            &ws(&format!("/textbooks/{book}/import")),
+            json!({"chapters":[1]}),
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::BAD_REQUEST, "{}", r.text);
     assert_no_answer_keys(&detail.json());
 }
 
@@ -2428,10 +2485,8 @@ async fn textbook_job_listed_and_job_updated_event_emitted() {
     queue_chapters(&a, 3);
     let mut sub = a.state.hub.subscribe(Some(MAIN_WS), None);
     let r = a.upload_textbook("b.pdf", b"%PDF-1.4 ev", None).await;
-    let (book, job) = (
-        r.json()["bookId"].as_str().unwrap().to_owned(),
-        r.json()["jobId"].as_str().unwrap().to_owned(),
-    );
+    let book = r.json()["bookId"].as_str().unwrap().to_owned();
+    let job = a.import_chapters(&book, json!({})).await;
     a.finished_book(&book).await;
     let mut seen = false;
     while let Ok(Ok(ev)) = tokio::time::timeout(Duration::from_millis(500), sub.live.recv()).await {
@@ -2459,11 +2514,46 @@ async fn textbook_job_listed_and_job_updated_event_emitted() {
 }
 
 #[tokio::test]
+async fn textbook_import_is_limited_to_8_chapters_per_hour() {
+    let a = tb_api(10, 0);
+    queue_chapters(&a, 10);
+    let r = a.upload_textbook("big.pdf", b"%PDF-1.4 big", None).await;
+    let book = r.json()["bookId"].as_str().unwrap().to_owned();
+    a.import_chapters(&book, json!({})).await;
+    let done = a.finished_book(&book).await;
+    let ready = done["chapters"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|c| c["state"] == "ready")
+        .count();
+    assert_eq!(ready, 8, "8 chapters, then the hourly limit");
+    assert_eq!(
+        (done["hourUsed"].as_u64(), done["hourCap"].as_u64()),
+        (Some(8), Some(8))
+    );
+    let usage = a.get(&ws(&format!("/textbooks/{book}/usage"))).await.json();
+    assert!(usage["nextSlotAt"].as_i64().is_some(), "{usage}");
+    let r = a
+        .post(
+            &ws(&format!("/textbooks/{book}/import")),
+            json!({"chapters":[9]}),
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::CONFLICT, "{}", r.text);
+    assert_eq!(
+        r.json()["error"]["details"]["reason"],
+        "import_rate_limited"
+    );
+}
+
+#[tokio::test]
 async fn textbook_abort_through_jobs_route() {
     // a slow extractor keeps the job running long enough to abort it
     let a = tb_api(100, 40);
     let r = a.upload_textbook("slow.pdf", b"%PDF-1.4 slow", None).await;
-    let job = r.json()["jobId"].as_str().unwrap().to_owned();
+    let book = r.json()["bookId"].as_str().unwrap().to_owned();
+    let job = a.import_chapters(&book, json!({})).await;
     let aborted = a.post_empty(&ws(&format!("/jobs/{job}/abort"))).await;
     assert_eq!(aborted.status, StatusCode::OK, "{}", aborted.text);
     assert_eq!(aborted.json()["id"], job.as_str());
@@ -2513,9 +2603,8 @@ async fn titles_and_errors_are_served_as_plain_json_strings() {
     let r = a
         .upload_textbook(&format!("{title}.pdf"), b"%PDF-1.4 xss", None)
         .await;
-    assert_eq!(r.status, StatusCode::ACCEPTED, "{}", r.text);
+    assert_eq!(r.status, StatusCode::CREATED, "{}", r.text);
     let book = r.json()["bookId"].as_str().unwrap().to_owned();
-    a.finished_book(&book).await;
     let got = a.get(&ws(&format!("/textbooks/{book}"))).await;
     assert!(got.headers[header::CONTENT_TYPE]
         .to_str()

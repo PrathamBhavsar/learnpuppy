@@ -1,9 +1,12 @@
-//! Textbook mode service (U7): import a PDF book as a background job, store chapters, objectives
-//! and quiz items as data, and run reading checks with zero model calls.
+//! Textbook mode service (U7): map an uploaded PDF into chapters, import a chapter as a background
+//! job when the learner opens it, store objectives and quiz items as data, and run reading checks
+//! with zero model calls.
 //!
-//! Spec: `brain/learning-method/textbook-spec.md` §6. The only model calls are the TOC call and
-//! one `chapter_objectives` call per chapter part inside the job runner; every call is counted in
-//! the ledger and the lifetime cap of [`MAX_AUTO_CALLS`] per book is re-read before each call.
+//! Spec: `brain/learning-method/textbook-spec.md` §6. Upload reads the outline and maps the book
+//! (no model call with an outline, one TOC call without) and imports nothing. The only other model
+//! calls are `chapter_objectives` per chapter part inside the job runner; every call is counted in
+//! the ledger. A chapter gets one try plus one retry, and a book allows at most
+//! [`MAX_MANUAL_IMPORTS_PER_HOUR`] chapter imports in a rolling hour, read from the ledger.
 
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::future::Future;
@@ -38,12 +41,18 @@ use crate::workspace::BusyGuard;
 const CALL_TIMEOUT: Duration = Duration::from_secs(120);
 /// The cheap role the objectives and TOC calls use (D6).
 const ROLE: &str = "placer";
+/// Pages read at upload to find a book's printed page offset and its table of contents.
+const MAP_PAGES: usize = 60;
+const NO_TEXT: &str = "No text found. Scanned pages need OCR before import.";
 
 /// Stable `Conflict` codes; the server maps them to `details.reason`.
 pub mod conflict {
     pub const IMPORT_RUNNING: &str = "import_running";
     pub const NOTHING_TO_IMPORT: &str = "nothing_to_import";
-    pub const BUDGET_USED: &str = "call_budget_used";
+    /// The per-book hourly chapter import limit is reached.
+    pub const RATE_LIMITED: &str = "import_rate_limited";
+    /// The chapter already used its one try plus one retry.
+    pub const RETRY_USED: &str = "chapter_retry_used";
     pub const CHAPTER_NOT_READY: &str = "chapter_not_ready";
     pub const ALREADY_ANSWERED: &str = "already_answered";
 }
@@ -87,7 +96,6 @@ type Notify = Arc<dyn Fn(JobRecord) + Send + Sync>;
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Upload {
     pub book: String,
-    pub job: Option<String>,
     pub existing: bool,
 }
 
@@ -117,7 +125,6 @@ pub enum ChapterRowState {
     Ready,
     Failed,
     Skipped,
-    Queued,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -131,6 +138,8 @@ pub struct ChapterRow {
     pub status: ChapterStatus,
     pub error: Option<String>,
     pub truncated: bool,
+    /// Opening it may start an import: not imported yet, or failed with its retry unused.
+    pub can_import: bool,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -141,6 +150,8 @@ pub struct BookView {
     pub job: Option<String>,
     pub auto_calls: u32,
     pub requested_calls: u32,
+    /// Chapter imports in the last hour.
+    pub hour_used: u32,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -197,7 +208,11 @@ pub struct TextbookUsage {
     pub cheap_out: u64,
     pub auto_calls: u32,
     pub requested_calls: u32,
-    pub cap: u32,
+    /// Chapter imports in the last hour, and the most the book allows in any hour.
+    pub hour_used: u32,
+    pub hour_cap: u32,
+    /// Epoch ms when the oldest counted import leaves the window; set only at the cap.
+    pub next_slot_at: Option<i64>,
 }
 
 // ------------------------------------------------------------------ service
@@ -247,8 +262,88 @@ fn delta(before: (u64, u64), after: (u64, u64)) -> (u64, u64) {
     )
 }
 
-fn remaining(st: &BookState) -> u32 {
-    MAX_AUTO_CALLS.saturating_sub(st.auto_calls.saturating_add(st.requested_calls))
+/// `(imports in the rolling hour, when a slot frees up if the hour is full)`.
+fn hour_window(events: &[TextbookEvent], now: i64) -> (u32, Option<i64>) {
+    let times = manual_import_times(events, now.saturating_sub(IMPORT_WINDOW_MS));
+    let used = times.len() as u32;
+    let slot = (used >= MAX_MANUAL_IMPORTS_PER_HOUR)
+        .then(|| times.first().map(|t| t + IMPORT_WINDOW_MS))
+        .flatten();
+    (used, slot)
+}
+
+/// One model call, counted in the ledger whether or not it succeeded, because it was sent. Bounded
+/// by a timeout and the cancel token (`None` when cancelled).
+async fn model_call<E, T, F, Fut>(
+    me: &Arc<Inner<E>>,
+    book: &str,
+    job: &str,
+    chapter: Option<u32>,
+    requested: bool,
+    cancel: &CancellationToken,
+    f: F,
+) -> Res<Option<Result<T, CallErr>>>
+where
+    E: LlmEngine + 'static,
+    F: FnOnce(Arc<E>) -> Fut,
+    Fut: Future<Output = Result<T, CourseAgentError>>,
+{
+    let engine = (me.engines)(ROLE);
+    let before = engine.usage();
+    let fut = f(engine.clone());
+    let got = tokio::select! {
+        _ = cancel.cancelled() => None,
+        r = tokio::time::timeout(CALL_TIMEOUT, fut) => Some(match r {
+            Ok(Ok(v)) => Ok(v),
+            Ok(Err(CourseAgentError::Engine(_))) => Err(CallErr::Engine),
+            Ok(Err(_)) => Err(CallErr::Parse),
+            Err(_) => Err(CallErr::Timeout),
+        }),
+    };
+    let used = delta(before, engine.usage());
+    let ev = TextbookEvent::Usage {
+        ts: (me.clock)(),
+        job: job.to_string(),
+        chapter,
+        role: ROLE.into(),
+        tokens_in: used.0,
+        tokens_out: used.1,
+        calls: 1,
+        requested,
+    };
+    let (m, b) = (me.clone(), book.to_string());
+    blk(move || Ok(m.stores.textbooks.append_event(&b, &ev)?)).await?;
+    Ok(got)
+}
+
+/// Reads `first..=last` (1-based) in 10-page windows off the async threads. The inner `Err` is an
+/// extractor message, `Ok(None)` a cancel.
+async fn read_pages<E>(
+    me: &Arc<Inner<E>>,
+    path: &str,
+    first: usize,
+    last: usize,
+    cancel: Option<&CancellationToken>,
+) -> Res<Result<Option<Vec<String>>, String>> {
+    let mut out = Vec::with_capacity((last + 1).saturating_sub(first));
+    let mut at = first;
+    while at <= last {
+        if cancel.is_some_and(|c| c.is_cancelled()) {
+            return Ok(Ok(None));
+        }
+        let to = (at + MAX_PDF_PAGES_PER_READ - 1).min(last);
+        let (pdf, p) = (me.pdf.clone(), path.to_string());
+        let got = tokio::task::spawn_blocking(move || pdf.page_texts(&p, at, to))
+            .await
+            .map_err(|e| TextbookError::Store(e.to_string()))?;
+        match got {
+            Ok(v) if v.len() == to - at + 1 => out.extend(v.iter().map(|t| sanitize_page(t))),
+            Ok(_) => return Ok(Err("PDF extractor returned an unexpected page count".into())),
+            Err(msg) => return Ok(Err(msg)),
+        }
+        at = to + 1;
+    }
+    Ok(Ok(Some(out)))
 }
 
 fn short(s: &str, max: usize) -> String {
@@ -309,9 +404,12 @@ impl<E: LlmEngine + 'static> TextbookService<E> {
 
     // -------------------------------------------------------------- upload and import
 
-    /// Stores an uploaded PDF (the route already checked size, name and magic) and starts the
-    /// automatic import. The same bytes twice find the same book: nothing is written again.
+    /// Stores an uploaded PDF (the route already checked size, name and magic) and maps it into
+    /// chapters: the outline costs no model call, a book without one costs one TOC call. Nothing
+    /// else is imported; a chapter is imported when the learner opens it. The same bytes twice
+    /// find the same book: nothing is written again.
     pub async fn upload(&self, file_name: &str, pdf: Bytes, busy: BusyGuard) -> Res<Upload> {
+        let _busy = busy;
         let hex = hex::encode(Sha256::digest(&pdf));
         let book = book_id(&hex);
         let stem = std::path::Path::new(file_name)
@@ -366,36 +464,127 @@ impl<E: LlmEngine + 'static> TextbookService<E> {
         })
         .await?;
         if !fresh {
-            let job = self.inner.running.lock().get(&book).map(|r| r.job.clone());
             return Ok(Upload {
                 book,
-                job,
                 existing: true,
             });
         }
-        let job = self.start(&book, None, false, busy).await?;
+        if let Err(e) = self.map_book(&book).await {
+            // A book that cannot be mapped is not kept: the same bytes can be uploaded again.
+            let (me, b) = (self.inner.clone(), book.clone());
+            let _ = blk(move || Ok(me.stores.textbooks.remove(&b)?)).await;
+            return Err(e);
+        }
         Ok(Upload {
             book,
-            job: Some(job),
             existing: false,
         })
     }
 
-    /// Starts a requested import; returns the job id. `chapters` limits it to those indices.
+    /// Maps the book: outline (0 calls), else one TOC call, else fixed chunks. Appends `Mapped`,
+    /// then skips front and back matter. Reads at most `MAP_PAGES` pages, only without an outline.
+    async fn map_book(&self, book: &str) -> Res<()> {
+        let me = &self.inner;
+        let (m, b) = (me.clone(), book.to_string());
+        let (st, path) = blk(move || {
+            let st = m.state(&b)?;
+            let path = m.stores.textbooks.source_path(&b)?;
+            Ok((st, path.to_string_lossy().into_owned()))
+        })
+        .await?;
+        if st.source.is_some() {
+            return Ok(());
+        }
+        let total = st
+            .meta
+            .as_ref()
+            .ok_or_else(|| TextbookError::NotFound(book.into()))?
+            .total_pages;
+        let (pdf, p) = (me.pdf.clone(), path.clone());
+        let outline = tokio::task::spawn_blocking(move || pdf.outline(&p))
+            .await
+            .map_err(|e| TextbookError::Store(e.to_string()))?
+            .unwrap_or_else(|e| {
+                tracing::warn!("outline unreadable: {e}");
+                Vec::new()
+            });
+        let mut mapped = chapters_from_outline(&outline, total);
+        let mut source = MapSource::Outline;
+        if mapped.len() < 2 {
+            let sample = (total as usize).min(MAP_PAGES);
+            let pages = match read_pages(me, &path, 1, sample, None).await? {
+                Ok(v) => v.unwrap_or_default(),
+                Err(msg) => return Err(TextbookError::Invalid(msg)),
+            };
+            if pages.iter().all(|p| p.trim().is_empty()) {
+                return Err(TextbookError::Invalid(NO_TEXT.into()));
+            }
+            let offset = printed_offset(&pages);
+            mapped = Vec::new();
+            let head: Vec<(u32, &str)> = pages
+                .iter()
+                .take(TOC_PAGES)
+                .enumerate()
+                .map(|(i, t)| (i as u32 + 1, t.as_str()))
+                .collect();
+            let text = page_block(&head, usize::MAX);
+            let job = format!("map_{}", &book[3..]);
+            let got = model_call(
+                me,
+                book,
+                &job,
+                None,
+                false,
+                &CancellationToken::new(),
+                |e| async move { toc_chapters(&*e, &text).await },
+            )
+            .await?;
+            if let Some(Ok(entries)) = got {
+                mapped = chapters_from_toc(&entries, offset, &pages, total);
+                source = MapSource::Toc;
+            }
+            if mapped.len() < 2 {
+                mapped = chunk_chapters(total);
+                source = MapSource::Chunks;
+            }
+        }
+        let skipped: Vec<u32> = mapped
+            .iter()
+            .filter(|c| c.kind != ChapterKind::Chapter)
+            .map(|c| c.index)
+            .collect();
+        let (m, b) = (me.clone(), book.to_string());
+        blk(move || {
+            let ts = (m.clock)();
+            m.stores.textbooks.append_event(
+                &b,
+                &TextbookEvent::Mapped {
+                    ts,
+                    source,
+                    chapters: mapped,
+                },
+            )?;
+            for chapter in skipped {
+                m.stores.textbooks.append_event(
+                    &b,
+                    &TextbookEvent::ChapterSkipped {
+                        ts,
+                        chapter,
+                        reason: "front_back_matter".into(),
+                    },
+                )?;
+            }
+            Ok(())
+        })
+        .await
+    }
+
+    /// Starts an import of the chapters in `chapters`, or of every chapter still pending; returns
+    /// the job id. Each chapter is one manual import against the hourly limit.
     pub async fn import(
         &self,
         book: &str,
         chapters: Option<Vec<u32>>,
-        busy: BusyGuard,
-    ) -> Res<String> {
-        self.start(book, chapters, true, busy).await
-    }
-
-    async fn start(
-        &self,
-        book: &str,
-        chapters: Option<Vec<u32>>,
-        requested: bool,
         busy: BusyGuard,
     ) -> Res<String> {
         let me = self.inner.clone();
@@ -404,13 +593,20 @@ impl<E: LlmEngine + 'static> TextbookService<E> {
         }
         let b = book.to_string();
         let m2 = me.clone();
+        let (state, events) = blk(move || m2.load(&b)).await?;
+        let (used, _) = hour_window(&events, (me.clock)());
+        if used >= MAX_MANUAL_IMPORTS_PER_HOUR {
+            return Err(TextbookError::Conflict(conflict::RATE_LIMITED.into()));
+        }
+        if state.source.is_none() {
+            // A book stored before it was mapped (a crash during upload): map it now.
+            self.map_book(book).await?;
+        }
+        let (m3, b) = (me.clone(), book.to_string());
         let (state, n) = blk(move || {
-            let st = m2.state(&b)?;
-            if st.meta.is_none() {
-                return Err(TextbookError::NotFound(b));
-            }
+            let st = m3.known(&b)?;
             let prefix = format!("tbj_{}_", &b[3..]);
-            let (jobs, _) = m2.stores.jobs.all_report()?;
+            let (jobs, _) = m3.stores.jobs.all_report()?;
             let n = jobs
                 .iter()
                 .filter(|j| j.kind == JobKind::Textbook && j.id.starts_with(&prefix))
@@ -418,9 +614,6 @@ impl<E: LlmEngine + 'static> TextbookService<E> {
             Ok((st, n))
         })
         .await?;
-        if remaining(&state) == 0 {
-            return Err(TextbookError::Conflict(conflict::BUDGET_USED.into()));
-        }
         match &chapters {
             Some(list) => {
                 if list.len() > MAX_CHAPTERS {
@@ -437,12 +630,15 @@ impl<E: LlmEngine + 'static> TextbookService<E> {
                                 "chapter {i} is already imported"
                             )))
                         }
+                        Some(v) if v.state == ChapterState::Failed && !v.retryable => {
+                            return Err(TextbookError::Conflict(conflict::RETRY_USED.into()))
+                        }
                         Some(_) => {}
                     }
                 }
             }
             None => {
-                if state.source.is_some() && pending_chapters(&state).is_empty() {
+                if pending_chapters(&state).is_empty() {
                     return Err(TextbookError::Conflict(conflict::NOTHING_TO_IMPORT.into()));
                 }
             }
@@ -491,7 +687,6 @@ impl<E: LlmEngine + 'static> TextbookService<E> {
             meta,
             progress: Progress::default(),
             cancel,
-            requested,
             only: chapters,
         };
         tokio::spawn(async move {
@@ -569,11 +764,12 @@ impl<E: LlmEngine + 'static> TextbookService<E> {
                     .filter(|v| v.chapter.kind == ChapterKind::Chapter)
                     .filter(|v| v.state != ChapterState::Skipped)
                     .count();
+                let failed = st.chapters.iter().any(|v| v.state == ChapterState::Failed);
                 let phase = if running {
                     BookPhase::Importing
-                } else if st.source.is_none() || ready == 0 {
+                } else if st.source.is_none() || (ready == 0 && failed) {
                     BookPhase::Failed
-                } else if ready >= targets {
+                } else if ready > 0 && ready >= targets {
                     BookPhase::Ready
                 } else {
                     BookPhase::Partial
@@ -597,7 +793,8 @@ impl<E: LlmEngine + 'static> TextbookService<E> {
     pub async fn book(&self, book: &str) -> Res<BookView> {
         let (me, b) = (self.inner.clone(), book.to_string());
         blk(move || {
-            let st = me.known(&b)?;
+            let (st, events) = me.load(&b)?;
+            let (hour_used, _) = hour_window(&events, (me.clock)());
             let due = me.due_cards(&b)?;
             let meta = st
                 .meta
@@ -608,11 +805,10 @@ impl<E: LlmEngine + 'static> TextbookService<E> {
                 let r = running.get(&b);
                 (r.map(|r| r.job.clone()), r.and_then(|r| r.current))
             };
-            let mapped = st.source.is_some();
             let chapters = st
                 .chapters
                 .iter()
-                .map(|v| row_of(v, &b, &due, job.is_some(), current, mapped))
+                .map(|v| row_of(v, &b, &due, job.is_some(), current))
                 .collect();
             Ok(BookView {
                 meta,
@@ -621,6 +817,7 @@ impl<E: LlmEngine + 'static> TextbookService<E> {
                 job,
                 auto_calls: st.auto_calls,
                 requested_calls: st.requested_calls,
+                hour_used,
             })
         })
         .await
@@ -641,7 +838,7 @@ impl<E: LlmEngine + 'static> TextbookService<E> {
                 (r.is_some(), r.and_then(|r| r.current))
             };
             Ok(ChapterDetail {
-                row: row_of(v, &b, &due, running, current, st.source.is_some()),
+                row: row_of(v, &b, &due, running, current),
                 objectives: v
                     .objectives
                     .iter()
@@ -660,13 +857,16 @@ impl<E: LlmEngine + 'static> TextbookService<E> {
     pub async fn usage(&self, book: &str) -> Res<TextbookUsage> {
         let (me, b) = (self.inner.clone(), book.to_string());
         blk(move || {
-            let st = me.known(&b)?;
+            let (st, events) = me.load(&b)?;
+            let (hour_used, next_slot_at) = hour_window(&events, (me.clock)());
             Ok(TextbookUsage {
                 cheap_in: st.cheap_in,
                 cheap_out: st.cheap_out,
                 auto_calls: st.auto_calls,
                 requested_calls: st.requested_calls,
-                cap: MAX_AUTO_CALLS,
+                hour_used,
+                hour_cap: MAX_MANUAL_IMPORTS_PER_HOUR,
+                next_slot_at,
             })
         })
         .await
@@ -919,7 +1119,6 @@ fn row_of(
     due: &BTreeSet<String>,
     running: bool,
     current: Option<u32>,
-    mapped: bool,
 ) -> ChapterRow {
     let state = match v.state {
         ChapterState::Ready => ChapterRowState::Ready,
@@ -928,8 +1127,12 @@ fn row_of(
         ChapterState::Pending if running && current == Some(v.chapter.index) => {
             ChapterRowState::Importing
         }
-        ChapterState::Pending if !running && mapped => ChapterRowState::Queued,
         ChapterState::Pending => ChapterRowState::Pending,
+    };
+    let can_import = match v.state {
+        ChapterState::Pending => v.chapter.kind == ChapterKind::Chapter,
+        ChapterState::Failed => v.retryable,
+        ChapterState::Ready | ChapterState::Skipped => false,
     };
     ChapterRow {
         index: v.chapter.index,
@@ -941,6 +1144,7 @@ fn row_of(
         status: chapter_status(v, due, book),
         error: v.error.clone(),
         truncated: v.truncated,
+        can_import,
     }
 }
 
@@ -955,6 +1159,19 @@ impl<E> Inner<E> {
 
     fn state(&self, book: &str) -> Res<BookState> {
         Ok(fold_book(&self.stores.textbooks.events(book)?))
+    }
+
+    /// The fold and the raw ledger of a book that exists, else `NotFound`.
+    fn load(&self, book: &str) -> Res<(BookState, Vec<TextbookEvent>)> {
+        if !valid_book_id(book) {
+            return Err(TextbookError::NotFound(book.into()));
+        }
+        let events = self.stores.textbooks.events(book)?;
+        let st = fold_book(&events);
+        if st.meta.is_none() {
+            return Err(TextbookError::NotFound(book.into()));
+        }
+        Ok((st, events))
     }
 
     /// The fold of a book that exists, else `NotFound` (also for a directory with no `Imported`).
@@ -1057,7 +1274,10 @@ enum ChapterResult {
     Failed {
         reason: &'static str,
     },
-    Engine,
+    /// The engine refused. `retryable` is false once the retry was spent.
+    Engine {
+        retryable: bool,
+    },
     Cancelled,
 }
 
@@ -1068,7 +1288,6 @@ struct Job<E> {
     meta: BookMeta,
     progress: Progress,
     cancel: CancellationToken,
-    requested: bool,
     only: Option<Vec<u32>>,
 }
 
@@ -1108,38 +1327,14 @@ impl<E: LlmEngine + 'static> Job<E> {
         blk(move || Ok(me.stores.textbooks.append_event(&b, &ev)?)).await
     }
 
-    /// One model call: bounded by a timeout and the cancel token; the call is counted in the
-    /// ledger whether or not it succeeded, because it was sent.
+    /// One chapter model call: a requested call, counted in the ledger.
     async fn call<T, F, Fut>(&self, chapter: Option<u32>, f: F) -> Res<Option<Result<T, CallErr>>>
     where
         F: FnOnce(Arc<E>) -> Fut,
         Fut: Future<Output = Result<T, CourseAgentError>>,
     {
-        let engine = (self.me.engines)(ROLE);
-        let before = engine.usage();
-        let fut = f(engine.clone());
-        let got = tokio::select! {
-            _ = self.cancel.cancelled() => None,
-            r = tokio::time::timeout(CALL_TIMEOUT, fut) => Some(match r {
-                Ok(Ok(v)) => Ok(v),
-                Ok(Err(CourseAgentError::Engine(_))) => Err(CallErr::Engine),
-                Ok(Err(_)) => Err(CallErr::Parse),
-                Err(_) => Err(CallErr::Timeout),
-            }),
-        };
-        let used = delta(before, engine.usage());
-        self.append(TextbookEvent::Usage {
-            ts: (self.me.clock)(),
-            job: self.rec.id.to_string(),
-            chapter,
-            role: ROLE.into(),
-            tokens_in: used.0,
-            tokens_out: used.1,
-            calls: 1,
-            requested: self.requested,
-        })
-        .await?;
-        Ok(got)
+        let job = self.rec.id.to_string();
+        model_call(&self.me, &self.book, &job, chapter, true, &self.cancel, f).await
     }
 
     async fn execute(&mut self) -> Outcome {
@@ -1150,12 +1345,19 @@ impl<E: LlmEngine + 'static> Job<E> {
     }
 
     async fn execute_inner(&mut self) -> Res<Outcome> {
-        let total = self.meta.total_pages;
-        self.progress.total_pages = total;
-        self.progress.phase = "pages";
+        let st = self.state().await?;
+        let list: Vec<u32> = match &self.only {
+            Some(l) => l.clone(),
+            None => pending_chapters(&st),
+        };
+        self.progress.phase = "objectives";
+        self.progress.chapters_total = list.len() as u32;
+        self.progress.total_pages = list
+            .iter()
+            .filter_map(|i| st.chapters.get(*i as usize))
+            .map(|v| v.chapter.pages.end + 1 - v.chapter.pages.start)
+            .sum();
         self.publish().await;
-
-        // Pages, one 10-page window at a time off the async threads.
         let path = self
             .me
             .stores
@@ -1163,68 +1365,6 @@ impl<E: LlmEngine + 'static> Job<E> {
             .source_path(&self.book)?
             .to_string_lossy()
             .into_owned();
-        let mut pages: Vec<String> = Vec::with_capacity(total as usize);
-        let mut first = 1usize;
-        while first <= total as usize {
-            if self.cancel.is_cancelled() {
-                return Ok(Outcome::Cancelled);
-            }
-            let last = (first + MAX_PDF_PAGES_PER_READ - 1).min(total as usize);
-            let (pdf, p) = (self.me.pdf.clone(), path.clone());
-            let got = tokio::task::spawn_blocking(move || pdf.page_texts(&p, first, last))
-                .await
-                .map_err(|e| TextbookError::Store(e.to_string()))?;
-            match got {
-                Ok(v) if v.len() == last - first + 1 => {
-                    pages.extend(v.iter().map(|t| sanitize_page(t)));
-                }
-                Ok(_) => {
-                    return Ok(Outcome::Failed(
-                        "PDF extractor returned an unexpected page count".into(),
-                    ))
-                }
-                Err(msg) => return Ok(Outcome::Failed(msg)),
-            }
-            self.progress.pages_read = pages.len() as u32;
-            self.publish().await;
-            first = last + 1;
-        }
-        if pages.iter().all(|p| p.trim().is_empty()) {
-            return Ok(Outcome::Failed(
-                "No text found. Scanned pages need OCR before import.".into(),
-            ));
-        }
-        let offset = printed_offset(&pages);
-
-        let mut st = self.state().await?;
-        if st.source.is_none() {
-            self.progress.phase = "map";
-            self.publish().await;
-            if let Some(done) = self.map_book(&pages, offset, total, &st).await? {
-                return Ok(done);
-            }
-            st = self.state().await?;
-        }
-
-        self.progress.phase = "objectives";
-        // Front and back matter never costs a call.
-        for v in &st.chapters {
-            if v.state == ChapterState::Pending && v.chapter.kind != ChapterKind::Chapter {
-                self.append(TextbookEvent::ChapterSkipped {
-                    ts: (self.me.clock)(),
-                    chapter: v.chapter.index,
-                    reason: "front_back_matter".into(),
-                })
-                .await?;
-            }
-        }
-        st = self.state().await?;
-        let list: Vec<u32> = match &self.only {
-            Some(l) => l.clone(),
-            None => pending_chapters(&st),
-        };
-        self.progress.chapters_total = list.len() as u32;
-        self.publish().await;
 
         let mut engine_errors = 0;
         let mut stopped = None;
@@ -1232,18 +1372,30 @@ impl<E: LlmEngine + 'static> Job<E> {
             if self.cancel.is_cancelled() {
                 return Ok(Outcome::Cancelled);
             }
-            let st = self.state().await?;
+            let (me, b) = (self.me.clone(), self.book.clone());
+            let (st, events) = blk(move || me.load(&b)).await?;
             let Some(view) = st.chapters.get(idx as usize) else {
                 continue;
             };
             let chapter = view.chapter.clone();
             if view.state != ChapterState::Ready {
                 self.set_current(Some(idx));
-                let page_words: Vec<(u32, usize)> = (chapter.pages.start..=chapter.pages.end)
-                    .map(|p| {
-                        let w = pages.get(p as usize - 1).map_or(0, |t| word_count(t));
-                        (p, w)
-                    })
+                // Only this chapter's pages are read, 10 at a time.
+                let (first, last) = (chapter.pages.start as usize, chapter.pages.end as usize);
+                let pages =
+                    match read_pages(&self.me, &path, first, last, Some(&self.cancel)).await? {
+                        Ok(Some(v)) => v,
+                        Ok(None) => return Ok(Outcome::Cancelled),
+                        Err(msg) => return Ok(Outcome::Failed(msg)),
+                    };
+                self.progress.pages_read += pages.len() as u32;
+                if pages.iter().all(|p| p.trim().is_empty()) {
+                    return Ok(Outcome::Failed(NO_TEXT.into()));
+                }
+                let page_words: Vec<(u32, usize)> = pages
+                    .iter()
+                    .enumerate()
+                    .map(|(i, t)| (chapter.pages.start + i as u32, word_count(t)))
                     .collect();
                 let words: usize = page_words.iter().map(|(_, w)| *w).sum();
                 if words < MIN_CHAPTER_WORDS {
@@ -1254,43 +1406,47 @@ impl<E: LlmEngine + 'static> Job<E> {
                     })
                     .await?;
                 } else {
+                    // The hourly limit is re-read from the ledger before every chapter.
+                    if hour_window(&events, (self.me.clock)()).0 >= MAX_MANUAL_IMPORTS_PER_HOUR {
+                        stopped = Some("rate_limited");
+                        self.set_current(None);
+                        break;
+                    }
                     let parts = split_parts(&page_words);
-                    // A chapter starts only if every part fits the lifetime budget.
-                    if remaining(&st) as usize >= parts.len() {
-                        match self.do_chapter(&chapter, &pages, &parts).await? {
-                            ChapterResult::Cancelled => return Ok(Outcome::Cancelled),
-                            ChapterResult::Engine => {
-                                self.append(TextbookEvent::ChapterFailed {
-                                    ts: (self.me.clock)(),
-                                    chapter: idx,
-                                    reason: "engine_unavailable".into(),
-                                    retryable: true,
-                                })
+                    match self.do_chapter(&chapter, &pages, &parts).await? {
+                        ChapterResult::Cancelled => return Ok(Outcome::Cancelled),
+                        ChapterResult::Engine { retryable } => {
+                            self.append(TextbookEvent::ChapterFailed {
+                                ts: (self.me.clock)(),
+                                chapter: idx,
+                                reason: "engine_unavailable".into(),
+                                retryable,
+                            })
+                            .await?;
+                            engine_errors += 1;
+                            if engine_errors >= 2 {
+                                stopped = Some("engine_unavailable");
+                            }
+                        }
+                        ChapterResult::Failed { reason } => {
+                            engine_errors = 0;
+                            // The try and its retry are both spent.
+                            self.append(TextbookEvent::ChapterFailed {
+                                ts: (self.me.clock)(),
+                                chapter: idx,
+                                reason: reason.into(),
+                                retryable: false,
+                            })
+                            .await?;
+                        }
+                        ChapterResult::Done {
+                            objectives,
+                            parts,
+                            truncated,
+                        } => {
+                            engine_errors = 0;
+                            self.store_chapter(idx, objectives, parts, truncated)
                                 .await?;
-                                engine_errors += 1;
-                                if engine_errors >= 2 {
-                                    stopped = Some("engine_unavailable");
-                                }
-                            }
-                            ChapterResult::Failed { reason } => {
-                                engine_errors = 0;
-                                self.append(TextbookEvent::ChapterFailed {
-                                    ts: (self.me.clock)(),
-                                    chapter: idx,
-                                    reason: reason.into(),
-                                    retryable: true,
-                                })
-                                .await?;
-                            }
-                            ChapterResult::Done {
-                                objectives,
-                                parts,
-                                truncated,
-                            } => {
-                                engine_errors = 0;
-                                self.store_chapter(idx, objectives, parts, truncated)
-                                    .await?;
-                            }
                         }
                     }
                 }
@@ -1344,69 +1500,8 @@ impl<E: LlmEngine + 'static> Job<E> {
         .await
     }
 
-    /// Outline (0 calls), else one TOC call, else fixed chunks. Appends `Mapped`.
-    async fn map_book(
-        &mut self,
-        pages: &[String],
-        offset: Option<i32>,
-        total: u32,
-        st: &BookState,
-    ) -> Res<Option<Outcome>> {
-        let (pdf, path) = (
-            self.me.pdf.clone(),
-            self.me
-                .stores
-                .textbooks
-                .source_path(&self.book)?
-                .to_string_lossy()
-                .into_owned(),
-        );
-        let outline = tokio::task::spawn_blocking(move || pdf.outline(&path))
-            .await
-            .map_err(|e| TextbookError::Store(e.to_string()))?
-            .unwrap_or_else(|e| {
-                tracing::warn!("outline unreadable: {e}");
-                Vec::new()
-            });
-        let mut mapped = chapters_from_outline(&outline, total);
-        let mut source = MapSource::Outline;
-        if mapped.len() < 2 {
-            mapped = Vec::new();
-            if remaining(st) > 0 {
-                let head: Vec<(u32, &str)> = pages
-                    .iter()
-                    .take(TOC_PAGES)
-                    .enumerate()
-                    .map(|(i, t)| (i as u32 + 1, t.as_str()))
-                    .collect();
-                let text = page_block(&head, usize::MAX);
-                match self
-                    .call(None, |e| async move { toc_chapters(&*e, &text).await })
-                    .await?
-                {
-                    None => return Ok(Some(Outcome::Cancelled)),
-                    Some(Ok(entries)) => {
-                        mapped = chapters_from_toc(&entries, offset, pages, total);
-                        source = MapSource::Toc;
-                    }
-                    Some(Err(_)) => {}
-                }
-            }
-            if mapped.len() < 2 {
-                mapped = chunk_chapters(total);
-                source = MapSource::Chunks;
-            }
-        }
-        self.append(TextbookEvent::Mapped {
-            ts: (self.me.clock)(),
-            source,
-            chapters: mapped,
-        })
-        .await?;
-        Ok(None)
-    }
-
-    /// All parts of one chapter, up to `MAX_ATTEMPTS` tries. Nothing is stored here.
+    /// All parts of one chapter: one try plus one retry (`MAX_ATTEMPTS`). Nothing is stored here.
+    /// `pages[0]` is the chapter's first page.
     async fn do_chapter(
         &self,
         chapter: &Chapter,
@@ -1416,22 +1511,15 @@ impl<E: LlmEngine + 'static> Job<E> {
         let (min, max) = objective_bounds(parts.len());
         let mut last = "parse";
         for attempt in 0..MAX_ATTEMPTS {
-            if attempt > 0 {
-                // A retry is a new set of calls: it must fit the lifetime budget too.
-                let st = self.state().await?;
-                if (remaining(&st) as usize) < parts.len() {
-                    return Ok(ChapterResult::Failed { reason: "budget" });
-                }
-            }
             let mut objectives: Vec<Objective> = Vec::new();
             let mut ok = true;
             for (i, (range, _)) in parts.iter().enumerate() {
-                let st = self.state().await?;
-                if remaining(&st) == 0 {
-                    return Ok(ChapterResult::Failed { reason: "budget" });
-                }
                 let slice: Vec<(u32, &str)> = (range.start..=range.end)
-                    .filter_map(|p| pages.get(p as usize - 1).map(|t| (p, t.as_str())))
+                    .filter_map(|p| {
+                        pages
+                            .get((p - chapter.pages.start) as usize)
+                            .map(|t| (p, t.as_str()))
+                    })
                     .collect();
                 let text = page_block(&slice, MAX_PART_WORDS);
                 let (book, title) = (self.meta.title.clone(), chapter.title.clone());
@@ -1457,7 +1545,11 @@ impl<E: LlmEngine + 'static> Job<E> {
                         let n = objectives.len() + 1;
                         objectives.extend(accept_objectives(chapter.index, n, *range, raw));
                     }
-                    Some(Err(CallErr::Engine)) => return Ok(ChapterResult::Engine),
+                    Some(Err(CallErr::Engine)) => {
+                        return Ok(ChapterResult::Engine {
+                            retryable: attempt == 0,
+                        })
+                    }
                     Some(Err(CallErr::Timeout)) => {
                         last = "timeout";
                         ok = false;
@@ -1487,7 +1579,7 @@ impl<E: LlmEngine + 'static> Job<E> {
     async fn finish(&mut self, outcome: Outcome) {
         let st = self.state().await.unwrap_or_default();
         let count = |s: ChapterState| st.chapters.iter().filter(|v| v.state == s).count();
-        let queued = st
+        let pending = st
             .chapters
             .iter()
             .filter(|v| v.state == ChapterState::Pending && v.chapter.kind == ChapterKind::Chapter)
@@ -1497,7 +1589,7 @@ impl<E: LlmEngine + 'static> Job<E> {
             "ready": count(ChapterState::Ready),
             "failed": count(ChapterState::Failed),
             "skipped": count(ChapterState::Skipped),
-            "queued": queued,
+            "pending": pending,
             "calls": st.auto_calls + st.requested_calls,
         });
         self.rec.status = JobStatus::Done;
@@ -1543,6 +1635,8 @@ mod tests {
         outline: Vec<OutlineEntry>,
         /// Page texts fail from this 1-based page on.
         fail_from: Option<usize>,
+        /// Every `page_texts` call, as `(first, last)`: one entry is one extractor spawn.
+        reads: Mutex<Vec<(usize, usize)>>,
     }
 
     impl Pdf for FakePdf {
@@ -1553,6 +1647,7 @@ mod tests {
             Ok(self.pages.len())
         }
         fn page_texts(&self, _p: &str, first: usize, last: usize) -> Result<Vec<String>, String> {
+            self.reads.lock().push((first, last));
             if self.fail_from.is_some_and(|f| last >= f) {
                 return Err("PDF extraction timed out; try a smaller page range".into());
             }
@@ -1661,6 +1756,7 @@ mod tests {
                 })
                 .collect(),
             fail_from: None,
+            reads: Mutex::default(),
         }
     }
 
@@ -1670,6 +1766,8 @@ mod tests {
         engine: Arc<Mock>,
         notes: Arc<Mutex<Vec<JobRecord>>>,
         handle: Arc<crate::workspace::WorkspaceHandle>,
+        /// Milliseconds the test clock is ahead of its start.
+        skew: Arc<std::sync::atomic::AtomicI64>,
         _dir: tempfile::TempDir,
         n: AtomicUsize,
     }
@@ -1688,6 +1786,8 @@ mod tests {
         let notes: Arc<Mutex<Vec<JobRecord>>> = Arc::default();
         let (e2, n2) = (engine.clone(), notes.clone());
         let engines: Engines<Mock> = Arc::new(move |_role: &str| e2.clone());
+        let skew = Arc::new(std::sync::atomic::AtomicI64::new(0));
+        let (start, k2) = (crate::now_ms(), skew.clone());
         let svc = TextbookService::new(
             root,
             stores.clone(),
@@ -1695,7 +1795,8 @@ mod tests {
             pdf,
             "dev".into(),
             Arc::new(move |r| n2.lock().push(r)),
-        );
+        )
+        .with_clock(Arc::new(move || start + k2.load(Ordering::SeqCst)));
         let reg = WorkspaceRegistry::new(dir.path().join("reg"), Arc::new(NoopSink)).unwrap();
         let handle = reg
             .create(NewWorkspace {
@@ -1709,6 +1810,7 @@ mod tests {
             engine,
             notes,
             handle,
+            skew,
             _dir: dir,
             n: AtomicUsize::new(0),
         }
@@ -1746,11 +1848,27 @@ mod tests {
             }
             panic!("job {job} did not finish");
         }
-        /// Upload and wait for the automatic import.
+        /// Upload, then open every chapter (one import of all that are pending) and wait.
         async fn imported(&self) -> (String, JobRecord) {
             let up = self.upload().await;
-            let job = self.wait(&up.job.unwrap()).await;
+            let job = self.import_all(&up.book).await;
             (up.book, job)
+        }
+        async fn import_all(&self, book: &str) -> JobRecord {
+            let job = self.svc.import(book, None, self.guard()).await.unwrap();
+            self.wait(&job).await
+        }
+        /// Open these chapters and wait for the job.
+        async fn open(&self, book: &str, chapters: Vec<u32>) -> JobRecord {
+            let job = self
+                .svc
+                .import(book, Some(chapters), self.guard())
+                .await
+                .unwrap();
+            self.wait(&job).await
+        }
+        fn advance(&self, ms: i64) {
+            self.skew.fetch_add(ms, Ordering::SeqCst);
         }
         fn state(&self, book: &str) -> BookState {
             fold_book(&self.stores.textbooks.events(book).unwrap())
@@ -1774,31 +1892,109 @@ mod tests {
     // ---------------------------------------------------------------- import
 
     #[tokio::test]
-    async fn upload_maps_outline_with_zero_map_calls() {
+    async fn upload_makes_zero_chapter_calls_and_starts_no_job() {
         let r = rig(book(3, 400));
-        let (book, job) = r.imported().await;
-        let st = r.state(&book);
+        let up = r.upload().await;
+        assert!(!up.existing);
+        let st = r.state(&up.book);
         assert_eq!(st.source, Some(MapSource::Outline));
-        assert_eq!(r.engine.n(), 3, "one call per chapter, none for the map");
-        assert_eq!(r.engine.toc_calls(), 0);
-        assert_eq!((st.auto_calls, st.requested_calls), (3, 0));
-        assert_eq!((st.cheap_in, st.cheap_out), (300, 30));
-        assert_eq!(r.ready(&book), 3);
+        assert_eq!(st.chapters.len(), 3);
+        assert!(st.chapters.iter().all(|v| v.state == ChapterState::Pending));
+        assert_eq!(r.engine.n(), 0, "an outline needs no model call at all");
+        assert_eq!((st.auto_calls, st.requested_calls), (0, 0));
+        assert!(r.stores.jobs.all_report().unwrap().0.is_empty(), "no job");
+        assert!(r.notes.lock().is_empty());
+        assert_eq!(r.card_count(), 0);
+        assert!(r.svc.inner.running.lock().is_empty());
+        assert_eq!(
+            r.stores.textbooks.events(&up.book).unwrap().len(),
+            2,
+            "the ledger holds only Imported and Mapped"
+        );
+        let v = r.svc.book(&up.book).await.unwrap();
+        assert!(v.job.is_none());
+        assert!(v
+            .chapters
+            .iter()
+            .all(|c| c.state == ChapterRowState::Pending && c.can_import));
+        assert_eq!(v.meta.title, "My Book");
+        let u = r.svc.usage(&up.book).await.unwrap();
+        assert_eq!((u.hour_used, u.hour_cap, u.next_slot_at), (0, 8, None));
+    }
+
+    #[tokio::test]
+    async fn upload_never_imports_a_60_chapter_book() {
+        let pdf = book(60, 400);
+        let r = rig(pdf);
+        let up = r.upload().await;
+        assert_eq!(r.engine.n(), 0);
+        assert_eq!(r.state(&up.book).chapters.len(), 60);
+        assert_eq!(r.ready(&up.book), 0);
+        let list = r.svc.list().await.unwrap();
+        assert_eq!(
+            list[0].state,
+            BookPhase::Partial,
+            "mapped, nothing imported"
+        );
+        assert_eq!(list[0].ready, 0);
+    }
+
+    #[tokio::test]
+    async fn opening_one_chapter_imports_only_that_chapter() {
+        let r = rig(book(3, 400));
+        let up = r.upload().await;
+        let job = r.open(&up.book, vec![1]).await;
+        assert_eq!(r.engine.n(), 1, "one call, for the chapter that was opened");
+        let st = r.state(&up.book);
+        assert_eq!(st.chapters[0].state, ChapterState::Pending);
+        assert_eq!(st.chapters[1].state, ChapterState::Ready);
+        assert_eq!(st.chapters[2].state, ChapterState::Pending);
+        assert_eq!((st.auto_calls, st.requested_calls), (0, 1));
+        assert_eq!((st.cheap_in, st.cheap_out), (100, 10));
         assert_eq!(job.status, JobStatus::Done);
         assert_eq!(job.chat_id.as_str(), "");
         assert_eq!(job.delivery, DeliveryStatus::Claimed);
         let result = job.result.unwrap();
-        assert_eq!(result["summary"]["ready"], 3);
-        assert_eq!(result["bookId"], json!(book));
+        assert_eq!(result["summary"]["ready"], 1);
+        assert_eq!(result["summary"]["pending"], 2);
+        assert_eq!(result["bookId"], json!(up.book));
         assert!(result["error"].is_null());
         assert!(!r.notes.lock().is_empty());
-        let v = r.svc.book(&book).await.unwrap();
-        assert!(v.chapters.iter().all(|c| c.state == ChapterRowState::Ready));
-        assert_eq!(v.meta.title, "My Book");
+        assert!(r.card_count() > 0);
+        let v = r.svc.book(&up.book).await.unwrap();
+        assert_eq!(v.chapters[1].state, ChapterRowState::Ready);
+        assert!(!v.chapters[1].can_import);
+        assert!(v.chapters[2].can_import);
+        assert_eq!(v.hour_used, 1);
     }
 
     #[tokio::test]
-    async fn no_outline_makes_exactly_one_toc_call() {
+    async fn import_reads_only_the_chapter_in_10_page_windows() {
+        // chapter 1 is 25 pages, chapter 2 is 5; nothing is read at upload
+        let mut pdf = book(30, 20);
+        pdf.outline = vec![("One", 1), ("Two", 26)]
+            .into_iter()
+            .map(|(t, p)| OutlineEntry {
+                title: t.into(),
+                page: p,
+                depth: 0,
+            })
+            .collect();
+        let pdf = Arc::new(pdf);
+        let r = rig_with(pdf.clone(), Box::new(|_, p| Ok(good(p))));
+        let up = r.upload().await;
+        assert!(pdf.reads.lock().is_empty(), "upload reads no page text");
+        r.open(&up.book, vec![0]).await;
+        assert_eq!(
+            *pdf.reads.lock(),
+            vec![(1, 10), (11, 20), (21, 25)],
+            "3 extractor spawns for 25 pages, never one per page; chapter 2 is not read"
+        );
+        assert_eq!(r.ready(&up.book), 1);
+    }
+
+    #[tokio::test]
+    async fn no_outline_makes_exactly_one_toc_call_at_upload() {
         let mut pdf = book(3, 400);
         pdf.outline.clear();
         for (i, p) in pdf.pages.iter_mut().enumerate() {
@@ -1816,14 +2012,19 @@ mod tests {
             }
         });
         let r = rig_with(Arc::new(pdf), reply);
-        let (book, _) = r.imported().await;
-        let st = r.state(&book);
+        let up = r.upload().await;
+        let st = r.state(&up.book);
         assert_eq!(st.source, Some(MapSource::Toc));
         assert_eq!(r.engine.toc_calls(), 1);
-        assert_eq!(r.engine.n(), 4);
-        assert_eq!(st.auto_calls, 4);
+        assert_eq!(r.engine.n(), 1, "the TOC call, and no chapter call");
+        assert_eq!((st.auto_calls, st.requested_calls), (1, 0));
         assert_eq!(st.chapters.len(), 3);
-        assert_eq!(r.ready(&book), 3);
+        assert_eq!(r.ready(&up.book), 0);
+        let usage = r.svc.usage(&up.book).await.unwrap();
+        assert_eq!(usage.hour_used, 0, "the TOC call is not a chapter import");
+        r.import_all(&up.book).await;
+        assert_eq!(r.engine.n(), 4);
+        assert_eq!(r.ready(&up.book), 3);
     }
 
     #[tokio::test]
@@ -1845,109 +2046,105 @@ mod tests {
         let st = r.state(&book);
         assert_eq!(st.chapters.len(), 3);
         assert_eq!(r.engine.n(), 4, "3 chapters plus 1 extra part");
-        assert_eq!(st.auto_calls, 4);
+        assert_eq!(st.requested_calls, 4);
         let two = &st.chapters[1];
         assert_eq!(two.state, ChapterState::Ready);
         // objectives from two parts are numbered across the parts
         let ids: Vec<&str> = two.objectives.iter().map(|o| o.id.as_str()).collect();
         assert_eq!(ids.first(), Some(&"ch001-o01"));
         assert_eq!(ids.last(), Some(&"ch001-o12"));
+        // two parts are still one chapter import
+        assert_eq!(r.svc.usage(&book).await.unwrap().hour_used, 3);
     }
 
     #[tokio::test]
-    async fn auto_import_never_exceeds_40_calls() {
-        let r = rig(book(60, 400));
-        let (book, job) = r.imported().await;
-        assert_eq!(r.engine.n(), 40);
-        let st = r.state(&book);
-        assert_eq!(st.auto_calls, 40);
-        assert_eq!(r.ready(&book), 40);
-        let v = r.svc.book(&book).await.unwrap();
-        let queued = v
-            .chapters
-            .iter()
-            .filter(|c| c.state == ChapterRowState::Queued)
-            .count();
-        assert_eq!(queued, 20);
-        assert_eq!(job.result.unwrap()["summary"]["queued"], 20);
-        assert_eq!(r.svc.usage(&book).await.unwrap().cap, 40);
+    async fn hour_limit_is_8_chapter_imports_per_rolling_hour() {
+        let r = rig(book(20, 400));
+        let up = r.upload().await;
+        let t0 = r.svc.inner.clock.as_ref()();
+        let job = r.import_all(&up.book).await;
+        assert_eq!(r.engine.n(), 8, "8 chapters, then the limit");
+        assert_eq!(r.ready(&up.book), 8);
+        assert_eq!(job.result.unwrap()["stopped"], "rate_limited");
+        let u = r.svc.usage(&up.book).await.unwrap();
+        assert_eq!((u.hour_used, u.hour_cap), (8, 8));
+        assert_eq!(u.next_slot_at, Some(t0 + IMPORT_WINDOW_MS));
+        // 59 minutes later nothing has changed
+        r.advance(59 * 60_000);
+        let e = r.svc.import(&up.book, Some(vec![8]), r.guard()).await;
+        assert_eq!(
+            e.unwrap_err(),
+            TextbookError::Conflict(conflict::RATE_LIMITED.into())
+        );
+        let e = r.svc.import(&up.book, None, r.guard()).await;
+        assert_eq!(
+            e.unwrap_err(),
+            TextbookError::Conflict(conflict::RATE_LIMITED.into())
+        );
+        assert_eq!(r.engine.n(), 8, "a refused import makes no call");
+        // past the hour every slot is free again
+        r.advance(2 * 60_000);
+        assert_eq!(r.svc.usage(&up.book).await.unwrap().hour_used, 0);
+        r.open(&up.book, vec![8]).await;
+        assert_eq!(r.ready(&up.book), 9);
+        assert_eq!(r.engine.n(), 9);
+        assert_eq!(r.svc.usage(&up.book).await.unwrap().hour_used, 1);
     }
 
     #[tokio::test]
-    async fn requested_import_cannot_exceed_lifetime_40() {
-        let r = rig(book(60, 400));
-        let (book, _) = r.imported().await;
-        let e = r.svc.import(&book, None, r.guard()).await.unwrap_err();
-        assert_eq!(e, TextbookError::Conflict(conflict::BUDGET_USED.into()));
-        assert_eq!(r.engine.n(), 40);
-
-        // at 38 used, a 3-part chapter is not started and stays queued
-        let mut pdf = book_pages(38);
-        pdf.pages.extend((0..3).map(|_| words(6000)));
-        pdf.outline.push(OutlineEntry {
-            title: "Big".into(),
-            page: 39,
-            depth: 0,
-        });
-        let r = rig(pdf);
-        let (book, _) = r.imported().await;
-        assert_eq!(r.engine.n(), 38);
-        let v = r.svc.book(&book).await.unwrap();
-        assert_eq!(v.chapters[38].state, ChapterRowState::Queued);
-        let job = r.svc.import(&book, None, r.guard()).await.unwrap();
-        r.wait(&job).await;
-        assert_eq!(r.engine.n(), 38, "the 3-part chapter still does not fit");
-        assert_eq!(r.state(&book).requested_calls, 0);
-    }
-
-    /// 38 one-page chapters, outline for all of them.
-    fn book_pages(n: usize) -> FakePdf {
-        book(n, 400)
+    async fn the_hour_limit_is_checked_between_chapters_of_one_job() {
+        // 7 imports used, then a job over 3 chapters gets only one more
+        let r = rig(book(12, 400));
+        let up = r.upload().await;
+        r.open(&up.book, (0..7).collect()).await;
+        assert_eq!(r.engine.n(), 7);
+        let job = r.open(&up.book, vec![7, 8, 9]).await;
+        assert_eq!(r.engine.n(), 8);
+        assert_eq!(job.result.unwrap()["stopped"], "rate_limited");
+        assert_eq!(r.state(&up.book).chapters[8].state, ChapterState::Pending);
     }
 
     #[tokio::test]
-    async fn retry_rechecks_cap_at_39() {
-        // call 40 is garbage; its retry would be call 41, which the cap refuses
-        let reply: Reply = Box::new(|n, p| if n == 40 { garbage() } else { Ok(good(p)) });
-        let r = rig_with(Arc::new(book(40, 400)), reply);
-        let (book, _) = r.imported().await;
-        assert_eq!(r.engine.n(), 40, "the retry was not sent");
-        let st = r.state(&book);
-        assert_eq!(st.auto_calls, 40);
-        let last = &st.chapters[39];
-        assert_eq!(last.state, ChapterState::Failed);
-        assert_eq!(last.error.as_deref(), Some("budget"));
-        assert!(last.objectives.is_empty(), "nothing half-written");
-        assert_eq!(r.ready(&book), 39);
-    }
-
-    #[tokio::test]
-    async fn failed_chapter_retries_once_then_failed_retryable() {
-        let reply: Reply = Box::new(|n, p| {
-            if n == 2 || n == 3 {
-                garbage()
-            } else {
-                Ok(good(p))
-            }
-        });
+    async fn retry_is_part_of_the_one_import_and_does_not_use_a_slot() {
+        // call 1 is garbage, the retry (call 2) works: one chapter import, two calls
+        let reply: Reply = Box::new(|n, p| if n == 1 { garbage() } else { Ok(good(p)) });
         let r = rig_with(Arc::new(book(3, 400)), reply);
-        let (book, _) = r.imported().await;
-        assert_eq!(r.engine.n(), 4, "chapter 1 tried twice, others once");
-        let st = r.state(&book);
-        assert_eq!(st.chapters[1].state, ChapterState::Failed);
-        assert_eq!(st.chapters[1].error.as_deref(), Some("parse"));
-        assert_eq!(pending_chapters(&st), vec![1]);
-        assert_eq!(r.ready(&book), 2);
-        // a retry that succeeds is Ready
-        let reply: Reply = Box::new(|n, p| if n == 2 { garbage() } else { Ok(good(p)) });
-        let r = rig_with(Arc::new(book_pages(3)), reply);
-        let (book, _) = r.imported().await;
-        assert_eq!(r.engine.n(), 4);
-        assert_eq!(r.ready(&book), 3);
+        let up = r.upload().await;
+        r.open(&up.book, vec![0]).await;
+        assert_eq!(r.engine.n(), 2);
+        assert_eq!(r.ready(&up.book), 1);
+        assert_eq!(r.svc.usage(&up.book).await.unwrap().hour_used, 1);
     }
 
     #[tokio::test]
-    async fn two_engine_errors_stop_job_early() {
+    async fn chapter_gets_one_try_plus_one_retry_then_it_is_final() {
+        let reply: Reply = Box::new(|n, p| if n <= 2 { garbage() } else { Ok(good(p)) });
+        let r = rig_with(Arc::new(book(3, 400)), reply);
+        let up = r.upload().await;
+        r.open(&up.book, vec![0]).await;
+        assert_eq!(r.engine.n(), 2, "the try and one retry, no third call");
+        let st = r.state(&up.book);
+        assert_eq!(st.chapters[0].state, ChapterState::Failed);
+        assert_eq!(st.chapters[0].error.as_deref(), Some("parse"));
+        assert!(!st.chapters[0].retryable);
+        assert_eq!(pending_chapters(&st), vec![1, 2], "it is not offered again");
+        let v = r.svc.book(&up.book).await.unwrap();
+        assert!(!v.chapters[0].can_import);
+        assert!(v.chapters[1].can_import);
+        // asking for it by number is refused and makes no call
+        let e = r.svc.import(&up.book, Some(vec![0]), r.guard()).await;
+        assert_eq!(
+            e.unwrap_err(),
+            TextbookError::Conflict(conflict::RETRY_USED.into())
+        );
+        assert_eq!(r.engine.n(), 2);
+        // the other chapters are unaffected
+        r.open(&up.book, vec![1]).await;
+        assert_eq!(r.ready(&up.book), 1);
+    }
+
+    #[tokio::test]
+    async fn two_engine_errors_stop_job_early_and_stay_retryable() {
         let reply: Reply = Box::new(|_, _| Err(DriverError::Failed("rate limit".into())));
         let r = rig_with(Arc::new(book(5, 400)), reply);
         let (book, job) = r.imported().await;
@@ -1955,6 +2152,7 @@ mod tests {
         let st = r.state(&book);
         assert_eq!(st.chapters[0].error.as_deref(), Some("engine_unavailable"));
         assert_eq!(st.chapters[1].error.as_deref(), Some("engine_unavailable"));
+        assert!(st.chapters[0].retryable, "no content attempt was spent");
         assert_eq!(st.chapters[2].state, ChapterState::Pending);
         assert_eq!(job.result.unwrap()["stopped"], "engine_unavailable");
     }
@@ -1968,7 +2166,6 @@ mod tests {
         let again = r.upload().await;
         assert!(again.existing);
         assert_eq!(again.book, book);
-        assert_eq!(again.job, None);
         assert_eq!(r.card_count(), cards);
         assert_eq!(r.engine.n(), calls);
         let imported = r
@@ -1997,11 +2194,9 @@ mod tests {
             a.existing, b.existing,
             "exactly one of them stored the book"
         );
-        let job = if a.existing { b.job } else { a.job }.unwrap();
-        r.wait(&job).await;
         assert_eq!(r.stores.textbooks.list().unwrap().len(), 1);
-        assert_eq!(r.engine.n(), 3);
-        assert_eq!(r.ready(&a.book), 3);
+        assert_eq!(r.engine.n(), 0, "neither upload called a model");
+        assert_eq!(r.state(&a.book).chapters.len(), 3);
     }
 
     #[tokio::test]
@@ -2009,7 +2204,7 @@ mod tests {
         let r = rig(book(4, 400));
         r.engine.hold_from.store(3, Ordering::SeqCst);
         let up = r.upload().await;
-        let job = up.job.unwrap();
+        let job = r.svc.import(&up.book, None, r.guard()).await.unwrap();
         for _ in 0..500 {
             if r.engine.n() >= 3 {
                 break;
@@ -2031,12 +2226,14 @@ mod tests {
         let mut pdf = book(25, 400);
         pdf.fail_from = Some(15);
         let r = rig(pdf);
-        let (book, job) = r.imported().await;
+        let up = r.upload().await;
+        let job = r.open(&up.book, vec![14]).await;
         assert_eq!(job.status, JobStatus::Done);
         let result = job.result.unwrap();
         assert!(result["error"].as_str().unwrap().contains("timed out"));
         assert_eq!(r.engine.n(), 0);
-        assert_eq!(r.ready(&book), 0);
+        assert_eq!(r.ready(&up.book), 0);
+        assert_eq!(r.state(&up.book).chapters[14].state, ChapterState::Pending);
     }
 
     #[tokio::test]
@@ -2051,27 +2248,77 @@ mod tests {
             }
         });
         let r = rig_with(Arc::new(pdf), reply);
-        let (book, _) = r.imported().await;
-        let st = r.state(&book);
+        let up = r.upload().await;
+        let st = r.state(&up.book);
         assert_eq!(st.source, Some(MapSource::Chunks));
         assert_eq!(st.chapters.len(), 3);
         assert_eq!(r.engine.toc_calls(), 1);
-        assert_eq!(st.auto_calls, 4, "the TOC call stays counted");
+        assert_eq!(st.auto_calls, 1, "the TOC call stays counted");
+        assert_eq!(r.engine.n(), 1);
     }
 
     #[tokio::test]
-    async fn scanned_book_ends_with_ocr_error_no_calls() {
+    async fn scanned_book_without_outline_is_refused_at_upload_with_no_calls() {
         let pdf = FakePdf {
             pages: vec![String::new(); 4],
             outline: vec![],
             fail_from: None,
+            reads: Mutex::default(),
         };
         let r = rig(pdf);
-        let (book, job) = r.imported().await;
+        let e = r
+            .svc
+            .upload("s.pdf", r.bytes(), r.guard())
+            .await
+            .unwrap_err();
+        assert_eq!(e, TextbookError::Invalid(NO_TEXT.into()));
         assert_eq!(r.engine.n(), 0);
-        let msg = job.result.unwrap()["error"].as_str().unwrap().to_owned();
-        assert_eq!(msg, "No text found. Scanned pages need OCR before import.");
+        assert!(r.svc.list().await.unwrap().is_empty(), "nothing is kept");
+    }
+
+    #[tokio::test]
+    async fn scanned_book_with_outline_ends_chapter_import_with_ocr_error_no_calls() {
+        let mut pdf = book(3, 400);
+        pdf.pages = vec![String::new(); 3];
+        let r = rig(pdf);
+        let up = r.upload().await;
+        let job = r.open(&up.book, vec![0]).await;
+        assert_eq!(r.engine.n(), 0);
+        assert_eq!(job.result.unwrap()["error"], NO_TEXT);
+        assert_eq!(r.ready(&up.book), 0);
+    }
+
+    #[tokio::test]
+    async fn unmapped_book_is_mapped_by_its_first_import() {
+        // a crash after `Imported` and before `Mapped` leaves a stored book with no chapters
+        let r = rig(book(3, 400));
+        let sha = hex::encode(Sha256::digest(b"unmapped"));
+        let book = book_id(&sha);
+        r.stores.textbooks.save_source(&book, b"%PDF-x").unwrap();
+        r.stores
+            .textbooks
+            .append_event(
+                &book,
+                &TextbookEvent::Imported {
+                    ts: 1,
+                    book: BookMeta {
+                        id: book.clone(),
+                        title: "Half".into(),
+                        file_name: "h.pdf".into(),
+                        bytes: 6,
+                        sha256: sha,
+                        total_pages: 3,
+                        page_offset: None,
+                    },
+                },
+            )
+            .unwrap();
         assert!(r.state(&book).source.is_none());
+        r.open(&book, vec![1]).await;
+        let st = r.state(&book);
+        assert_eq!(st.source, Some(MapSource::Outline));
+        assert_eq!(st.chapters[1].state, ChapterState::Ready);
+        assert_eq!(r.engine.n(), 1);
     }
 
     // ---------------------------------------------------------------- recovery
@@ -2222,8 +2469,8 @@ mod tests {
         assert_eq!(r.ready(&book), 4);
         assert_eq!(r.engine.n() - calls, 3, "only the missing chapters");
         let st = r.state(&book);
-        assert_eq!(st.requested_calls, 3);
-        assert_eq!(st.auto_calls, 3);
+        assert_eq!(st.requested_calls, 6, "3 in the first job, 3 on resume");
+        assert_eq!(st.auto_calls, 0);
         assert!(job.starts_with("tbj_"));
         let e = r.svc.import(&book, None, r.guard()).await.unwrap_err();
         assert_eq!(
@@ -2237,13 +2484,19 @@ mod tests {
         let r = rig(book(3, 400));
         r.engine.hold_from.store(2, Ordering::SeqCst);
         let up = r.upload().await;
+        let job = r.svc.import(&up.book, None, r.guard()).await.unwrap();
+        for _ in 0..500 {
+            if r.engine.n() >= 2 {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
         let e = r.svc.import(&up.book, None, r.guard()).await.unwrap_err();
         assert_eq!(e, TextbookError::Conflict(conflict::IMPORT_RUNNING.into()));
         let again = r.upload().await;
         assert!(again.existing);
-        assert_eq!(again.job, up.job, "the running job is reported");
-        r.svc.abort(&up.job.clone().unwrap());
-        r.wait(&up.job.unwrap()).await;
+        r.svc.abort(&job);
+        r.wait(&job).await;
         r.engine.hold_from.store(0, Ordering::SeqCst);
         for bad in [vec![9], vec![0], vec![]] {
             let e = r
@@ -2511,7 +2764,8 @@ mod tests {
             TextbookError::Conflict(conflict::CHAPTER_NOT_READY.into())
         );
         let detail = r.svc.chapter(&seed, 1).await.unwrap();
-        assert_eq!(detail.row.state, ChapterRowState::Queued);
+        assert_eq!(detail.row.state, ChapterRowState::Pending);
+        assert!(detail.row.can_import);
         assert!(detail.objectives.is_empty());
     }
 
@@ -2614,7 +2868,8 @@ mod tests {
             .upload("Streams Book.pdf", Bytes::from(bytes), r.guard())
             .await
             .unwrap();
-        let job = r.wait(&up.job.unwrap()).await;
+        assert_eq!(r.engine.n(), 0, "upload called no model");
+        let job = r.import_all(&up.book).await;
         assert!(job.result.unwrap()["error"].is_null());
         let st = r.state(&up.book);
         assert_eq!(st.meta.as_ref().unwrap().total_pages, 9);

@@ -256,13 +256,14 @@ async fn upload(
     ))
 }
 
-/// Uploads a PDF book (U7). The server maps it into chapters in the background; the returned job
-/// reports progress. The same bytes twice find the same book (`200`, `existing: true`).
+/// Uploads a PDF book (U7). The server maps it into chapters (the outline, or one cheap call
+/// without one) and imports nothing: a chapter is imported when the learner opens it. The same
+/// bytes twice find the same book (`200`, `existing: true`).
 #[utoipa::path(
     post, path = "/workspaces/{ws}/sources/textbook", tag = "textbooks",
     params(("ws" = String, Path)),
     request_body(content = TextbookUploadForm, content_type = "multipart/form-data"),
-    responses((status = 202, description = "New book; the import job started", body = TextbookUploadDto),
+    responses((status = 201, description = "New book, mapped into chapters; no import started", body = TextbookUploadDto),
               (status = 200, description = "The book was already stored", body = TextbookUploadDto),
               (status = 400, body = ErrorEnvelope),
               (status = 413, description = "PDF exceeds 50 MB", body = ErrorEnvelope),
@@ -312,7 +313,7 @@ async fn upload_textbook(
     let status = if up.existing {
         StatusCode::OK
     } else {
-        StatusCode::ACCEPTED
+        StatusCode::CREATED
     };
     Ok((status, Json(TextbookUploadDto::new(up, len))))
 }

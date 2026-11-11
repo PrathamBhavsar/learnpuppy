@@ -13,8 +13,11 @@ use crate::fsrs::Rating;
 
 // ------------------------------------------------------------------ constants
 
-/// Lifetime cheap calls per book across all imports (D7).
-pub const MAX_AUTO_CALLS: u32 = 40;
+/// Manual chapter imports per book in any rolling `IMPORT_WINDOW_MS` (D7, R4). A chapter import
+/// is one `(job, chapter)` that sent at least one model call.
+pub const MAX_MANUAL_IMPORTS_PER_HOUR: u32 = 8;
+/// The rolling window of [`MAX_MANUAL_IMPORTS_PER_HOUR`], in epoch milliseconds.
+pub const IMPORT_WINDOW_MS: i64 = 3_600_000;
 pub const PART_WORDS: usize = 8_000;
 pub const MAX_PARTS: usize = 3;
 pub const MAX_PART_WORDS: usize = 10_000;
@@ -387,16 +390,94 @@ fn finish_chapters(mut starts: Vec<(String, u32)>, total: u32) -> Vec<Chapter> {
         .collect()
 }
 
+/// "Part I", "Part 2: Basics", "Book Three": a container that only groups chapters.
+fn is_part_container(title: &str) -> bool {
+    const WORDS: [&str; 10] = [
+        "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten",
+    ];
+    let t = title.trim().to_lowercase();
+    let Some(rest) = ["part", "book"].iter().find_map(|p| t.strip_prefix(p)) else {
+        return false;
+    };
+    if !rest.starts_with(char::is_whitespace) {
+        return false;
+    }
+    let tok: String = rest
+        .trim_start()
+        .chars()
+        .take_while(|c| c.is_alphanumeric())
+        .collect();
+    !tok.is_empty()
+        && (tok.chars().all(|c| c.is_ascii_digit())
+            || tok.chars().all(|c| "ivxlc".contains(c))
+            || WORDS.contains(&tok.as_str()))
+}
+
 pub fn chapters_from_outline(entries: &[OutlineEntry], total: u32) -> Vec<Chapter> {
     let d0 = entries.iter().filter(|e| e.depth == 0).count();
     let d1 = entries.iter().filter(|e| e.depth == 1).count();
-    let level = if d0 < 3 && d1 >= 3 { 1 } else { 0 };
-    let starts = entries
-        .iter()
-        .filter(|e| e.depth == level)
-        .map(|e| (e.title.clone(), e.page))
-        .collect();
+    if d0 < 3 && d1 >= 3 {
+        let starts = entries
+            .iter()
+            .filter(|e| e.depth == 1)
+            .map(|e| (e.title.clone(), e.page))
+            .collect();
+        return finish_chapters(starts, total);
+    }
+    // Leaf chapters under `Part` containers; other top-level entries (Preface, Index) stay.
+    let mut starts = Vec::new();
+    let mut inside = false;
+    let mut parts = 0;
+    for (i, e) in entries.iter().enumerate() {
+        match e.depth {
+            0 if is_part_container(&e.title)
+                && entries.get(i + 1).is_some_and(|n| n.depth == 1) =>
+            {
+                inside = true;
+                parts += 1;
+            }
+            0 => {
+                inside = false;
+                starts.push((e.title.clone(), e.page));
+            }
+            1 if inside => starts.push((e.title.clone(), e.page)),
+            _ => {}
+        }
+    }
+    if parts == 0 {
+        starts = entries
+            .iter()
+            .filter(|e| e.depth == 0)
+            .map(|e| (e.title.clone(), e.page))
+            .collect();
+    }
     finish_chapters(starts, total)
+}
+
+/// First-call time of every distinct `(job, chapter)` that sent a requested model call at or after
+/// `since`, oldest first. This is what the hourly import limit counts, straight from the ledger.
+pub fn manual_import_times(events: &[TextbookEvent], since: i64) -> Vec<i64> {
+    let mut seen: Vec<(&str, u32)> = Vec::new();
+    let mut times = Vec::new();
+    for ev in events {
+        if let TextbookEvent::Usage {
+            ts,
+            job,
+            chapter: Some(ch),
+            requested: true,
+            ..
+        } = ev
+        {
+            if !seen.contains(&(job.as_str(), *ch)) {
+                seen.push((job.as_str(), *ch));
+                if *ts >= since {
+                    times.push(*ts);
+                }
+            }
+        }
+    }
+    times.sort_unstable();
+    times
 }
 
 pub fn chapters_from_toc(
@@ -916,6 +997,83 @@ mod tests {
         // three depth-0 entries keep depth 0
         let e2 = vec![oe("A", 1, 0), oe("B", 5, 0), oe("C", 9, 0), oe("x", 2, 1)];
         assert_eq!(chapters_from_outline(&e2, 12).len(), 3);
+    }
+
+    #[test]
+    fn outline_picks_leaf_chapters_under_part_containers() {
+        // document order: Preface, then three Parts with chapters, then Index
+        let e = vec![
+            oe("Preface", 1, 0),
+            oe("Part I: Basics", 9, 0),
+            oe("Chapter 1", 9, 1),
+            oe("1.1 A section", 12, 2),
+            oe("Chapter 2", 30, 1),
+            oe("Part II", 60, 0),
+            oe("Chapter 3", 61, 1),
+            oe("Chapter 4", 90, 1),
+            oe("Part III", 120, 0),
+            oe("Chapter 5", 121, 1),
+            oe("Index", 150, 0),
+        ];
+        let c = chapters_from_outline(&e, 160);
+        let titles: Vec<&str> = c.iter().map(|c| c.title.as_str()).collect();
+        assert_eq!(
+            titles,
+            [
+                "Preface",
+                "Chapter 1",
+                "Chapter 2",
+                "Chapter 3",
+                "Chapter 4",
+                "Chapter 5",
+                "Index"
+            ]
+        );
+        assert_eq!(c[1].pages, PageRange { start: 9, end: 29 });
+        assert_eq!(
+            c[5].pages,
+            PageRange {
+                start: 121,
+                end: 149
+            }
+        );
+        assert_eq!(c[0].kind, ChapterKind::Front);
+        assert_eq!(c[6].kind, ChapterKind::Back);
+        // chapters that merely start with "Part" stay chapters
+        let e = vec![
+            oe("Partial Orders", 1, 0),
+            oe("Particles", 20, 0),
+            oe("Parties", 40, 0),
+            oe("x", 2, 1),
+        ];
+        assert_eq!(chapters_from_outline(&e, 60).len(), 3);
+        assert!(is_part_container("Part 2"));
+        assert!(is_part_container("Book Three"));
+        assert!(!is_part_container("Part of Speech"));
+    }
+
+    #[test]
+    fn manual_import_times_count_distinct_job_chapter_pairs_in_window() {
+        let u = |ts, job: &str, chapter, requested| TextbookEvent::Usage {
+            ts,
+            job: job.into(),
+            chapter,
+            role: "placer".into(),
+            tokens_in: 1,
+            tokens_out: 1,
+            calls: 1,
+            requested,
+        };
+        let ev = vec![
+            u(10, "j1", Some(0), true),
+            u(11, "j1", Some(0), true), // second call of the same chapter import
+            u(12, "j1", Some(1), true),
+            u(13, "map", None, false), // the TOC call is never a chapter import
+            u(14, "j1", Some(2), false),
+            u(100, "j2", Some(0), true), // same chapter, a new import
+        ];
+        assert_eq!(manual_import_times(&ev, 0), vec![10, 12, 100]);
+        assert_eq!(manual_import_times(&ev, 11), vec![12, 100]);
     }
 
     #[test]
