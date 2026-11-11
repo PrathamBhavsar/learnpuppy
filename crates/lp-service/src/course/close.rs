@@ -490,6 +490,91 @@ mod tests {
         assert_eq!(nodes.len(), confirmed);
     }
 
+    /// R1: a method_version = 1 walk to Close confirms every fact, so the report counts them and
+    /// the graph gets one node per fact.
+    #[test]
+    fn a_walk_to_close_confirms_every_fact_and_writes_nodes() {
+        let mut c = course();
+        c.lessons[0].items = vec![
+            Item {
+                id: "l00-i0".into(),
+                kind: ItemKind::Mcq,
+                q: "q0".into(),
+                answer: "a".into(),
+                options: vec!["a".into(), "b".into(), "c".into(), "d".into()],
+                tests: Some(0),
+                ..Item::default()
+            },
+            Item {
+                id: "l00-r0".into(),
+                kind: ItemKind::Recall,
+                q: "r0".into(),
+                answer: "a".into(),
+                tests: Some(0),
+                ..Item::default()
+            },
+            Item {
+                id: "l00-i1".into(),
+                kind: ItemKind::Mcq,
+                q: "q1".into(),
+                answer: "a".into(),
+                options: vec!["a".into(), "b".into(), "c".into(), "d".into()],
+                tests: Some(1),
+                ..Item::default()
+            },
+            Item {
+                id: "l00-r1".into(),
+                kind: ItemKind::Recall,
+                q: "r1".into(),
+                answer: "a".into(),
+                tests: Some(1),
+                ..Item::default()
+            },
+        ];
+        let settings = Settings::default();
+        let mut events: Vec<CourseEvent> = Vec::new();
+        for _ in 0..40 {
+            let mastery = fold_mastery(&c, &events);
+            match next_step(&c, &events, &mastery, &settings, &[], false) {
+                Step::Close => break,
+                Step::Predict { lesson } => events.push(CourseEvent::Predicted {
+                    ts: 0,
+                    lesson,
+                    guess: "x".into(),
+                }),
+                Step::Explain { lesson, .. } => events.push(CourseEvent::Shown { ts: 0, lesson }),
+                Step::Notes { lesson } => events.push(CourseEvent::NoteWritten {
+                    ts: 0,
+                    lesson,
+                    text: String::new(),
+                }),
+                Step::Ask { item, .. } if item.contains("-r") => {
+                    events.push(CourseEvent::RecallGraded {
+                        ts: 0,
+                        item,
+                        correct: true,
+                        source: String::new(),
+                    })
+                }
+                Step::Ask { item, .. } => events.push(ans(&item, true, 3)),
+                Step::Feynman { lesson } => events.push(CourseEvent::FeynmanGraded {
+                    ts: 0,
+                    lesson,
+                    correct: true,
+                    explanation: String::new(),
+                }),
+                other => panic!("unexpected step {other:?}"),
+            }
+        }
+        let report = close_report(&c, &events, &settings);
+        assert_eq!(report.count_line, "2 of 2 confirmed");
+        assert_eq!(report.takeaways.len(), 2);
+        assert_eq!(report.resume, None);
+        let d = tempfile::tempdir().unwrap();
+        let g = lp_store::FsGraphStore::open(d.path().join("g")).unwrap();
+        assert_eq!(write_confirmed(&g, &c, &events, 0).unwrap(), 2);
+    }
+
     #[test]
     fn write_confirmed_is_idempotent() {
         let d = tempfile::tempdir().unwrap();
