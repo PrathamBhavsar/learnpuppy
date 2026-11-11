@@ -10,6 +10,7 @@ import { ingestHandlers } from "./handlers/ingest"
 import { learningHandlers } from "./handlers/learning"
 import { reviewHandlers } from "./handlers/review"
 import { settingsHandlers } from "./handlers/settings"
+import { textbookHandlers } from "./handlers/textbooks"
 import { systemHandlers } from "./handlers/system"
 import { workspaceHandlers } from "./handlers/workspaces"
 
@@ -27,6 +28,7 @@ export const handlers: RequestHandler[] = [
   ...chatHandlers,
   ...methodHandlers,
   ...courseHandlers,
+  ...textbookHandlers,
   ...learningHandlers,
   ...reviewHandlers,
   ...digestHandlers,

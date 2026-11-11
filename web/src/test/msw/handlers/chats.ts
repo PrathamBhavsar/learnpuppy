@@ -255,7 +255,11 @@ export const chatHandlers = [
     const items = (chatsOf(params["ws"]) ?? []).flatMap((c) =>
       c.jobs.map((job) => ({ ...job, chatId: c.id, createdAt: state.db.now }))
     )
-    return HttpResponse.json({ items })
+    // Textbook imports are workspace jobs with no chat (chatId "").
+    const books = (state.db.textbooks.get(String(params["ws"])) ?? []).flatMap(
+      (b) => (b.job ? [b.job] : [])
+    )
+    return HttpResponse.json({ items: [...books, ...items] })
   }),
   http.post(`${API}/jobs/:id/abort`, ({ params }) => {
     for (const chat of chatsOf(params["ws"]) ?? []) {
