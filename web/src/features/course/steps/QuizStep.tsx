@@ -5,7 +5,7 @@ import { PromptMarkdown } from "@/components/app/prompt-markdown"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 
-import { Choice } from "../Placement"
+import { Choice } from "@/components/app/choice"
 
 export type AnswerDraft = {
   text: string

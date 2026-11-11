@@ -8,7 +8,7 @@ import { Spinner } from "@/components/ui/spinner"
 import { toastError } from "@/lib/toast"
 
 import { type Step, type useCourseActions, useUsage } from "./api"
-import { Choice } from "./Placement"
+import { Choice } from "@/components/app/choice"
 
 type Dto = components["schemas"]
 type Actions = ReturnType<typeof useCourseActions>
