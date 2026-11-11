@@ -3,7 +3,7 @@
 
 use utoipa::OpenApi;
 
-use crate::dto::{events, system};
+use crate::dto::{events, system, textbook};
 use crate::error::{ErrorBody, ErrorCode, ErrorEnvelope, FieldError};
 
 #[derive(OpenApi)]
@@ -134,6 +134,25 @@ use crate::error::{ErrorBody, ErrorCode, ErrorEnvelope, FieldError};
         FieldError,
         system::EngineMode,
         events::ServerEvent,
+        textbook::TextbookUploadDto,
+        textbook::TextbookListDto,
+        textbook::TextbookSummaryDto,
+        textbook::BookPhaseDto,
+        textbook::TextbookDto,
+        textbook::ChapterRowDto,
+        textbook::MapSourceDto,
+        textbook::ChapterKindDto,
+        textbook::ChapterStateDto,
+        textbook::ChapterStatusDto,
+        textbook::ChapterDetailDto,
+        textbook::ObjectiveRowDto,
+        textbook::ImportRequest,
+        textbook::ImportStartedDto,
+        textbook::CheckItemDto,
+        textbook::ReadingCheckDto,
+        textbook::CheckAnswerRequest,
+        textbook::CheckFeedbackDto,
+        textbook::TextbookUsageDto,
     )),
     tags(
         (name = "system", description = "Health and app bootstrap"),

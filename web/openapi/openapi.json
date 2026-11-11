@@ -438,6 +438,15 @@
         ],
         "type": "string"
       },
+      "BookPhaseDto": {
+        "enum": [
+          "importing",
+          "ready",
+          "partial",
+          "failed"
+        ],
+        "type": "string"
+      },
       "Bootstrap": {
         "description": "Everything the app needs at start, in one call.",
         "properties": {
@@ -970,6 +979,111 @@
         ],
         "type": "object"
       },
+      "ChapterDetailDto": {
+        "properties": {
+          "chapter": {
+            "$ref": "#/components/schemas/ChapterRowDto"
+          },
+          "objectives": {
+            "items": {
+              "$ref": "#/components/schemas/ObjectiveRowDto"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "chapter",
+          "objectives"
+        ],
+        "type": "object"
+      },
+      "ChapterKindDto": {
+        "enum": [
+          "chapter",
+          "front",
+          "back"
+        ],
+        "type": "string"
+      },
+      "ChapterRowDto": {
+        "properties": {
+          "endPage": {
+            "format": "int32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "error": {
+            "description": "A short code (`parse`, `budget`, `no_cards`, `engine_unavailable`, …); never page text.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "index": {
+            "format": "int32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/ChapterKindDto"
+          },
+          "objectives": {
+            "format": "int32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "startPage": {
+            "description": "Physical, 1-based.",
+            "format": "int32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "state": {
+            "$ref": "#/components/schemas/ChapterStateDto"
+          },
+          "status": {
+            "$ref": "#/components/schemas/ChapterStatusDto"
+          },
+          "title": {
+            "type": "string"
+          },
+          "truncated": {
+            "description": "The chapter was longer than one call may carry and its tail was cut.",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "index",
+          "title",
+          "startPage",
+          "endPage",
+          "kind",
+          "state",
+          "status",
+          "objectives",
+          "truncated"
+        ],
+        "type": "object"
+      },
+      "ChapterStateDto": {
+        "enum": [
+          "pending",
+          "importing",
+          "ready",
+          "failed",
+          "skipped",
+          "queued"
+        ],
+        "type": "string"
+      },
+      "ChapterStatusDto": {
+        "enum": [
+          "not_read",
+          "checked",
+          "due"
+        ],
+        "type": "string"
+      },
       "ChatDeltaData": {
         "properties": {
           "chatId": {
@@ -1153,6 +1267,46 @@
         ],
         "type": "object"
       },
+      "CheckAnswerRequest": {
+        "properties": {
+          "clientId": {
+            "description": "A retry with the same id returns the stored feedback instead of `409`.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "confidence": {
+            "description": "1..=5.",
+            "format": "int32",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "item": {
+            "type": "string"
+          },
+          "ms": {
+            "description": "How long the learner took, measured by the client.",
+            "format": "int64",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "text": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "item",
+          "text"
+        ],
+        "type": "object"
+      },
       "CheckDto": {
         "properties": {
           "correct": {
@@ -1165,6 +1319,69 @@
         "required": [
           "correct",
           "note"
+        ],
+        "type": "object"
+      },
+      "CheckFeedbackDto": {
+        "properties": {
+          "answer": {
+            "type": "string"
+          },
+          "close": {
+            "description": "Near the right answer: the learner confirms with a self-grade.",
+            "type": "boolean"
+          },
+          "correct": {
+            "type": "boolean"
+          },
+          "due": {
+            "description": "Epoch ms the card is next due.",
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "why": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "correct",
+          "close",
+          "answer",
+          "why"
+        ],
+        "type": "object"
+      },
+      "CheckItemDto": {
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/ItemKindDto"
+          },
+          "objectiveId": {
+            "type": "string"
+          },
+          "options": {
+            "description": "Multiple choice only, shuffled; empty for recall.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "q": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "objectiveId",
+          "kind",
+          "q",
+          "options"
         ],
         "type": "object"
       },
@@ -2567,6 +2784,34 @@
         ],
         "type": "object"
       },
+      "ImportRequest": {
+        "description": "At most 200 chapter indices; omit to import everything still pending.",
+        "properties": {
+          "chapters": {
+            "items": {
+              "format": "int32",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          }
+        },
+        "type": "object"
+      },
+      "ImportStartedDto": {
+        "properties": {
+          "jobId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "jobId"
+        ],
+        "type": "object"
+      },
       "ImportedWorkspace": {
         "properties": {
           "workspaceId": {
@@ -2849,7 +3094,7 @@
             "type": "string"
           },
           "kind": {
-            "description": "`research`, `pdf`, `visual` or `demo`.",
+            "description": "`research`, `pdf`, `visual`, `demo` or `textbook`.",
             "type": "string"
           },
           "status": {
@@ -2873,6 +3118,31 @@
           "artifactId": {
             "type": [
               "string",
+              "null"
+            ]
+          },
+          "bookId": {
+            "description": "Textbook import jobs: the book being imported.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "chaptersDone": {
+            "description": "Textbook import jobs: chapters finished.",
+            "format": "int64",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "chaptersTotal": {
+            "description": "Textbook import jobs: chapters this run covers.",
+            "format": "int64",
+            "minimum": 0,
+            "type": [
+              "integer",
               "null"
             ]
           },
@@ -3001,6 +3271,14 @@
           "conceptual",
           "procedural",
           "definitional"
+        ],
+        "type": "string"
+      },
+      "MapSourceDto": {
+        "enum": [
+          "outline",
+          "toc",
+          "chunks"
         ],
         "type": "string"
       },
@@ -3665,6 +3943,40 @@
         },
         "required": [
           "file"
+        ],
+        "type": "object"
+      },
+      "ObjectiveRowDto": {
+        "properties": {
+          "endPage": {
+            "format": "int32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "id": {
+            "type": "string"
+          },
+          "items": {
+            "description": "How many stored quiz items; the items themselves are never sent here.",
+            "format": "int32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "startPage": {
+            "format": "int32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "text": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "text",
+          "startPage",
+          "endPage",
+          "items"
         ],
         "type": "object"
       },
@@ -4483,6 +4795,30 @@
           "items",
           "dueNow",
           "now"
+        ],
+        "type": "object"
+      },
+      "ReadingCheckDto": {
+        "properties": {
+          "chapter": {
+            "format": "int32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "checkId": {
+            "type": "string"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/CheckItemDto"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "checkId",
+          "chapter",
+          "items"
         ],
         "type": "object"
       },
@@ -5604,6 +5940,204 @@
         "required": [
           "cards",
           "reviews"
+        ],
+        "type": "object"
+      },
+      "TextbookDto": {
+        "properties": {
+          "autoCalls": {
+            "format": "int32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "callsCap": {
+            "description": "Lifetime cheap-call cap per book.",
+            "format": "int32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "chapters": {
+            "items": {
+              "$ref": "#/components/schemas/ChapterRowDto"
+            },
+            "type": "array"
+          },
+          "fileName": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "jobId": {
+            "description": "The running import job.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "mapSource": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/MapSourceDto"
+              }
+            ]
+          },
+          "pageOffset": {
+            "description": "Physical minus printed page number, when one was found.",
+            "format": "int32",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "requestedCalls": {
+            "format": "int32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "title": {
+            "type": "string"
+          },
+          "totalPages": {
+            "format": "int32",
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "fileName",
+          "totalPages",
+          "autoCalls",
+          "requestedCalls",
+          "callsCap",
+          "chapters"
+        ],
+        "type": "object"
+      },
+      "TextbookListDto": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/TextbookSummaryDto"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "type": "object"
+      },
+      "TextbookSummaryDto": {
+        "properties": {
+          "chapters": {
+            "format": "int32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "createdAt": {
+            "description": "Epoch ms of the first import.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "id": {
+            "type": "string"
+          },
+          "ready": {
+            "format": "int32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "state": {
+            "$ref": "#/components/schemas/BookPhaseDto"
+          },
+          "title": {
+            "type": "string"
+          },
+          "totalPages": {
+            "format": "int32",
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "totalPages",
+          "chapters",
+          "ready",
+          "state",
+          "createdAt"
+        ],
+        "type": "object"
+      },
+      "TextbookUploadDto": {
+        "properties": {
+          "bookId": {
+            "type": "string"
+          },
+          "bytes": {
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "existing": {
+            "type": "boolean"
+          },
+          "jobId": {
+            "description": "The import job, `null` when the book was already stored and nothing is running.",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "bookId",
+          "existing",
+          "bytes"
+        ],
+        "type": "object"
+      },
+      "TextbookUsageDto": {
+        "properties": {
+          "autoCalls": {
+            "format": "int32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "callsCap": {
+            "format": "int32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "cheapIn": {
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "cheapOut": {
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "requestedCalls": {
+            "format": "int32",
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "cheapIn",
+          "cheapOut",
+          "autoCalls",
+          "requestedCalls",
+          "callsCap"
         ],
         "type": "object"
       },

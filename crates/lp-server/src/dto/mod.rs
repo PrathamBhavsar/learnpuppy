@@ -11,6 +11,7 @@ pub mod review;
 pub mod search;
 pub mod settings;
 pub mod system;
+pub mod textbook;
 pub mod workspace;
 
 pub mod mutations;

@@ -1876,6 +1876,8 @@ export interface components {
         BannerLevelDto: "info" | "warning";
         /** @enum {string} */
         BasisDto: "stated" | "inferred";
+        /** @enum {string} */
+        BookPhaseDto: "importing" | "ready" | "partial" | "failed";
         /** @description Everything the app needs at start, in one call. */
         Bootstrap: {
             accounts: components["schemas"]["AccountSummaryDto"][];
@@ -2012,6 +2014,37 @@ export interface components {
             selection: string[];
             total: number;
         };
+        ChapterDetailDto: {
+            chapter: components["schemas"]["ChapterRowDto"];
+            objectives: components["schemas"]["ObjectiveRowDto"][];
+        };
+        /** @enum {string} */
+        ChapterKindDto: "chapter" | "front" | "back";
+        ChapterRowDto: {
+            /** Format: int32 */
+            endPage: number;
+            /** @description A short code (`parse`, `budget`, `no_cards`, `engine_unavailable`, …); never page text. */
+            error?: string | null;
+            /** Format: int32 */
+            index: number;
+            kind: components["schemas"]["ChapterKindDto"];
+            /** Format: int32 */
+            objectives: number;
+            /**
+             * Format: int32
+             * @description Physical, 1-based.
+             */
+            startPage: number;
+            state: components["schemas"]["ChapterStateDto"];
+            status: components["schemas"]["ChapterStatusDto"];
+            title: string;
+            /** @description The chapter was longer than one call may carry and its tail was cut. */
+            truncated: boolean;
+        };
+        /** @enum {string} */
+        ChapterStateDto: "pending" | "importing" | "ready" | "failed" | "skipped" | "queued";
+        /** @enum {string} */
+        ChapterStatusDto: "not_read" | "checked" | "due";
         ChatDeltaData: {
             chatId: string;
             kind: components["schemas"]["DeltaKind"];
@@ -2064,9 +2097,37 @@ export interface components {
             chatId: string;
             turnId: string;
         };
+        CheckAnswerRequest: {
+            /** @description A retry with the same id returns the stored feedback instead of `409`. */
+            clientId?: string | null;
+            /**
+             * Format: int32
+             * @description 1..=5.
+             */
+            confidence?: number | null;
+            item: string;
+            /**
+             * Format: int64
+             * @description How long the learner took, measured by the client.
+             */
+            ms?: number | null;
+            text: string;
+        };
         CheckDto: {
             correct: boolean;
             note: string;
+        };
+        CheckFeedbackDto: {
+            answer: string;
+            /** @description Near the right answer: the learner confirms with a self-grade. */
+            close: boolean;
+            correct: boolean;
+            /**
+             * Format: int64
+             * @description Epoch ms the card is next due.
+             */
+            due?: number | null;
+            why: string;
         };
         CheckinNeededDto: {
             needed: boolean;
@@ -2079,6 +2140,14 @@ export interface components {
         /** @description `review_only_suggested`: self-reported sleep came in under the poor-sleep threshold (F04). */
         CheckinResultDto: {
             reviewOnlySuggested: boolean;
+        };
+        CheckItemDto: {
+            id: string;
+            kind: components["schemas"]["ItemKindDto"];
+            objectiveId: string;
+            /** @description Multiple choice only, shuffled; empty for recall. */
+            options: string[];
+            q: string;
         };
         CheckRequest: {
             item: string;
@@ -2470,6 +2539,13 @@ export interface components {
         ImportedWorkspace: {
             workspaceId: string;
         };
+        /** @description At most 200 chapter indices; omit to import everything still pending. */
+        ImportRequest: {
+            chapters?: number[] | null;
+        };
+        ImportStartedDto: {
+            jobId: string;
+        };
         IngestDoneData: {
             report: components["schemas"]["IngestReport"];
             runId: string;
@@ -2540,7 +2616,7 @@ export interface components {
         JobDto: {
             artifactId?: string | null;
             id: string;
-            /** @description `research`, `pdf`, `visual` or `demo`. */
+            /** @description `research`, `pdf`, `visual`, `demo` or `textbook`. */
             kind: string;
             status: components["schemas"]["JobStatusDto"];
             title: string;
@@ -2548,6 +2624,18 @@ export interface components {
         /** @description One workbench job in the workspace's job list. */
         JobItemDto: {
             artifactId?: string | null;
+            /** @description Textbook import jobs: the book being imported. */
+            bookId?: string | null;
+            /**
+             * Format: int64
+             * @description Textbook import jobs: chapters finished.
+             */
+            chaptersDone?: number | null;
+            /**
+             * Format: int64
+             * @description Textbook import jobs: chapters this run covers.
+             */
+            chaptersTotal?: number | null;
             chatId: string;
             /** Format: int64 */
             createdAt: number;
@@ -2587,6 +2675,8 @@ export interface components {
         };
         /** @enum {string} */
         LessonKindDto: "conceptual" | "procedural" | "definitional";
+        /** @enum {string} */
+        MapSourceDto: "outline" | "toc" | "chunks";
         /** @description The mastery bar's count line, e.g. "11 of 14 confirmed, 3 open, 1 parked". */
         MasteryCountDto: {
             countLine: string;
@@ -2755,6 +2845,19 @@ export interface components {
         NoteUploadForm: {
             /** Format: binary */
             file: string;
+        };
+        ObjectiveRowDto: {
+            /** Format: int32 */
+            endPage: number;
+            id: string;
+            /**
+             * Format: int32
+             * @description How many stored quiz items; the items themselves are never sent here.
+             */
+            items: number;
+            /** Format: int32 */
+            startPage: number;
+            text: string;
         };
         OptionDto: {
             /** @description What to send back as the answer. */
@@ -2985,6 +3088,12 @@ export interface components {
              * @description The server clock the queue was computed at (epoch ms).
              */
             now: number;
+        };
+        ReadingCheckDto: {
+            /** Format: int32 */
+            chapter: number;
+            checkId: string;
+            items: components["schemas"]["CheckItemDto"][];
         };
         /** @description F03's ready-gate checklist; `focus_seconds` is the time the focus timer actually ran. */
         ReadyAnswersDto: {
@@ -3297,6 +3406,70 @@ export interface components {
         SyncDto: {
             cards: number;
             reviews: number;
+        };
+        TextbookDto: {
+            /** Format: int32 */
+            autoCalls: number;
+            /**
+             * Format: int32
+             * @description Lifetime cheap-call cap per book.
+             */
+            callsCap: number;
+            chapters: components["schemas"]["ChapterRowDto"][];
+            fileName: string;
+            id: string;
+            /** @description The running import job. */
+            jobId?: string | null;
+            mapSource?: null | components["schemas"]["MapSourceDto"];
+            /**
+             * Format: int32
+             * @description Physical minus printed page number, when one was found.
+             */
+            pageOffset?: number | null;
+            /** Format: int32 */
+            requestedCalls: number;
+            title: string;
+            /** Format: int32 */
+            totalPages: number;
+        };
+        TextbookListDto: {
+            items: components["schemas"]["TextbookSummaryDto"][];
+        };
+        TextbookSummaryDto: {
+            /** Format: int32 */
+            chapters: number;
+            /**
+             * Format: int64
+             * @description Epoch ms of the first import.
+             */
+            createdAt: number;
+            id: string;
+            /** Format: int32 */
+            ready: number;
+            state: components["schemas"]["BookPhaseDto"];
+            title: string;
+            /** Format: int32 */
+            totalPages: number;
+        };
+        TextbookUploadDto: {
+            bookId: string;
+            /** Format: int64 */
+            bytes: number;
+            existing: boolean;
+            /** @description The import job, `null` when the book was already stored and nothing is running. */
+            jobId?: string | null;
+        };
+        TextbookUsageDto: {
+            /** Format: int32 */
+            autoCalls: number;
+            /** Format: int32 */
+            callsCap: number;
+            /** Format: int64 */
+            cheapIn: number;
+            /** Format: int64 */
+            cheapOut: number;
+            /** Format: int32 */
+            requestedCalls: number;
         };
         ToolCall: {
             id: string;
