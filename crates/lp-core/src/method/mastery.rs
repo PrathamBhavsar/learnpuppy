@@ -3,7 +3,7 @@
 //! teaching between; a miss always returns the fact to `open`. `Predicted` events never touch
 //! this fold.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use serde::{Deserialize, Serialize};
 
@@ -30,6 +30,9 @@ pub fn fact_key(lesson: &str, fact_index: usize) -> FactKey {
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct MasteryState {
     pub facts: BTreeMap<FactKey, FactStatus>,
+    /// Facts at `McPassed` that have been taught again since the multiple choice pass, so a
+    /// right `Recall` now confirms them. `next_step` serves the recap before the recall.
+    pub recall_ready: BTreeSet<FactKey>,
 }
 
 impl MasteryState {
@@ -38,6 +41,11 @@ impl MasteryState {
             .get(&fact_key(lesson, fact_index))
             .copied()
             .unwrap_or_default()
+    }
+
+    /// True when a `Recall` answered now would confirm this fact.
+    pub fn recall_ready(&self, lesson: &str, fact_index: usize) -> bool {
+        self.recall_ready.contains(&fact_key(lesson, fact_index))
     }
 }
 
@@ -183,8 +191,14 @@ pub fn fold_mastery(course: &Course, events: &[CourseEvent]) -> MasteryState {
             _ => {}
         }
     }
+    let recall_ready = tracks
+        .iter()
+        .filter(|(_, t)| t.status == FactStatus::McPassed && t.taught_since_mc)
+        .map(|(k, _)| k.clone())
+        .collect();
     MasteryState {
         facts: tracks.into_iter().map(|(k, t)| (k, t.status)).collect(),
+        recall_ready,
     }
 }
 
