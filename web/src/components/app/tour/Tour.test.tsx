@@ -2,6 +2,7 @@ import { act, screen, waitFor } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { beforeEach, describe, expect, it } from "vitest"
 
+import { useUi } from "@/stores/ui"
 import { renderApp, resetUi } from "@/test/render"
 
 import { TOUR_KEY } from "./tour-store"
@@ -68,6 +69,7 @@ describe("first-run tour", () => {
   })
 
   it("inside a workspace it covers every sidebar section and ends with Finish", async () => {
+    useUi.setState({ legacyClassroom: true })
     await openTour(WS)
     const all = (await walk()).join("|")
     expect(all).toMatch(/Graph.*Learn.*Review.*Digest.*Ingest/)

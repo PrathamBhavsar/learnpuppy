@@ -26,6 +26,8 @@ export function AppearanceCard() {
   const setDensity = useUi((s) => s.setDensity)
   const readingFont = useUi((s) => s.readingFont)
   const setReadingFont = useUi((s) => s.setReadingFont)
+  const legacyClassroom = useUi((s) => s.legacyClassroom)
+  const setLegacyClassroom = useUi((s) => s.setLegacyClassroom)
   const { patch } = useSettingsPatch()
 
   return (
@@ -156,6 +158,18 @@ export function AppearanceCard() {
             Mono
           </ToggleGroupItem>
         </ToggleGroup>
+      </SettingRow>
+
+      <SettingRow
+        label="Legacy classroom"
+        description="Advanced: show the old chat-based Learn page in the sidebar and command palette. Courses are the main way to learn."
+      >
+        <Switch
+          aria-label="Legacy classroom"
+          data-testid="legacy-classroom"
+          checked={legacyClassroom}
+          onCheckedChange={setLegacyClassroom}
+        />
       </SettingRow>
     </div>
   )

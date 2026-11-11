@@ -22,6 +22,7 @@ import { useTheme } from "@/hooks/use-theme"
 import { type Command, useContributeCommands } from "@/lib/commands"
 import { SECTIONS } from "@/lib/nav"
 import { pathForWorkspace } from "@/lib/nav"
+import { useUi } from "@/stores/ui"
 import { toastError, toastSuccess } from "@/lib/toast"
 import { workspaceIcon } from "@/lib/workspace-visual"
 
@@ -40,10 +41,12 @@ export function usePaletteCommands(currentPath: string): void {
   const { theme, resolvedTheme, setTheme } = useTheme()
   const relayout = useRelayout(ws ?? "")
 
+  const legacyClassroom = useUi((s) => s.legacyClassroom)
   const commands: Command[] = []
 
   if (ws) {
     for (const { key, label, icon } of SECTIONS) {
+      if (key === "learn" && !legacyClassroom) continue
       commands.push({
         id: `go-${key}`,
         group: "Navigate",

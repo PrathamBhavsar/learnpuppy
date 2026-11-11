@@ -26,6 +26,7 @@ import {
 } from "@/lib/theme"
 
 const SIDEBAR_KEY = "lp-sidebar-collapsed"
+export const LEGACY_CLASSROOM_KEY = "lp-legacy-classroom"
 const LAST_WS_KEY = "lp-last-workspace"
 
 type UiState = {
@@ -35,6 +36,8 @@ type UiState = {
   reduceMotion: boolean
   density: Density
   readingFont: ReadingFont
+  /** Advanced: show the legacy classroom (Learn) in the sidebar and palette. */
+  legacyClassroom: boolean
   sidebarCollapsed: boolean
   lastWorkspace: string | null
   setLastWorkspace: (id: string) => void
@@ -45,6 +48,7 @@ type UiState = {
   setReduceMotion: (on: boolean) => void
   setDensity: (density: Density) => void
   setReadingFont: (font: ReadingFont) => void
+  setLegacyClassroom: (on: boolean) => void
   setSidebarCollapsed: (collapsed: boolean) => void
   toggleSidebar: () => void
 }
@@ -58,6 +62,7 @@ export const useUi = create<UiState>((set, get) => {
     reduceMotion: storage.get(REDUCE_MOTION_KEY) === "1",
     density: readDensity(),
     readingFont: readReadingFont(),
+    legacyClassroom: storage.get(LEGACY_CLASSROOM_KEY) === "1",
     sidebarCollapsed: storage.get(SIDEBAR_KEY) === "1",
     lastWorkspace: storage.get(LAST_WS_KEY),
     setLastWorkspace: (id) => {
@@ -96,6 +101,10 @@ export const useUi = create<UiState>((set, get) => {
       storage.set(READING_FONT_KEY, readingFont)
       applyReadingFont(readingFont)
       set({ readingFont })
+    },
+    setLegacyClassroom: (on) => {
+      storage.set(LEGACY_CLASSROOM_KEY, on ? "1" : "0")
+      set({ legacyClassroom: on })
     },
     setSidebarCollapsed: (collapsed) => {
       storage.set(SIDEBAR_KEY, collapsed ? "1" : "0")

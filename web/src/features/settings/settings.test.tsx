@@ -98,6 +98,15 @@ describe("Settings: appearance", () => {
     await user.click(screen.getByTestId("reading-font-sans"))
     expect(document.documentElement.dataset["readingFont"]).toBeUndefined()
   })
+
+  it("legacy classroom switch is off by default and persists", async () => {
+    const { user } = await open()
+    const sw = await screen.findByTestId("legacy-classroom")
+    expect(sw).toHaveAttribute("aria-checked", "false")
+    await user.click(sw)
+    expect(localStorage.getItem("lp-legacy-classroom")).toBe("1")
+    expect(sw).toHaveAttribute("aria-checked", "true")
+  })
 })
 
 describe("Settings: behavior", () => {
