@@ -3,7 +3,7 @@ import { useState } from "react"
 import { PromptMarkdown } from "@/components/app/prompt-markdown"
 import { Button } from "@/components/ui/button"
 
-import { Choice } from "../Placement"
+import { Choice } from "@/components/app/choice"
 
 /** Guess before the explanation. The guess is stored; the server never marks it wrong. */
 export function PredictStep({

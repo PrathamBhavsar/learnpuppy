@@ -12,6 +12,7 @@ import type {
 import { chatFixtures, chatsForOtherWorkspaces } from "./fixtures/chats"
 import { accountFixtures } from "./fixtures/accounts"
 import type { MockCourse } from "./fixtures/courses"
+import type { MockBook } from "./fixtures/textbooks"
 import { digestFixtures } from "./fixtures/digest"
 import { type GraphFixture, buildGraph } from "./fixtures/graph"
 import { ingestFixtures } from "./fixtures/ingest"
@@ -38,6 +39,7 @@ export type MockDb = {
   chats: Map<string, ClassroomView[]>
   cards: Map<string, CardFixture[]>
   courses: Map<string, MockCourse[]>
+  textbooks: Map<string, MockBook[]>
   learning: Map<string, MockLearning>
   digest: { days: DigestDay[]; details: Map<string, DecisionDetail> }
   accounts: AccountDetail[]
@@ -77,6 +79,7 @@ function createDb(now = Date.now()): MockDb {
     chats,
     cards,
     courses: new Map(),
+    textbooks: new Map(),
     learning: new Map(),
     digest: digestFixtures(now),
     accounts: accountFixtures(now),

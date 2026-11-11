@@ -3,6 +3,7 @@ import {
   CalendarIcon,
   DownloadIcon,
   GraduationCapIcon,
+  LibraryIcon,
   LayersIcon,
   NetworkIcon,
   NewspaperIcon,
@@ -15,6 +16,7 @@ export type SectionKey =
   | "learn"
   | "review"
   | "course"
+  | "textbook"
   | "digest"
   | "ingest"
   | "schedule"
@@ -29,6 +31,7 @@ export const SECTIONS: readonly {
   { key: "learn", label: "Learn", icon: GraduationCapIcon },
   { key: "review", label: "Review", icon: LayersIcon },
   { key: "course", label: "Courses", icon: BookOpenIcon },
+  { key: "textbook", label: "Textbooks", icon: LibraryIcon },
   { key: "schedule", label: "Schedule", icon: CalendarIcon },
   { key: "profile", label: "Profile", icon: UserRoundIcon },
   { key: "digest", label: "Digest", icon: NewspaperIcon },
@@ -40,6 +43,7 @@ export const SECTION_LABELS: Record<string, string> = {
   learn: "Learn",
   review: "Review",
   course: "Courses",
+  textbook: "Textbooks",
   schedule: "Schedule",
   profile: "Profile",
   digest: "Digest",
