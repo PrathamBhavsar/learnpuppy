@@ -8,7 +8,7 @@ use anyhow::Context;
 use serde::{Deserialize, Serialize};
 
 /// Roles that take a profile: the loop agents plus the workbench sub-agents.
-pub const PROFILE_ROLES: [&str; 12] = [
+pub const PROFILE_ROLES: [&str; 13] = [
     "prober",
     "teacher",
     "practice",
@@ -21,6 +21,7 @@ pub const PROFILE_ROLES: [&str; 12] = [
     "author",
     "placer",
     "follow_up",
+    "distiller",
 ];
 /// Course roles: `author` is the one strong role; `placer` and `follow_up` are cheap.
 pub const COURSE_ROLES: [&str; 3] = ["author", "placer", "follow_up"];
@@ -151,7 +152,7 @@ pub const FREE_OPENCODE_FALLBACK: &str = "opencode/big-pickle";
 pub const FREE_KIRO_MODELS: [&str; 2] = ["qwen3-coder-next", "auto"];
 
 /// The coordinator's starter table: role, provider, model, effort.
-const DEFAULT_PROFILES: [(&str, &str, &str, Option<&str>); 12] = [
+const DEFAULT_PROFILES: [(&str, &str, &str, Option<&str>); 13] = [
     ("prober", "codex", "gpt-6.1-sol", Some("low")),
     ("teacher", "agy", "gemini-4-argon-high", None),
     ("practice", "codex", "gpt-6-astra", Some("medium")),
@@ -164,6 +165,7 @@ const DEFAULT_PROFILES: [(&str, &str, &str, Option<&str>); 12] = [
     ("author", "claude", "claude-opus-5-5", Some("low")),
     ("placer", "claude", "claude-haiku-5-5", None),
     ("follow_up", "claude", "claude-haiku-5-5", None),
+    ("distiller", "claude", "claude-haiku-5-5", None),
 ];
 
 pub const THEMES: [&str; 3] = ["dark", "light", "system"];

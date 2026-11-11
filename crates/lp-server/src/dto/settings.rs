@@ -505,7 +505,7 @@ mod tests {
         assert!(c.providers[0].models.contains(&"gpt-6.1-sol".to_owned()));
         assert!(c.providers[2].models.contains(&"sonnet".to_owned()));
         assert!(c.efforts.contains(&"xhigh".to_owned()));
-        assert_eq!(c.roles.len(), 12);
+        assert_eq!(c.roles.len(), 13);
         assert!(c.roles.contains(&"author".to_owned()));
     }
 
