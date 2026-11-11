@@ -12,6 +12,7 @@ import { toastError } from "@/lib/toast"
 import { cn } from "@/lib/utils"
 
 import { Choices } from "./choices"
+import { RecallInput } from "./recall-input"
 import { reviewInfo } from "./info"
 import { useAnswerCard, useGradeCard } from "./api"
 import { PromptMarkdown } from "@/components/app/prompt-markdown"
@@ -64,6 +65,20 @@ export function ReviewCardView({
     void answerCard
       .mutateAsync({ cardId: card.id, choiceKey: key })
       .then((res) => session.answer(res, key, card.id))
+      .catch((err) => toastError(err, "Could not check your answer"))
+      .finally(() => {
+        submitting.current = false
+      })
+  }
+
+  const recall = card.answerMode === "recall"
+  const submitText = (text: string) => {
+    if (submitting.current || checking || state.phase !== "answering") return
+    submitting.current = true
+    session.choosing(card.id, text)
+    void answerCard
+      .mutateAsync({ cardId: card.id, text })
+      .then((res) => session.answer(res, text, card.id))
       .catch((err) => toastError(err, "Could not check your answer"))
       .finally(() => {
         submitting.current = false
@@ -175,14 +190,25 @@ export function ReviewCardView({
         </div>
       </div>
 
-      <Choices
-        card={card}
-        pending={checking}
-        chosen={state.choiceKey}
-        correctKey={result?.correctKey ?? null}
-        answered={answered}
-        onSelect={choose}
-      />
+      {recall ? (
+        <RecallInput
+          pending={checking}
+          answered={answered}
+          typed={state.choiceKey}
+          correct={result?.correct ?? null}
+          expected={result?.answer ?? null}
+          onSubmit={submitText}
+        />
+      ) : (
+        <Choices
+          card={card}
+          pending={checking}
+          chosen={state.choiceKey}
+          correctKey={result?.correctKey ?? null}
+          answered={answered}
+          onSelect={choose}
+        />
+      )}
 
       {checking ? (
         <div

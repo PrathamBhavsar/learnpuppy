@@ -88,6 +88,7 @@ export const reviewHandlers = [
     const body: Dto["CardDetailDto"] = {
       ...cardBrief(card, state.db.now),
       options: card.options,
+      answerMode: card.answerMode ?? "mcq",
       correctKey: card.correctKey,
       rationale: card.explanation,
       stability: card.stability,
@@ -103,20 +104,31 @@ export const reviewHandlers = [
     const card = cardsOf(params["ws"])?.find((c) => c.id === params["card"])
     if (!card) return notFound("Card")
     const body = (await request.json()) as Dto["AnswerRequest"]
-    if (!card.options.some((o) => o.key === body.choiceKey))
+    const recall = card.answerMode === "recall"
+    if (recall && !body.text)
+      return apiError("validation", "Type an answer", {
+        details: {
+          fields: [{ path: "text", message: "A recall card takes text" }],
+        },
+      })
+    if (!recall && !card.options.some((o) => o.key === body.choiceKey))
       return apiError("validation", "Unknown choice", {
         details: {
           fields: [{ path: "choiceKey", message: "Pick one of the options" }],
         },
       })
     const result = once<Dto["AnswerDto"]>(body.clientId, () => {
-      const correct = body.choiceKey === card.correctKey
+      const correct = recall
+        ? (body.text ?? "").trim().toLowerCase() ===
+          (card.answer ?? "").trim().toLowerCase()
+        : body.choiceKey === card.correctKey
       const preview = previewList(card, state.db.now)
       const rating = correct ? 3 : 1
       const chosen = preview[rating - 1]!
       return {
         correct,
-        correctKey: card.correctKey,
+        correctKey: recall ? "" : card.correctKey,
+        answer: recall ? (card.answer ?? "") : null,
         explanation: card.explanation,
         rating,
         next: { due: chosen.due, intervalDays: chosen.intervalMs / DAY },
