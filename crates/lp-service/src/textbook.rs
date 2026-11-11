@@ -206,6 +206,8 @@ struct Running {
     job: String,
     cancel: CancellationToken,
     current: Option<u32>,
+    /// The final record is being written; the job can no longer be aborted.
+    ending: bool,
 }
 
 struct Inner<E> {
@@ -472,6 +474,7 @@ impl<E: LlmEngine + 'static> TextbookService<E> {
                     job: id.clone(),
                     cancel: cancel.clone(),
                     current: None,
+                    ending: false,
                 },
             );
         }
@@ -500,7 +503,13 @@ impl<E: LlmEngine + 'static> TextbookService<E> {
 
     /// Cancels a job this service runs. False if it is not one of ours.
     pub fn abort(&self, job_id: &str) -> bool {
-        match self.inner.running.lock().values().find(|r| r.job == job_id) {
+        match self
+            .inner
+            .running
+            .lock()
+            .values()
+            .find(|r| r.job == job_id && !r.ending)
+        {
             Some(r) => {
                 r.cancel.cancel();
                 true
@@ -1495,9 +1504,12 @@ impl<E: LlmEngine + 'static> Job<E> {
             }
         }
         self.rec.result = Some(result);
-        // Cleared first: once a reader sees the job finished, it can no longer be aborted here.
-        self.me.running.lock().remove(&self.book);
+        // Ending: an abort that arrives now finds a finished job (409 upstream), not a live one.
+        if let Some(r) = self.me.running.lock().get_mut(&self.book) {
+            r.ending = true;
+        }
         self.write().await;
+        self.me.running.lock().remove(&self.book);
     }
 }
 
