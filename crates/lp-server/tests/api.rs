@@ -2714,7 +2714,7 @@ async fn chapter_not_ready_is_409_with_reason() {
     let book = a.imported_book("unready").await;
     let b = a.get(&ws(&format!("/textbooks/{book}"))).await.json();
     assert_eq!(b["chapters"][0]["state"], "failed");
-    assert_eq!(b["chapters"][3]["state"], "queued");
+    assert_eq!(b["chapters"][3]["state"], "pending");
     for n in [0, 3] {
         let r = a
             .post_empty(&ws(&format!("/textbooks/{book}/chapters/{n}/check")))
@@ -2788,17 +2788,34 @@ async fn health_under_200ms_during_400_page_import() {
         eprintln!("skipped: Poppler is missing");
         return;
     }
-    // the real extractor on a synthetic 400-page book
+    // the real extractor on a synthetic 400-page book: upload maps it (outline, 60 sample pages and
+    // a TOC call), then opening the chapters reads only their pages
     let a = api();
-    let r = a
-        .upload_textbook("big.pdf", &synthetic_pdf(400), None)
-        .await;
-    assert_eq!(r.status, StatusCode::ACCEPTED, "{}", r.text);
-    let (book, job) = (
-        r.json()["bookId"].as_str().unwrap().to_owned(),
-        r.json()["jobId"].as_str().unwrap().to_owned(),
+    queue_chapters(&a, 8);
+    let uploaded = std::sync::atomic::AtomicBool::new(false);
+    let (r, mut worst) = tokio::join!(
+        async {
+            let r = a
+                .upload_textbook("big.pdf", &synthetic_pdf(400), None)
+                .await;
+            uploaded.store(true, std::sync::atomic::Ordering::SeqCst);
+            r
+        },
+        async {
+            let mut worst = Duration::ZERO;
+            while !uploaded.load(std::sync::atomic::Ordering::SeqCst) {
+                let t = std::time::Instant::now();
+                let h = a.get("/health").await;
+                worst = worst.max(t.elapsed());
+                assert_eq!(h.status, StatusCode::OK);
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+            worst
+        }
     );
-    let mut worst = Duration::ZERO;
+    assert_eq!(r.status, StatusCode::CREATED, "{}", r.text);
+    let book = r.json()["bookId"].as_str().unwrap().to_owned();
+    let job = a.import_chapters(&book, json!({})).await;
     let mut polls = 0;
     let mut running = true;
     while running {

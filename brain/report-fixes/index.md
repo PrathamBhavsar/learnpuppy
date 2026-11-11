@@ -4,6 +4,8 @@ Back to [Brain Index](/index.md). Source: the Antigravity direction and token au
 
 **Status:** Goldfish round 1 (fresh Claude) returned revise; findings folded below. Antigravity reviewer could not run headless (tool permission denied). Nothing built yet.
 
+**R4 built** on branch `worktree-agent-a549359da41bf6c60`: upload maps only, a chapter imports when opened, per-chapter try plus one retry, 8 manual imports per book per rolling hour, 48-call job backstop. `pdftotext` was already windowed (10 pages per spawn), so the adapter is unchanged and a test pins it. See [Textbook Mode Backend Spec](/learning-method/textbook-spec.md) D7.
+
 ## Verified before planning
 
 | Claim | Check | Result |
