@@ -20,14 +20,21 @@ test("upload a PDF, watch the import, then check a chapter by keyboard", async (
   await expect(page.getByText("No textbooks yet")).toBeVisible()
 
   await page.getByTestId("textbook-file").setInputFiles(FIXTURE_PDF)
-  await expect(page.getByTestId("textbook-import")).toBeVisible()
-  // The import finishes chapter by chapter; the progress bar goes away at the end.
-  await expect(page.getByTestId("textbook-import")).toBeHidden({
-    timeout: 20_000,
-  })
+  // Upload only maps the book: three chapters wait, no import has started.
   await expect(
     page.getByTestId("chapter-list").getByRole("listitem")
   ).toHaveCount(3)
+  await expect(page.getByTestId("textbook-import")).toBeHidden()
+  await expect(page.getByTestId("chapter-0-badge")).toHaveText("Not imported")
+  // Opening a chapter imports that chapter.
+  await page.getByTestId("chapter-0-import").click()
+  await expect(page.getByTestId("chapter-0-check")).toBeVisible({
+    timeout: 20_000,
+  })
+  await expect(page.getByTestId("textbook-import")).toBeHidden({
+    timeout: 20_000,
+  })
+  await expect(page.getByTestId("chapter-1-badge")).toHaveText("Not imported")
   await expect(page.getByTestId("chapter-0")).toContainText("Pages 1 to 12")
   await expect(page.getByTestId("chapter-0-badge")).toHaveText("Not read")
 
@@ -66,6 +73,10 @@ for (const theme of ["light", "dark"] as const) {
     await page.addInitScript((t) => localStorage.setItem("lp-theme", t), theme)
     await page.goto(URL_)
     await page.getByTestId("textbook-file").setInputFiles(FIXTURE_PDF)
+    await page.getByTestId("chapter-0-import").click()
+    await expect(page.getByTestId("chapter-0-check")).toBeVisible({
+      timeout: 20_000,
+    })
     await expect(page.getByTestId("textbook-import")).toBeHidden({
       timeout: 20_000,
     })

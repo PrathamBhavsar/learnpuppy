@@ -10,7 +10,7 @@ import { toastError } from "@/lib/toast"
 
 import { type Chapter, useAbort, useBook, useImport, useJobs } from "./api"
 import { ChapterList } from "./ChapterList"
-import { copy, errorText } from "./copy"
+import { copy, errorText, hourLimitText } from "./copy"
 import { ImportProgress } from "./ImportProgress"
 import { ReadingCheck } from "./ReadingCheck"
 
@@ -48,9 +48,8 @@ export function BookView({
 
   const b = book.data
   const job = jobs.data?.find((j) => j.kind === "textbook" && j.bookId === id)
-  const unfinished = b.chapters.filter(
-    (c) => c.state === "failed" || c.state === "queued"
-  )
+  const failed = b.chapters.filter((c) => c.state === "failed" && c.canImport)
+  const limited = b.hourUsed >= b.hourCap
   const checking: Chapter | undefined =
     open === null ? undefined : b.chapters.find((c) => c.index === open)
 
@@ -72,7 +71,7 @@ export function BookView({
       </Button>
       <PageHeader
         title={b.title}
-        description={`${b.totalPages} pages, ${b.chapters.length} chapters`}
+        description={`${b.totalPages} pages, ${b.chapters.length} chapters. ${copy.openHint}`}
       />
       {importing ? (
         <ImportProgress
@@ -81,25 +80,34 @@ export function BookView({
           onCancel={() => job && abort.mutate(job.id)}
         />
       ) : null}
-      {!importing && unfinished.length > 0 ? (
+      {!importing && limited ? (
+        <p
+          role="status"
+          data-testid="book-rate-limited"
+          className="border p-3 text-[13px]"
+        >
+          {hourLimitText(b.hourUsed, b.hourCap)}
+        </p>
+      ) : null}
+      {!importing && failed.length > 0 ? (
         <div
           role="alert"
           data-testid="book-partial"
           className="flex items-center justify-between gap-3 border border-destructive/40 p-3 text-[13px]"
         >
           <span>
-            {unfinished.length === 1
-              ? "1 chapter is not imported."
-              : `${unfinished.length} chapters are not imported.`}{" "}
-            {unfinished[0]?.error ? errorText(unfinished[0].error) : null}
+            {failed.length === 1
+              ? "1 chapter did not import."
+              : `${failed.length} chapters did not import.`}{" "}
+            {failed[0]?.error ? errorText(failed[0].error) : null}
           </span>
           <Button
             size="sm"
-            data-testid="book-import-rest"
-            disabled={run.isPending}
-            onClick={() => importChapters()}
+            data-testid="book-import-failed"
+            disabled={run.isPending || limited}
+            onClick={() => importChapters(failed.map((c) => c.index))}
           >
-            Import the rest
+            Import again
           </Button>
         </div>
       ) : null}
@@ -117,8 +125,9 @@ export function BookView({
         <ChapterList
           chapters={b.chapters}
           busy={run.isPending}
+          importBlocked={importing || limited}
           onCheck={(c) => setOpen(c.index)}
-          onRetry={(c) => importChapters([c.index])}
+          onImport={(c) => importChapters([c.index])}
         />
       )}
     </div>

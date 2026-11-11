@@ -26,6 +26,8 @@ type ChapterSeed = {
   status?: Dto["ChapterStatusDto"]
   kind?: Dto["ChapterKindDto"]
   error?: string
+  /** Defaults to true for pending and failed; false models a chapter whose retry is spent. */
+  canImport?: boolean
 }
 
 export function chapterRow(
@@ -44,6 +46,7 @@ export function chapterRow(
     objectives: state === "ready" ? 3 : 0,
     error: seed.error ?? null,
     truncated: false,
+    canImport: seed.canImport ?? (state === "pending" || state === "failed"),
   }
 }
 
@@ -99,7 +102,8 @@ export function newBook(
       jobId: job?.id ?? null,
       autoCalls: rows.filter((r) => r.state === "ready").length,
       requestedCalls: 0,
-      callsCap: 40,
+      hourUsed: 0,
+      hourCap: 8,
       chapters: rows,
     },
   }

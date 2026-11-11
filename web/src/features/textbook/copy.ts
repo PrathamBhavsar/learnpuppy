@@ -4,25 +4,32 @@ import type { Chapter } from "./api"
 export const copy = {
   title: "Textbooks",
   description:
-    "Upload a PDF. Each chapter becomes a short reading check, scheduled for review.",
+    "Upload a PDF to get its chapter list. Open a chapter to turn it into a short reading check, scheduled for review.",
   upload: "Upload a PDF",
   uploading: "Uploading",
-  uploadHint: "PDF, up to 50 MB. Drop a file here or choose one.",
+  uploadHint:
+    "PDF, up to 50 MB. Chapters are imported one at a time, when you open them.",
   tooBig: "That file is over 50 MB.",
   notPdf: "Choose a PDF file.",
   emptyTitle: "No textbooks yet",
-  emptyBody: "Upload a PDF to get a chapter list and a reading check for each.",
+  emptyBody:
+    "Upload a PDF to get a chapter list, then open a chapter to get its reading check.",
   noChapters: "No chapters were found in this book.",
   existing: "This book is already in the workspace.",
+  openHint: "Import a chapter when you are about to read it.",
 } as const
 
+/** The per-book limit on chapter imports in a rolling hour, as one sentence. */
+export function hourLimitText(used: number, cap: number): string {
+  return `${used} of ${cap} chapter imports used in the last hour. Try again a little later.`
+}
+
 const STATE_LABEL: Record<Chapter["state"], string> = {
-  pending: "Waiting",
+  pending: "Not imported",
   importing: "Importing",
   ready: "Ready",
   failed: "Failed",
   skipped: "Skipped",
-  queued: "Queued",
 }
 
 const STATUS_LABEL: Record<Chapter["status"], string> = {
@@ -41,8 +48,10 @@ export function errorText(code: string): string {
   switch (code) {
     case "parse":
       return "The chapter could not be turned into questions."
-    case "budget":
-      return "The model-call budget for this book is used up."
+    case "timeout":
+      return "The model took too long on this chapter."
+    case "too_few_objectives":
+      return "Too few questions could be made from this chapter."
     case "no_cards":
       return "No review cards could be made from this chapter."
     case "engine_unavailable":

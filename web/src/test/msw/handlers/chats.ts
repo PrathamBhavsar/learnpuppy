@@ -280,9 +280,9 @@ export const chatHandlers = [
       job.status = "failed"
       job.error = "cancelled"
       b.book.jobId = null
-      // Chapters not finished stay queued, as on the server.
+      // Chapters not finished go back to pending, as on the server.
       for (const c of b.book.chapters)
-        if (c.state === "importing") c.state = "queued"
+        if (c.state === "importing") c.state = "pending"
       bus.emit("job.updated", { job }, String(params["ws"]))
       return HttpResponse.json(job)
     }

@@ -80,7 +80,7 @@ describe("Textbook list", () => {
     expect(state.db.textbooks.get(WS) ?? []).toHaveLength(0)
   })
 
-  it("uploads a PDF, opens the book, and follows the import to ready", async () => {
+  it("uploads a PDF and lands on a chapter list with nothing imported", async () => {
     const user = userEvent.setup()
     renderApp(`/w/${WS}/textbook`)
     await screen.findByText("No textbooks yet")
@@ -88,15 +88,52 @@ describe("Textbook list", () => {
       screen.getByTestId("textbook-file"),
       new File(["%PDF-1.4"], "Rust Book.pdf", { type: "application/pdf" })
     )
-    const bar = await screen.findByTestId("textbook-import")
-    expect(bar).toBeInTheDocument()
-    // Each poll finishes one chapter in the mock; the screen ends on the full chapter list.
+    const list = await screen.findByTestId("chapter-list")
+    expect(within(list).getAllByRole("listitem")).toHaveLength(3)
+    // Upload started no import: no progress bar, every chapter waits to be opened.
+    expect(screen.queryByTestId("textbook-import")).not.toBeInTheDocument()
+    for (const n of [0, 1, 2]) {
+      expect(screen.getByTestId(`chapter-${n}`)).toHaveAttribute(
+        "data-state",
+        "pending"
+      )
+      expect(screen.getByTestId(`chapter-${n}-badge`)).toHaveTextContent(
+        "Not imported"
+      )
+      expect(screen.getByTestId(`chapter-${n}-import`)).toBeEnabled()
+    }
+    expect(state.db.textbooks.get(WS)![0]!.book.jobId).toBeNull()
+  })
+
+  it("imports only the chapter that is opened, then offers its reading check", async () => {
+    const user = userEvent.setup()
+    renderApp(`/w/${WS}/textbook`)
+    await screen.findByText("No textbooks yet")
+    await user.upload(
+      screen.getByTestId("textbook-file"),
+      new File(["%PDF-1.4"], "Rust Book.pdf", { type: "application/pdf" })
+    )
+    await user.click(await screen.findByTestId("chapter-1-import"))
+    // The mock finishes the one chapter on its first poll; the others never start.
     await waitFor(
       () =>
-        expect(screen.queryByTestId("textbook-import")).not.toBeInTheDocument(),
+        expect(screen.getByTestId("chapter-1-badge")).toHaveTextContent(
+          "Not read"
+        ),
       { timeout: 15000 }
     )
-    expect(screen.getByTestId("chapter-2-badge")).toHaveTextContent("Not read")
+    await waitFor(() =>
+      expect(screen.queryByTestId("textbook-import")).not.toBeInTheDocument()
+    )
+    expect(screen.getByTestId("chapter-1-badge")).toHaveTextContent("Not read")
+    expect(screen.getByTestId("chapter-1-check")).toBeEnabled()
+    expect(screen.getByTestId("chapter-0-badge")).toHaveTextContent(
+      "Not imported"
+    )
+    expect(screen.getByTestId("chapter-2-badge")).toHaveTextContent(
+      "Not imported"
+    )
+    expect(state.db.textbooks.get(WS)![0]!.book.hourUsed).toBe(1)
   }, 20000)
 })
 
@@ -171,22 +208,61 @@ describe("Book view", () => {
     await waitFor(() => expect(b.job?.status).toBe("failed"))
   })
 
-  it("offers to import the rest of a partly imported book", async () => {
+  it("offers to import a failed chapter again", async () => {
     const b = seed([
       { title: "One", start: 1, end: 5 },
-      { title: "Two", start: 6, end: 9, state: "failed", error: "budget" },
+      {
+        title: "Two",
+        start: 6,
+        end: 9,
+        state: "failed",
+        error: "engine_unavailable",
+      },
     ])
     const user = userEvent.setup()
     renderApp(`/w/${WS}/textbook?book=bk1`)
     const note = await screen.findByTestId("book-partial")
-    expect(note).toHaveTextContent("1 chapter is not imported.")
-    expect(note).toHaveTextContent("model-call budget")
+    expect(note).toHaveTextContent("1 chapter did not import.")
+    expect(note).toHaveTextContent("No model was available")
     expect(screen.getByTestId("chapter-0-check")).toBeEnabled()
-    await user.click(screen.getByTestId("book-import-rest"))
+    await user.click(screen.getByTestId("book-import-failed"))
     await waitFor(() => expect(b.job?.chaptersTotal).toBe(1))
     await waitFor(() => expect(b.book.chapters[1]?.state).toBe("ready"), {
       timeout: 8000,
     })
+  })
+
+  it("offers no import for a chapter whose retry is spent", async () => {
+    seed([
+      { title: "One", start: 1, end: 5 },
+      {
+        title: "Two",
+        start: 6,
+        end: 9,
+        state: "failed",
+        error: "parse",
+        canImport: false,
+      },
+    ])
+    renderApp(`/w/${WS}/textbook?book=bk1`)
+    expect(await screen.findByTestId("chapter-1-error")).toHaveTextContent(
+      "could not be turned into questions"
+    )
+    expect(screen.queryByTestId("chapter-1-import")).not.toBeInTheDocument()
+    expect(screen.queryByTestId("book-partial")).not.toBeInTheDocument()
+  })
+
+  it("blocks imports and says so once the hourly limit is reached", async () => {
+    const b = seed([
+      { title: "One", start: 1, end: 5 },
+      { title: "Two", start: 6, end: 9, state: "pending" },
+    ])
+    b.book.hourUsed = 8
+    renderApp(`/w/${WS}/textbook?book=bk1`)
+    expect(await screen.findByTestId("book-rate-limited")).toHaveTextContent(
+      "8 of 8 chapter imports used in the last hour"
+    )
+    expect(screen.getByTestId("chapter-1-import")).toBeDisabled()
   })
 
   it("shows an error for an unknown book", async () => {

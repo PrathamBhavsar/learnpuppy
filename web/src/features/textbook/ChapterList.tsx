@@ -8,13 +8,16 @@ import { chapterLabel, errorText, pageRange } from "./copy"
 export function ChapterList({
   chapters,
   busy,
+  importBlocked,
   onCheck,
-  onRetry,
+  onImport,
 }: {
   chapters: Chapter[]
   busy: boolean
+  /** An import is running, or the hourly limit is reached. */
+  importBlocked: boolean
   onCheck: (c: Chapter) => void
-  onRetry: (c: Chapter) => void
+  onImport: (c: Chapter) => void
 }) {
   return (
     <ol data-testid="chapter-list" className="flex flex-col divide-y border">
@@ -67,16 +70,16 @@ export function ChapterList({
                 Check I read
               </Button>
             ) : null}
-            {c.state === "failed" || c.state === "queued" ? (
+            {c.canImport ? (
               <Button
                 size="sm"
                 variant="outline"
-                data-testid={`chapter-${c.index}-retry`}
-                aria-label={`Import chapter ${c.index + 1} again`}
-                disabled={busy}
-                onClick={() => onRetry(c)}
+                data-testid={`chapter-${c.index}-import`}
+                aria-label={`Import chapter ${c.index + 1}${c.state === "failed" ? " again" : ""}`}
+                disabled={busy || importBlocked}
+                onClick={() => onImport(c)}
               >
-                Import
+                {c.state === "failed" ? "Import again" : "Import"}
               </Button>
             ) : null}
           </div>
