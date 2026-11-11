@@ -2,7 +2,7 @@
 
 Back to [Brain Index](/index.md). Source: the Antigravity direction and token audit of `staging` at `8794ab4`. Owner answers: G4 weighted gate yes, lazy textbook import yes, hide legacy classroom yes after R1 and R3 land, F36 code runner deferred.
 
-**Status:** Goldfish round 1 (fresh Claude) returned revise; findings folded below. Antigravity reviewer could not run headless (tool permission denied). Nothing built yet.
+**Status:** R1 to R6 built and merged to `staging` on 2026-11-12. `make ci`, `make e2e` (127 plus 17 serve) and the real course smoke pass. Open: textbook smoke with a real PDF, codex flags untested (login revoked), F08 and the parked items.
 
 **R4 built** on branch `worktree-agent-a549359da41bf6c60`: upload maps only, a chapter imports when opened, per-chapter try plus one retry, 8 manual imports per book per rolling hour, 48-call job backstop. `pdftotext` was already windowed (10 pages per spawn), so the adapter is unchanged and a test pins it. See [Textbook Mode Backend Spec](/learning-method/textbook-spec.md) D7.
 
