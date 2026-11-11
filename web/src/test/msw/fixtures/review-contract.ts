@@ -54,7 +54,8 @@ export function queueCard(card: CardFixture): Dto["QueueCardDto"] {
   return {
     id: card.id,
     front: card.front,
-    options: card.options,
+    options: card.answerMode === "recall" ? [] : card.options,
+    answerMode: card.answerMode ?? "mcq",
     kind: card.kind,
     sourceDecisionId: card.sourceDecisionId,
     due: card.due,
@@ -79,6 +80,7 @@ export function cardAnswer(card: CardFixture, now: number): Dto["AnswerDto"] {
   return {
     correct: true,
     correctKey: card.correctKey,
+    answer: null,
     explanation: card.explanation,
     rating: 3,
     next: { due: preview[2]!.due, intervalDays: preview[2]!.intervalMs / DAY },

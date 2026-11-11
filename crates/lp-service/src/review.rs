@@ -8,6 +8,28 @@ const MS_DAY: i64 = 86_400_000;
 /// Days of per-day due counts in the forecast.
 pub const FORECAST_DAYS: usize = 14;
 
+/// Grades a typed answer to a recall card in code, no model: the `must_name` rubric, else the
+/// exact answer (accents and case ignored). Anything else is wrong, so wrong is never promoted.
+pub fn grade_recall(card: &FlashCard, text: &str) -> bool {
+    use lp_core::course::{match_answer, Item, ItemKind, Match};
+    use lp_core::method::recall::{rubric_check, RubricResult};
+    let item = Item {
+        kind: ItemKind::Recall,
+        answer: card
+            .options
+            .get(usize::from(card.correct_index))
+            .cloned()
+            .unwrap_or_default(),
+        must_name: card.must_name.clone(),
+        ..Item::default()
+    };
+    rubric_check(&item, text) == RubricResult::Match
+        || matches!(
+            match_answer(&item, text),
+            Match::Exact | Match::ExactButAccent
+        )
+}
+
 pub fn due_cards(t: &dyn TrackerStore, now: i64) -> StoreResult<Vec<FlashCard>> {
     let mut due: Vec<FlashCard> = t
         .cards()?
@@ -330,6 +352,8 @@ pub(crate) mod tests {
             options: ["a".into(), "b".into(), "c".into(), "d".into()],
             correct_index: 2,
             rationale: "because".into(),
+            kind: Default::default(),
+            must_name: Vec::new(),
             card: Card::new(due),
         }
     }
@@ -521,5 +545,31 @@ pub(crate) mod tests {
         let p = preview_entries(&Card::new(0), 0);
         assert_eq!(p[0].0, Rating::Again);
         assert_eq!(p[0].2, "1m");
+    }
+
+    #[test]
+    fn recall_cards_grade_by_rubric_or_exact_answer_only() {
+        let mut c = card("r", 0);
+        c.kind = lp_core::ports::CardKind::Recall;
+        c.options = [
+            "Krebs cycle".into(),
+            String::new(),
+            String::new(),
+            String::new(),
+        ];
+        c.correct_index = 0;
+        c.must_name = vec!["acetyl".into(), "citrate".into()];
+        assert!(grade_recall(
+            &c,
+            "Acetyl-CoA joins oxaloacetate to make citrate"
+        ));
+        assert!(!grade_recall(&c, "acetyl only"));
+        assert!(grade_recall(&c, "krebs cycle"), "exact answer also passes");
+        assert!(!grade_recall(&c, ""));
+        c.must_name.clear();
+        assert!(
+            !grade_recall(&c, "acetyl citrate"),
+            "no rubric: never a rubric pass"
+        );
     }
 }

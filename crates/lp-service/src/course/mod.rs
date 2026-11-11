@@ -436,9 +436,9 @@ fn same(a: &str, b: &str) -> bool {
     a.trim().eq_ignore_ascii_case(b.trim())
 }
 
-/// The review card for one course item. Multiple choice keeps its options. A recall item gets its
-/// answer plus three other answers of the course as options (so Review, which is multiple choice,
-/// can show it); with fewer than three distinct other answers it has no card.
+/// The review card for one course item. Multiple choice keeps its options. A recall item is a
+/// free-recall card (typed, graded by code); it still stores its answer plus up to three other
+/// answers as options, padded with empty strings, so readers of the old shape keep working.
 fn flash_card(course: &Course, lesson: &Lesson, item: &Item) -> Option<FlashCard> {
     let others: Vec<&str> = lesson
         .items
@@ -464,9 +464,7 @@ pub(crate) fn card_for(id: &str, item: &Item, other_answers: &[&str]) -> Option<
                     opts.push((*a).to_string());
                 }
             }
-            if opts.len() < 4 {
-                return None;
-            }
+            opts.resize(4, String::new());
             opts
         }
     };
@@ -480,6 +478,15 @@ pub(crate) fn card_for(id: &str, item: &Item, other_answers: &[&str]) -> Option<
         options,
         correct_index: u8::try_from(correct).ok()?,
         rationale: item.why.clone(),
+        kind: match item.kind {
+            ItemKind::Mcq => lp_core::ports::CardKind::Mcq,
+            ItemKind::Recall => lp_core::ports::CardKind::Recall,
+        },
+        must_name: if item.kind == ItemKind::Recall {
+            item.must_name.clone()
+        } else {
+            Vec::new()
+        },
         card: lp_core::fsrs::Card::new(PARKED_DUE),
     })
 }

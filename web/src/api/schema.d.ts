@@ -1974,7 +1974,10 @@ export interface components {
             rejectedBecause: string;
         };
         AnswerDto: {
+            /** @description The expected answer, set for a `recall` card. */
+            answer?: string | null;
             correct: boolean;
+            /** @description Empty for a `recall` card. */
             correctKey: string;
             explanation: string;
             /** @description What the suggested grade would schedule. */
@@ -1986,6 +1989,8 @@ export interface components {
              */
             rating: number;
         };
+        /** @enum {string} */
+        AnswerMode: "mcq" | "recall";
         /**
          * @description A question the learner already answered, kept in the transcript so the prompt does not vanish
          *     after the verdict: what was asked, what they picked, what was right (docs/web/06 §Learn).
@@ -2007,8 +2012,8 @@ export interface components {
             right: string[];
         };
         AnswerRequest: {
-            /** @description `a`..`d`. */
-            choiceKey: string;
+            /** @description `a`..`d`. Required for an `mcq` card. */
+            choiceKey?: string | null;
             clientId: string;
             /**
              * Format: int32
@@ -2020,6 +2025,8 @@ export interface components {
              * @description How long the learner took, measured by the client.
              */
             latencyMs?: number | null;
+            /** @description The typed answer. Required for a `recall` card; graded by code. */
+            text?: string | null;
         };
         /** @enum {string} */
         AskKindDto: "new" | "retry" | "interleave" | "review";
@@ -2124,6 +2131,7 @@ export interface components {
         };
         /** @description A card with everything, for the browser's detail drawer. Includes the answer. */
         CardDetailDto: components["schemas"]["CardBriefDto"] & {
+            answerMode: components["schemas"]["AnswerMode"];
             correctKey: string;
             /** Format: double */
             difficulty: number;
@@ -3231,12 +3239,15 @@ export interface components {
         };
         /** @description A due card to answer. The correct option and rationale are withheld until `answer`. */
         QueueCardDto: {
+            /** @description `mcq` (pick a choice) or `recall` (type the answer; send `text`). */
+            answerMode: components["schemas"]["AnswerMode"];
             /** Format: int64 */
             due: number;
             front: string;
             id: string;
             /** @description `decision` for cards made from an ingested decision, else `card`. */
             kind: string;
+            /** @description Empty for a `recall` card. */
             options: components["schemas"]["ChoiceDto"][];
             sourceDecisionId?: string | null;
             state: components["schemas"]["CardState"];

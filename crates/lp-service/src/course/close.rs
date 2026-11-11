@@ -614,6 +614,8 @@ mod tests {
                 options: ["a".into(), "b".into(), "c".into(), "d".into()],
                 correct_index: 0,
                 rationale: String::new(),
+                kind: Default::default(),
+                must_name: Vec::new(),
                 card,
             }
         };
@@ -703,11 +705,12 @@ mod tests {
         );
         let d = tempfile::tempdir().unwrap();
         let t = lp_store::SqliteTrackerStore::open(d.path()).unwrap();
-        // The recall item has too few distinct answers in this tiny course to build a 4-option
-        // card (`flash_card`'s rule, same as the cheap-tutor path); only the mcq item gets one.
-        assert_eq!(ensure_cards(&t, &c, &events).unwrap(), 1);
-        assert!(t.card(&card_id(&c.id, "l00-mcq")).unwrap().is_some());
-        assert!(t.card(&card_id(&c.id, "l00-recall")).unwrap().is_none());
+        // The recall item gets a free-recall card even with too few other answers for options.
+        assert_eq!(ensure_cards(&t, &c, &events).unwrap(), 2);
+        let mcq = t.card(&card_id(&c.id, "l00-mcq")).unwrap().unwrap();
+        assert_eq!(mcq.kind, lp_core::ports::CardKind::Mcq);
+        let recall = t.card(&card_id(&c.id, "l00-recall")).unwrap().unwrap();
+        assert_eq!(recall.kind, lp_core::ports::CardKind::Recall);
         assert_eq!(ensure_cards(&t, &c, &events).unwrap(), 0);
     }
 

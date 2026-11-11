@@ -271,6 +271,8 @@ export type ReviewCard = {
   id: string
   front: string
   options?: { key: string; text: string }[]
+  /** Absent on old payloads, which are multiple choice. */
+  answerMode?: "mcq" | "recall"
   kind: string
   sourceDecisionId?: string
   due: number

@@ -95,6 +95,8 @@ async fn make_cards<E: LlmEngine>(
             options,
             correct_index: correct as u8,
             rationale: c.rationale,
+            kind: Default::default(),
+            must_name: Vec::new(),
             card: Card::new(now_ms),
         })?;
         report.saved += 1;

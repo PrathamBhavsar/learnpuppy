@@ -511,6 +511,8 @@ mod tests {
             options: ["a".into(), "b".into(), "c".into(), "d".into()],
             correct_index: 0,
             rationale: String::new(),
+            kind: Default::default(),
+            must_name: Vec::new(),
             card: lp_core::fsrs::Card::new(due),
         }
     }

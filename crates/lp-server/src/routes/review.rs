@@ -6,7 +6,7 @@ use axum::http::{header::ETAG, HeaderMap, HeaderValue, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
-use lp_core::ports::{FlashCard, TrackerStore};
+use lp_core::ports::{CardKind, FlashCard, TrackerStore};
 use lp_service::digest::CardLinks;
 use lp_service::review as svc;
 
@@ -104,8 +104,6 @@ pub async fn answer(
     ApiJson(req): ApiJson<AnswerRequest>,
 ) -> Result<Json<AnswerDto>, ApiError> {
     client_id(&req.client_id)?;
-    let picked = svc::option_index(&req.choice_key)
-        .ok_or_else(|| ApiError::invalid("choiceKey", "must be one of a, b, c, d"))?;
     if req.confidence.is_some_and(|c| !(1..=5).contains(&c)) {
         return Err(ApiError::invalid("confidence", "must be between 1 and 5"));
     }
@@ -113,7 +111,25 @@ pub async fn answer(
     let h = open_ws(&st, &ws).await?;
     blocking(move || {
         let c = find_card(&*h.stores().tracker, &card)?;
-        Ok(Json(AnswerDto::new(&c, picked, &req, core.clock.now())))
+        let (picked, text) = if c.kind == CardKind::Recall {
+            let t = req
+                .text
+                .as_deref()
+                .ok_or_else(|| ApiError::invalid("text", "a recall card takes a typed answer"))?;
+            (None, Some(t))
+        } else {
+            let key = req.choice_key.as_deref().unwrap_or_default();
+            let i = svc::option_index(key)
+                .ok_or_else(|| ApiError::invalid("choiceKey", "must be one of a, b, c, d"))?;
+            (Some(i), None)
+        };
+        Ok(Json(AnswerDto::new(
+            &c,
+            picked,
+            text,
+            &req,
+            core.clock.now(),
+        )))
     })
     .await
 }

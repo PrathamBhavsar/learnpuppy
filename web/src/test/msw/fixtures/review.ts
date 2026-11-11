@@ -20,6 +20,9 @@ export type CardFixture = {
   lapses: number
   correctKey: string
   explanation: string
+  /** Recall cards are typed; `answer` is matched exactly here (the server uses a rubric). */
+  answerMode?: "mcq" | "recall"
+  answer?: string
 }
 
 const QUESTIONS: {

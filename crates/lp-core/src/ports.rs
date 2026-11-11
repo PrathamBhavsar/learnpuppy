@@ -189,7 +189,18 @@ pub struct BookChunk {
     pub text: String,
 }
 
-/// Four-option multiple-choice card plus its FSRS scheduling state.
+/// How a card is answered. Cards stored before this field existed are `Mcq`.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CardKind {
+    #[default]
+    Mcq,
+    /// Free recall: typed, graded by the `must_name` rubric or the exact answer, in code.
+    Recall,
+}
+
+/// A card plus its FSRS scheduling state. `Mcq` cards use the four options; `Recall` cards are
+/// typed and only keep the options (the answer is at `correct_index`) for old readers.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct FlashCard {
     pub id: SmolStr,
@@ -197,6 +208,11 @@ pub struct FlashCard {
     pub options: [String; 4],
     pub correct_index: u8,
     pub rationale: String,
+    #[serde(default)]
+    pub kind: CardKind,
+    /// Rubric terms a recall answer must name; empty means only the exact answer passes.
+    #[serde(default)]
+    pub must_name: Vec<String>,
     pub card: Card,
 }
 
