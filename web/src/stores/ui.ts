@@ -26,7 +26,7 @@ import {
 } from "@/lib/theme"
 
 const SIDEBAR_KEY = "lp-sidebar-collapsed"
-export const LEGACY_CLASSROOM_KEY = "lp-legacy-classroom"
+const LEGACY_CLASSROOM_KEY = "lp-legacy-classroom"
 const LAST_WS_KEY = "lp-last-workspace"
 
 type UiState = {
