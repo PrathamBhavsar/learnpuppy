@@ -19,8 +19,8 @@ pub use export::export_markdown;
 pub use jobs::{job_artifact, job_title, kind_name};
 pub use meta::ChatMeta;
 pub use runtime::{
-    Accepted, AnswerInput, ChatRuntime, Created, Engines, JobView, NewChat, NewKind, Rejected,
-    RuntimeConfig, Seed, TurnCtx, TurnFailure, TurnInput, TurnState, TurnStatus,
+    job_info, Accepted, AnswerInput, ChatRuntime, Created, Engines, JobView, NewChat, NewKind,
+    Rejected, RuntimeConfig, Seed, TurnCtx, TurnFailure, TurnInput, TurnState, TurnStatus,
 };
 pub use script::{Fault, FaultKind, FaultPlan, Script};
 pub use turn::{role, run_to_rest};

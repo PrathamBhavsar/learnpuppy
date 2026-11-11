@@ -27,7 +27,7 @@ use crate::loops::{run_turn, Session, TurnError, TurnOutcome};
 
 pub use adapters::{HttpWeb, PdftotextPdf};
 pub use agent::{run_submit_agent, AgentError, NoTools, Run, Tools};
-pub use jobs::{readable, Hit, Pdf, Slider, TuiDemoSpec, Web};
+pub use jobs::{readable, Hit, Pdf, Slider, TuiDemoSpec, Web, MAX_PDF_PAGES_PER_READ};
 pub use tools::{
     exec, job_id, GraphHandle, JobRequest, DEMO, LIST_PROPOSITIONS, LIST_SESSIONS, PDF, RESEARCH,
     VISUAL,

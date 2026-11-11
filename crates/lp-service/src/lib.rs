@@ -19,6 +19,7 @@ pub mod paths;
 pub mod review;
 pub mod settings;
 pub mod stores;
+pub mod textbook;
 pub mod workspace;
 
 /// Server-authoritative wall clock in epoch milliseconds.
