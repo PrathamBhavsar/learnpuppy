@@ -67,6 +67,7 @@ A failing learner never triggers a live strong call. That keeps the budget predi
 ## 4. Budget
 
 - **Enforced in `lp-service`,** not in a prompt: a counter by role and hour, from `usage` events in the log.
+- **Weighted quota ceiling (G4):** `bench/cheap_tutor/quota.py` counts tokens by model weight (Sonnet 1, Opus 5, Haiku or Flash 1/3, so Opus is 15x Haiku) and fails G4 above 150,000 weighted tokens per hour, about twice a normal hour. It also fails loudly if a cheap role (distiller, placer, follow_up) runs on a strong model. Pure and deterministic, with unit tests.
 - **Visible to the learner:** a small meter in the session header, reporting tokens by tier. The UI never hides what a session cost. This also gives real weighting data over time.
 - **Settings:** the existing `profiles` in `settings.json`, with new roles `author`, `placer` and `follow_up`, and `fallback: true` as the default for all roles.
 
