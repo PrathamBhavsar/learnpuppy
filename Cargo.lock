@@ -1410,6 +1410,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
+ "bytes",
  "chrono",
  "flate2",
  "hex",
@@ -1431,6 +1432,7 @@ dependencies = [
  "tokio",
  "tokio-util",
  "tracing",
+ "uuid",
  "zip",
 ]
 

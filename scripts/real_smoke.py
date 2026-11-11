@@ -2,6 +2,7 @@
 """Real-engine smoke run: one course, end to end, through the real server and the real CLIs.
 
   cargo build -p lp-server && python3 scripts/real_smoke.py [--goal TEXT] [--steps 60]
+  cargo build -p lp-server && python3 scripts/real_smoke.py --textbook BOOK.pdf
 
 Starts `learnpuppy serve --dev --real` on a free port with a throwaway data root, then:
   1. creates a workspace and a course (placement quiz is one cheap call),
@@ -10,6 +11,10 @@ Starts `learnpuppy serve --dev --real` on a free port with a throwaway data root
   4. passes the ready gate, then walks the session with stored steps only,
   5. closes the session, ends the bout, and checks the gap now refuses a step,
   6. prints token usage and the number of model calls the walk itself caused.
+
+With --textbook it runs only the textbook import: upload the PDF, poll the jobs list until the
+import ends, print the chapters and two objectives per chapter, and assert at most 40 cheap calls.
+It spends real cheap-model quota (up to 40 calls). Not in CI.
 
 It spends real quota: one strong call, a few cheap ones. Exit code 0 only if every check held.
 """
@@ -50,6 +55,67 @@ class Api:
                 return e.code, {"raw": raw.decode(errors="replace")}
 
 
+def upload_textbook(api, workspace, pdf):
+    """POST the PDF as multipart; returns (status, json)."""
+    boundary = "lpsmokeboundary"
+    data = Path(pdf).read_bytes()
+    head = (f"--{boundary}\r\nContent-Disposition: form-data; name=\"file\"; "
+            f"filename=\"{Path(pdf).name}\"\r\nContent-Type: application/pdf\r\n\r\n").encode()
+    body = head + data + f"\r\n--{boundary}--\r\n".encode()
+    req = urllib.request.Request(
+        f"{api.base}/api/v1{workspace}/sources/textbook", data=body, method="POST",
+        headers={"Content-Type": f"multipart/form-data; boundary={boundary}",
+                 "X-LP-CSRF": "1", "Origin": api.base})
+    try:
+        with urllib.request.urlopen(req, timeout=900) as r:
+            return r.status, json.loads(r.read())
+    except urllib.error.HTTPError as e:
+        return e.code, json.loads(e.read() or b"{}")
+
+
+def textbook_smoke(api, w, pdf):
+    t0 = time.time()
+    st, up = upload_textbook(api, w, pdf)
+    check(st in (200, 202), f"textbook uploaded ({st})")
+    book, job = up["bookId"], up["jobId"]
+    print(f"book {book}, job {job}", flush=True)
+    last = None
+    while True:
+        st, jobs = api.call("GET", f"{w}/jobs")
+        mine = next((j for j in jobs["items"] if j["id"] == job), None)
+        check(mine is not None, "the import job is on the jobs route")
+        line = (mine["status"], mine.get("pagesRead"), mine.get("chaptersDone"), mine.get("chaptersTotal"))
+        if line != last:
+            print(f"  job {line}", flush=True)
+            last = line
+        if mine["status"] != "running":
+            break
+        if time.time() - t0 > 1800:
+            check(False, "import finished within 30 minutes")
+        time.sleep(3)
+    print(f"import ended in {time.time() - t0:.0f}s: {mine['status']}", flush=True)
+    st, book_json = api.call("GET", f"{w}/textbooks/{book}")
+    check(st == 200, "book readable")
+    for c in book_json["chapters"]:
+        print(f"{c['index']:>3} {c['state']:<9} pp{c['startPage']}-{c['endPage']} {c['title'][:60]}", flush=True)
+        if c["state"] == "ready":
+            st, d = api.call("GET", f"{w}/textbooks/{book}/chapters/{c['index']}")
+            for o in d["objectives"][:2]:
+                print(f"       - {o['text'][:100]} (pp{o['startPage']}-{o['endPage']}, {o['items']} items)", flush=True)
+    st, usage = api.call("GET", f"{w}/textbooks/{book}/usage")
+    calls = usage["autoCalls"] + usage["requestedCalls"]
+    check(usage["autoCalls"] <= 40 and calls <= usage["callsCap"], f"calls {calls} within the lifetime cap of {usage['callsCap']}")
+    ready = [c for c in book_json["chapters"] if c["state"] == "ready"]
+    if ready:
+        before = calls
+        st, chk = api.call("POST", f"{w}/textbooks/{book}/chapters/{ready[0]['index']}/check")
+        check(st == 200 and chk["items"], "a reading check comes back from stored items")
+        st, usage = api.call("GET", f"{w}/textbooks/{book}/usage")
+        check(usage["autoCalls"] + usage["requestedCalls"] == before, "the reading check made zero model calls")
+    print(json.dumps({"ok": True, "book": book, "chapters": len(book_json["chapters"]),
+                      "ready": len(ready), "usage": usage}))
+
+
 def check(ok, what):
     print(("ok   " if ok else "FAIL ") + what, flush=True)
     if not ok:
@@ -64,6 +130,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--goal", default="Read Rust code that uses Option and Result with confidence")
     ap.add_argument("--steps", type=int, default=60)
+    ap.add_argument("--textbook", metavar="PDF", help="only run the textbook import on this PDF")
     args = ap.parse_args()
     if not BIN.exists():
         sys.exit("build first: cargo build -p lp-server")
@@ -80,6 +147,9 @@ def main():
         st, ws = api.call("POST", "/workspaces", {"name": "real smoke"})
         check(st in (200, 201), f"workspace created ({st})")
         w = f"/workspaces/{ws['id']}"
+        if args.textbook:
+            textbook_smoke(api, w, args.textbook)
+            return
 
         t0 = time.time()
         st, created = api.call("POST", f"{w}/courses", {"goal": args.goal, "why": "I read Rust at work and it slows me down"})

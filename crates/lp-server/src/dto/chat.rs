@@ -389,7 +389,7 @@ pub enum JobStatusDto {
 #[serde(rename_all = "camelCase")]
 pub struct JobDto {
     pub id: String,
-    /// `research`, `pdf`, `visual` or `demo`.
+    /// `research`, `pdf`, `visual`, `demo` or `textbook`.
     pub kind: String,
     pub status: JobStatusDto,
     pub title: String,
@@ -1011,6 +1011,12 @@ pub struct JobItemDto {
     pub pages_read: Option<u64>,
     /// PDF jobs: the document's page count.
     pub total_pages: Option<u64>,
+    /// Textbook import jobs: the book being imported.
+    pub book_id: Option<String>,
+    /// Textbook import jobs: chapters finished.
+    pub chapters_done: Option<u64>,
+    /// Textbook import jobs: chapters this run covers.
+    pub chapters_total: Option<u64>,
     pub created_at: i64,
 }
 
@@ -1026,6 +1032,9 @@ impl From<chat::JobView> for JobItemDto {
             error: j.error,
             pages_read: j.pages_read,
             total_pages: j.total_pages,
+            book_id: j.book_id,
+            chapters_done: j.chapters_done,
+            chapters_total: j.chapters_total,
             created_at: j.created_at,
         }
     }

@@ -31,6 +31,8 @@ pub async fn list(
     Path(ws): Path<String>,
 ) -> Result<Json<JobListDto>, ApiError> {
     let h = open_ws(&st, &ws).await?;
+    // Builds the textbook service, whose first use repairs imports a dead server left running.
+    st.textbook(&h).await?;
     let ctx = turn_ctx(&st, h).await?;
     let jobs = st.chats.jobs(&ctx).await.map_err(|e| rejected(e, None))?;
     Ok(Json(JobListDto {
@@ -59,6 +61,19 @@ pub async fn abort(
 ) -> Result<Json<JobItemDto>, ApiError> {
     checked_id("job", &id)?;
     let h = open_writable(&st, &ws).await?;
+    // A textbook import is not a chat job: its own service stops it, then the job is read back.
+    if st.textbook(&h).await?.abort(&id) {
+        let ctx = turn_ctx(&st, h).await?;
+        let job = st
+            .chats
+            .jobs(&ctx)
+            .await
+            .map_err(|e| rejected(e, None))?
+            .into_iter()
+            .find(|j| j.id == id)
+            .ok_or_else(|| ApiError::not_found(format!("no job {id}")))?;
+        return Ok(Json(job.into()));
+    }
     let ctx = turn_ctx(&st, h).await?;
     let job = st
         .chats

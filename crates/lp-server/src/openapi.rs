@@ -3,7 +3,7 @@
 
 use utoipa::OpenApi;
 
-use crate::dto::{events, system};
+use crate::dto::{events, system, textbook};
 use crate::error::{ErrorBody, ErrorCode, ErrorEnvelope, FieldError};
 
 #[derive(OpenApi)]
@@ -42,6 +42,15 @@ use crate::error::{ErrorBody, ErrorCode, ErrorEnvelope, FieldError};
         crate::routes::artifacts::artifact,
         crate::routes::sources::pdf,
         crate::routes::sources::note,
+        crate::routes::sources::textbook,
+        crate::routes::textbook::list,
+        crate::routes::textbook::book,
+        crate::routes::textbook::chapter,
+        crate::routes::textbook::import,
+        crate::routes::textbook::check,
+        crate::routes::textbook::answer,
+        crate::routes::textbook::self_grade,
+        crate::routes::textbook::usage,
         crate::routes::graph_write::preview,
         crate::routes::graph_write::remove,
         crate::routes::graph_write::relayout,
@@ -134,6 +143,26 @@ use crate::error::{ErrorBody, ErrorCode, ErrorEnvelope, FieldError};
         FieldError,
         system::EngineMode,
         events::ServerEvent,
+        textbook::TextbookUploadDto,
+        textbook::TextbookUploadForm,
+        textbook::TextbookListDto,
+        textbook::TextbookSummaryDto,
+        textbook::BookPhaseDto,
+        textbook::TextbookDto,
+        textbook::ChapterRowDto,
+        textbook::MapSourceDto,
+        textbook::ChapterKindDto,
+        textbook::ChapterStateDto,
+        textbook::ChapterStatusDto,
+        textbook::ChapterDetailDto,
+        textbook::ObjectiveRowDto,
+        textbook::ImportRequest,
+        textbook::ImportStartedDto,
+        textbook::CheckItemDto,
+        textbook::ReadingCheckDto,
+        textbook::CheckAnswerRequest,
+        textbook::CheckFeedbackDto,
+        textbook::TextbookUsageDto,
     )),
     tags(
         (name = "system", description = "Health and app bootstrap"),
@@ -143,6 +172,7 @@ use crate::error::{ErrorBody, ErrorCode, ErrorEnvelope, FieldError};
         (name = "chats", description = "Learn chats and the Classroom view"),
         (name = "review", description = "FSRS spaced repetition"),
         (name = "courses", description = "Courses: stored lessons, placement, follow-ups"),
+        (name = "textbooks", description = "Textbook mode: PDF import, chapters, reading checks"),
         (name = "digest", description = "Decision digest"),
         (name = "accounts", description = "CLI accounts"),
         (name = "settings", description = "Global settings"),

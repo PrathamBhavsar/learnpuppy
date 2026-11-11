@@ -1705,6 +1705,168 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/workspaces/{ws}/sources/textbook": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Uploads a PDF book (U7). The server maps it into chapters in the background; the returned job
+         *     reports progress. The same bytes twice find the same book (`200`, `existing: true`).
+         */
+        post: operations["post_workspaces_ws_sources_textbook"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{ws}/textbooks": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Imported books, newest first. */
+        get: operations["get_workspaces_ws_textbooks"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{ws}/textbooks/{book}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** One book with its chapter map and per-chapter import state. */
+        get: operations["get_workspaces_ws_textbooks_book"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{ws}/textbooks/{book}/chapters/{n}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** One chapter with its learning objectives (never their quiz items). */
+        get: operations["get_workspaces_ws_textbooks_book_chapters_n"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{ws}/textbooks/{book}/chapters/{n}/check": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** "I read chapter N": a quiz of stored items, one per objective. No model call. */
+        post: operations["post_workspaces_ws_textbooks_book_chapters_n_check"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{ws}/textbooks/{book}/checks/{check}/answer": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Grades one answer by code and feeds the item's FSRS card. A retry with the same `clientId`
+         *     returns the stored feedback.
+         */
+        post: operations["post_workspaces_ws_textbooks_book_checks_check_answer"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{ws}/textbooks/{book}/checks/{check}/self-grade": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** The learner's own grade for a typed answer that was close or wrong. */
+        post: operations["post_workspaces_ws_textbooks_book_checks_check_self_grade"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{ws}/textbooks/{book}/import": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Starts an import of the chapters still pending (or the listed ones) as a background job. The
+         *     lifetime budget of 40 cheap calls per book applies; what does not fit stays queued.
+         */
+        post: operations["post_workspaces_ws_textbooks_book_import"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{ws}/textbooks/{book}/usage": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Cheap-model tokens and calls spent on this book, against the lifetime cap. */
+        get: operations["get_workspaces_ws_textbooks_book_usage"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/workspaces/import": {
         parameters: {
             query?: never;
@@ -1876,6 +2038,8 @@ export interface components {
         BannerLevelDto: "info" | "warning";
         /** @enum {string} */
         BasisDto: "stated" | "inferred";
+        /** @enum {string} */
+        BookPhaseDto: "importing" | "ready" | "partial" | "failed";
         /** @description Everything the app needs at start, in one call. */
         Bootstrap: {
             accounts: components["schemas"]["AccountSummaryDto"][];
@@ -2012,6 +2176,37 @@ export interface components {
             selection: string[];
             total: number;
         };
+        ChapterDetailDto: {
+            chapter: components["schemas"]["ChapterRowDto"];
+            objectives: components["schemas"]["ObjectiveRowDto"][];
+        };
+        /** @enum {string} */
+        ChapterKindDto: "chapter" | "front" | "back";
+        ChapterRowDto: {
+            /** Format: int32 */
+            endPage: number;
+            /** @description A short code (`parse`, `budget`, `no_cards`, `engine_unavailable`, …); never page text. */
+            error?: string | null;
+            /** Format: int32 */
+            index: number;
+            kind: components["schemas"]["ChapterKindDto"];
+            /** Format: int32 */
+            objectives: number;
+            /**
+             * Format: int32
+             * @description Physical, 1-based.
+             */
+            startPage: number;
+            state: components["schemas"]["ChapterStateDto"];
+            status: components["schemas"]["ChapterStatusDto"];
+            title: string;
+            /** @description The chapter was longer than one call may carry and its tail was cut. */
+            truncated: boolean;
+        };
+        /** @enum {string} */
+        ChapterStateDto: "pending" | "importing" | "ready" | "failed" | "skipped" | "queued";
+        /** @enum {string} */
+        ChapterStatusDto: "not_read" | "checked" | "due";
         ChatDeltaData: {
             chatId: string;
             kind: components["schemas"]["DeltaKind"];
@@ -2064,9 +2259,37 @@ export interface components {
             chatId: string;
             turnId: string;
         };
+        CheckAnswerRequest: {
+            /** @description A retry with the same id returns the stored feedback instead of `409`. */
+            clientId?: string | null;
+            /**
+             * Format: int32
+             * @description 1..=5.
+             */
+            confidence?: number | null;
+            item: string;
+            /**
+             * Format: int64
+             * @description How long the learner took, measured by the client.
+             */
+            ms?: number | null;
+            text: string;
+        };
         CheckDto: {
             correct: boolean;
             note: string;
+        };
+        CheckFeedbackDto: {
+            answer: string;
+            /** @description Near the right answer: the learner confirms with a self-grade. */
+            close: boolean;
+            correct: boolean;
+            /**
+             * Format: int64
+             * @description Epoch ms the card is next due.
+             */
+            due?: number | null;
+            why: string;
         };
         CheckinNeededDto: {
             needed: boolean;
@@ -2079,6 +2302,14 @@ export interface components {
         /** @description `review_only_suggested`: self-reported sleep came in under the poor-sleep threshold (F04). */
         CheckinResultDto: {
             reviewOnlySuggested: boolean;
+        };
+        CheckItemDto: {
+            id: string;
+            kind: components["schemas"]["ItemKindDto"];
+            objectiveId: string;
+            /** @description Multiple choice only, shuffled; empty for recall. */
+            options: string[];
+            q: string;
         };
         CheckRequest: {
             item: string;
@@ -2470,6 +2701,13 @@ export interface components {
         ImportedWorkspace: {
             workspaceId: string;
         };
+        /** @description At most 200 chapter indices; omit to import everything still pending. */
+        ImportRequest: {
+            chapters?: number[] | null;
+        };
+        ImportStartedDto: {
+            jobId: string;
+        };
         IngestDoneData: {
             report: components["schemas"]["IngestReport"];
             runId: string;
@@ -2540,7 +2778,7 @@ export interface components {
         JobDto: {
             artifactId?: string | null;
             id: string;
-            /** @description `research`, `pdf`, `visual` or `demo`. */
+            /** @description `research`, `pdf`, `visual`, `demo` or `textbook`. */
             kind: string;
             status: components["schemas"]["JobStatusDto"];
             title: string;
@@ -2548,6 +2786,18 @@ export interface components {
         /** @description One workbench job in the workspace's job list. */
         JobItemDto: {
             artifactId?: string | null;
+            /** @description Textbook import jobs: the book being imported. */
+            bookId?: string | null;
+            /**
+             * Format: int64
+             * @description Textbook import jobs: chapters finished.
+             */
+            chaptersDone?: number | null;
+            /**
+             * Format: int64
+             * @description Textbook import jobs: chapters this run covers.
+             */
+            chaptersTotal?: number | null;
             chatId: string;
             /** Format: int64 */
             createdAt: number;
@@ -2587,6 +2837,8 @@ export interface components {
         };
         /** @enum {string} */
         LessonKindDto: "conceptual" | "procedural" | "definitional";
+        /** @enum {string} */
+        MapSourceDto: "outline" | "toc" | "chunks";
         /** @description The mastery bar's count line, e.g. "11 of 14 confirmed, 3 open, 1 parked". */
         MasteryCountDto: {
             countLine: string;
@@ -2755,6 +3007,19 @@ export interface components {
         NoteUploadForm: {
             /** Format: binary */
             file: string;
+        };
+        ObjectiveRowDto: {
+            /** Format: int32 */
+            endPage: number;
+            id: string;
+            /**
+             * Format: int32
+             * @description How many stored quiz items; the items themselves are never sent here.
+             */
+            items: number;
+            /** Format: int32 */
+            startPage: number;
+            text: string;
         };
         OptionDto: {
             /** @description What to send back as the answer. */
@@ -2985,6 +3250,12 @@ export interface components {
              * @description The server clock the queue was computed at (epoch ms).
              */
             now: number;
+        };
+        ReadingCheckDto: {
+            /** Format: int32 */
+            chapter: number;
+            checkId: string;
+            items: components["schemas"]["CheckItemDto"][];
         };
         /** @description F03's ready-gate checklist; `focus_seconds` is the time the focus timer actually ran. */
         ReadyAnswersDto: {
@@ -3297,6 +3568,75 @@ export interface components {
         SyncDto: {
             cards: number;
             reviews: number;
+        };
+        TextbookDto: {
+            /** Format: int32 */
+            autoCalls: number;
+            /**
+             * Format: int32
+             * @description Lifetime cheap-call cap per book.
+             */
+            callsCap: number;
+            chapters: components["schemas"]["ChapterRowDto"][];
+            fileName: string;
+            id: string;
+            /** @description The running import job. */
+            jobId?: string | null;
+            mapSource?: null | components["schemas"]["MapSourceDto"];
+            /**
+             * Format: int32
+             * @description Physical minus printed page number, when one was found.
+             */
+            pageOffset?: number | null;
+            /** Format: int32 */
+            requestedCalls: number;
+            title: string;
+            /** Format: int32 */
+            totalPages: number;
+        };
+        TextbookListDto: {
+            items: components["schemas"]["TextbookSummaryDto"][];
+        };
+        TextbookSummaryDto: {
+            /** Format: int32 */
+            chapters: number;
+            /**
+             * Format: int64
+             * @description Epoch ms of the first import.
+             */
+            createdAt: number;
+            id: string;
+            /** Format: int32 */
+            ready: number;
+            state: components["schemas"]["BookPhaseDto"];
+            title: string;
+            /** Format: int32 */
+            totalPages: number;
+        };
+        TextbookUploadDto: {
+            bookId: string;
+            /** Format: int64 */
+            bytes: number;
+            existing: boolean;
+            /** @description The import job, `null` when the book was already stored and nothing is running. */
+            jobId?: string | null;
+        };
+        /** @description A PDF book, at most 50 MB. */
+        TextbookUploadForm: {
+            /** Format: binary */
+            file: string;
+        };
+        TextbookUsageDto: {
+            /** Format: int32 */
+            autoCalls: number;
+            /** Format: int32 */
+            callsCap: number;
+            /** Format: int64 */
+            cheapIn: number;
+            /** Format: int64 */
+            cheapOut: number;
+            /** Format: int32 */
+            requestedCalls: number;
         };
         ToolCall: {
             id: string;
@@ -7797,6 +8137,392 @@ export interface operations {
             };
             /** @description PDF exceeds 50 MB */
             413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    post_workspaces_ws_sources_textbook: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                ws: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["TextbookUploadForm"];
+            };
+        };
+        responses: {
+            /** @description The book was already stored */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TextbookUploadDto"];
+                };
+            };
+            /** @description New book; the import job started */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TextbookUploadDto"];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description PDF exceeds 50 MB */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    get_workspaces_ws_textbooks: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Workspace id */
+                ws: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TextbookListDto"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    get_workspaces_ws_textbooks_book: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Book id, `tb_` + 16 hex */
+                book: string;
+                ws: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TextbookDto"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    get_workspaces_ws_textbooks_book_chapters_n: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                book: string;
+                /** @description Chapter index */
+                n: number;
+                ws: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChapterDetailDto"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    post_workspaces_ws_textbooks_book_chapters_n_check: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                book: string;
+                /** @description Chapter index */
+                n: number;
+                ws: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReadingCheckDto"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description `details.reason` is `chapter_not_ready` */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    post_workspaces_ws_textbooks_book_checks_check_answer: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                book: string;
+                /** @description `rc_` + 32 hex */
+                check: string;
+                ws: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CheckAnswerRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CheckFeedbackDto"];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description `details.reason` is `already_answered` */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    post_workspaces_ws_textbooks_book_checks_check_self_grade: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                book: string;
+                check: string;
+                ws: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SelfGradeRequest"];
+            };
+        };
+        responses: {
+            /** @description Graded */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    post_workspaces_ws_textbooks_book_import: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                book: string;
+                ws: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ImportRequest"];
+            };
+        };
+        responses: {
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ImportStartedDto"];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description `details.reason` is `import_running`, `nothing_to_import` or `call_budget_used` */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    get_workspaces_ws_textbooks_book_usage: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                book: string;
+                ws: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TextbookUsageDto"];
+                };
+            };
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };

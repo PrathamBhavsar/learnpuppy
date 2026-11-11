@@ -92,6 +92,8 @@ pub enum JobKind {
     Pdf,
     Visual,
     Demo,
+    /// Textbook import (U7): run by `TextbookService`, never by the chat-bound workbench.
+    Textbook,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
