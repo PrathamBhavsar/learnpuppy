@@ -78,7 +78,8 @@ describe("textbook mock handlers", () => {
 
   it("accepts a PDF once, reports a repeat as existing, and rejects other files", async () => {
     const first = await call("/sources/textbook", pdf("a"))
-    expect(first.status).toBe(202)
+    expect(first.status).toBe(201)
+    expect(await first.json()).not.toHaveProperty("jobId")
     const again = await call("/sources/textbook", pdf("a"))
     expect(again.status).toBe(200)
     expect((await again.json()).existing).toBe(true)
@@ -89,22 +90,38 @@ describe("textbook mock handlers", () => {
     ).toBe(400)
   })
 
-  it("import conflicts while running and when nothing is pending", async () => {
+  it("import conflicts while running, when nothing is pending, and at the hourly limit", async () => {
     expect((await call("/textbooks/bk1/import", json({}))).status).toBe(409)
     await call("/sources/textbook", pdf("b"))
     const id = (await (await call("/textbooks")).json()).items[0].id
+    const started = await call(
+      `/textbooks/${id}/import`,
+      json({ chapters: [1] })
+    )
+    expect(started.status).toBe(202)
     const running = await call(`/textbooks/${id}/import`, json({}))
     expect((await running.json()).error.details.reason).toBe("import_running")
+    const limited = state.db.textbooks.get("ws_rustasync")![0]!
+    limited.job = null
+    limited.book.hourUsed = 8
+    const res = await call(`/textbooks/${id}/import`, json({ chapters: [0] }))
+    expect((await res.json()).error.details.reason).toBe("import_rate_limited")
   })
 
-  it("lists the import as a textbook job with chapter progress", async () => {
+  it("an upload starts no job; opening a chapter lists one import job", async () => {
     await call("/sources/textbook", pdf("c"))
+    const before = await (await call("/jobs")).json()
+    expect(
+      before.items.some((j: { kind: string }) => j.kind === "textbook")
+    ).toBe(false)
+    const id = (await (await call("/textbooks")).json()).items[0].id
+    await call(`/textbooks/${id}/import`, json({ chapters: [0] }))
     const jobs = await (await call("/jobs")).json()
-    expect(jobs.items[0]).toMatchObject({
-      kind: "textbook",
-      bookId: expect.stringMatching(/^bk_/),
+    const job = jobs.items.find((j: { kind: string }) => j.kind === "textbook")
+    expect(job).toMatchObject({
+      bookId: id,
       chaptersDone: 0,
-      chaptersTotal: 3,
+      chaptersTotal: 1,
     })
   })
 })

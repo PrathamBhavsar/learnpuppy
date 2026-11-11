@@ -12,9 +12,10 @@ Starts `learnpuppy serve --dev --real` on a free port with a throwaway data root
   5. closes the session, ends the bout, and checks the gap now refuses a step,
   6. prints token usage and the number of model calls the walk itself caused.
 
-With --textbook it runs only the textbook import: upload the PDF, poll the jobs list until the
-import ends, print the chapters and two objectives per chapter, and assert at most 40 cheap calls.
-It spends real cheap-model quota (up to 40 calls). Not in CI.
+With --textbook it runs only the textbook flow: upload the PDF (maps chapters, no import), open
+the first chapter that can import (one import job), poll the jobs list until it ends, print the
+chapters and two objectives per chapter, and assert at most 8 chapter imports in the hour.
+It spends real cheap-model quota (a TOC call without an outline, a few calls per chapter). Not in CI.
 
 It spends real quota: one strong call, a few cheap ones. Exit code 0 only if every check held.
 """
@@ -76,8 +77,15 @@ def upload_textbook(api, workspace, pdf):
 def textbook_smoke(api, w, pdf):
     t0 = time.time()
     st, up = upload_textbook(api, w, pdf)
-    check(st in (200, 202), f"textbook uploaded ({st})")
-    book, job = up["bookId"], up["jobId"]
+    check(st in (200, 201), f"textbook uploaded ({st})")
+    check("jobId" not in up, "upload starts no import job")
+    book = up["bookId"]
+    st, mapped = api.call("GET", f"{w}/textbooks/{book}")
+    first = next((c for c in mapped["chapters"] if c["canImport"]), None)
+    check(first is not None, "the mapped book has a chapter to import")
+    st, started = api.call("POST", f"{w}/textbooks/{book}/import", {"chapters": [first["index"]]})
+    check(st == 202, f"opening chapter {first['index']} starts its import ({st})")
+    job = started["jobId"]
     print(f"book {book}, job {job}", flush=True)
     last = None
     while True:
@@ -104,7 +112,7 @@ def textbook_smoke(api, w, pdf):
                 print(f"       - {o['text'][:100]} (pp{o['startPage']}-{o['endPage']}, {o['items']} items)", flush=True)
     st, usage = api.call("GET", f"{w}/textbooks/{book}/usage")
     calls = usage["autoCalls"] + usage["requestedCalls"]
-    check(usage["autoCalls"] <= 40 and calls <= usage["callsCap"], f"calls {calls} within the lifetime cap of {usage['callsCap']}")
+    check(usage["hourUsed"] <= usage["hourCap"], f"{usage['hourUsed']} chapter imports within the hourly cap of {usage['hourCap']}")
     ready = [c for c in book_json["chapters"] if c["state"] == "ready"]
     if ready:
         before = calls

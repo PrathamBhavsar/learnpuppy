@@ -45,7 +45,8 @@ function advance(ws: string, b: MockBook) {
         state: "ready",
       })
     )
-    b.book.autoCalls += 1
+    b.book.requestedCalls += 1
+    b.book.hourUsed += 1
     job.chaptersDone = (job.chaptersDone ?? 0) + 1
   }
   if (!b.book.chapters.some((c) => c.state === "importing")) {
@@ -111,49 +112,40 @@ export const textbookHandlers = [
         bookId: id,
         bytes: file.size,
         existing: true,
-        jobId: existing.book.jobId ?? null,
       }
       return HttpResponse.json(body)
     }
-    const job: Dto["JobItemDto"] = {
-      id: nextId("tbj"),
-      kind: "textbook",
-      status: "running",
-      title: `Import ${name}`,
-      chatId: "",
-      createdAt: state.db.now,
-      bookId: id,
-      chaptersDone: 0,
-      chaptersTotal: UPLOAD_CHAPTERS.length,
-      pagesRead: 0,
-      totalPages: 52,
-    }
+    // Upload maps the book and starts no job: every chapter waits to be opened.
     const b = newBook(
       id,
       name.replace(/\.pdf$/i, ""),
-      UPLOAD_CHAPTERS.map((c) => ({ ...c, state: "importing" as const })),
-      state.db.now,
-      job
+      UPLOAD_CHAPTERS.map((c) => ({ ...c, state: "pending" as const })),
+      state.db.now
     )
     booksOf(ws).unshift(b)
-    bus.emit("job.updated", { job }, ws)
     const body: Dto["TextbookUploadDto"] = {
       bookId: id,
       bytes: file.size,
       existing: false,
-      jobId: job.id,
     }
-    return HttpResponse.json(body, { status: 202 })
+    return HttpResponse.json(body, { status: 201 })
   }),
-  http.post(`${API}/textbooks/:book/import`, ({ params }) => {
+  http.post(`${API}/textbooks/:book/import`, async ({ params, request }) => {
     const b = find(params["ws"], params["book"])
     if (!b) return notFound("Book")
     if (b.job?.status === "running")
       return apiError("conflict", "An import is already running", {
         details: { reason: "import_running" },
       })
-    const pending = b.book.chapters.filter(
-      (c) => c.state === "failed" || c.state === "queued"
+    if (b.book.hourUsed >= b.book.hourCap)
+      return apiError("conflict", "Too many chapter imports this hour", {
+        details: { reason: "import_rate_limited" },
+      })
+    const req = (await request.json().catch(() => ({}))) as {
+      chapters?: number[]
+    }
+    const pending = b.book.chapters.filter((c) =>
+      req.chapters ? req.chapters.includes(c.index) : c.canImport
     )
     if (pending.length === 0)
       return apiError("conflict", "Nothing to import", {
@@ -237,7 +229,8 @@ export const textbookHandlers = [
     const body: Dto["TextbookUsageDto"] = {
       autoCalls: b.book.autoCalls,
       requestedCalls: b.book.requestedCalls,
-      callsCap: b.book.callsCap,
+      hourUsed: b.book.hourUsed,
+      hourCap: b.book.hourCap,
       cheapIn: 0,
       cheapOut: 0,
     }

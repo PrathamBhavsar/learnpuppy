@@ -100,13 +100,14 @@ export function useUpload(ws: string) {
           },
         })
       ),
+    // Upload only maps the book: no job starts, so only the book list changes.
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: bookKey(ws) })
-      void qc.invalidateQueries({ queryKey: keys.ws(ws).jobs() })
     },
   })
 }
 
+/** Imports the given chapters (the one the learner opened). The only call that makes model calls. */
 export function useImport(ws: string, book: string) {
   const qc = useQueryClient()
   return useMutation({

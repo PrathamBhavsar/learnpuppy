@@ -1035,13 +1035,17 @@
       },
       "ChapterRowDto": {
         "properties": {
+          "canImport": {
+            "description": "Importing it may start now: not imported yet, or failed with its retry unused.",
+            "type": "boolean"
+          },
           "endPage": {
             "format": "int32",
             "minimum": 0,
             "type": "integer"
           },
           "error": {
-            "description": "A short code (`parse`, `budget`, `no_cards`, `engine_unavailable`, …); never page text.",
+            "description": "A short code (`parse`, `timeout`, `no_cards`, `engine_unavailable`, …); never page text.",
             "type": [
               "string",
               "null"
@@ -1089,7 +1093,8 @@
           "state",
           "status",
           "objectives",
-          "truncated"
+          "truncated",
+          "canImport"
         ],
         "type": "object"
       },
@@ -1099,8 +1104,7 @@
           "importing",
           "ready",
           "failed",
-          "skipped",
-          "queued"
+          "skipped"
         ],
         "type": "string"
       },
@@ -5984,12 +5988,6 @@
             "minimum": 0,
             "type": "integer"
           },
-          "callsCap": {
-            "description": "Lifetime cheap-call cap per book.",
-            "format": "int32",
-            "minimum": 0,
-            "type": "integer"
-          },
           "chapters": {
             "items": {
               "$ref": "#/components/schemas/ChapterRowDto"
@@ -5998,6 +5996,17 @@
           },
           "fileName": {
             "type": "string"
+          },
+          "hourCap": {
+            "format": "int32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "hourUsed": {
+            "description": "Chapter imports in the last hour, and the most a book allows in any rolling hour.",
+            "format": "int32",
+            "minimum": 0,
+            "type": "integer"
           },
           "id": {
             "type": "string"
@@ -6048,7 +6057,8 @@
           "totalPages",
           "autoCalls",
           "requestedCalls",
-          "callsCap",
+          "hourUsed",
+          "hourCap",
           "chapters"
         ],
         "type": "object"
@@ -6121,14 +6131,8 @@
             "type": "integer"
           },
           "existing": {
+            "description": "Always false after the upload returns: upload maps the book and starts no job. A chapter is\nimported when the learner opens it (`POST …/import` with that chapter).",
             "type": "boolean"
-          },
-          "jobId": {
-            "description": "The import job, `null` when the book was already stored and nothing is running.",
-            "type": [
-              "string",
-              "null"
-            ]
           }
         },
         "required": [
@@ -6158,11 +6162,6 @@
             "minimum": 0,
             "type": "integer"
           },
-          "callsCap": {
-            "format": "int32",
-            "minimum": 0,
-            "type": "integer"
-          },
           "cheapIn": {
             "format": "int64",
             "minimum": 0,
@@ -6172,6 +6171,25 @@
             "format": "int64",
             "minimum": 0,
             "type": "integer"
+          },
+          "hourCap": {
+            "format": "int32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "hourUsed": {
+            "description": "Chapter imports in the last hour, and the most a book allows in any rolling hour.",
+            "format": "int32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "nextSlotAt": {
+            "description": "Epoch ms when the oldest counted import leaves the hour; set only while at the cap.",
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
           },
           "requestedCalls": {
             "format": "int32",
@@ -6184,7 +6202,8 @@
           "cheapOut",
           "autoCalls",
           "requestedCalls",
-          "callsCap"
+          "hourUsed",
+          "hourCap"
         ],
         "type": "object"
       },
@@ -13165,7 +13184,7 @@
             },
             "description": "The book was already stored"
           },
-          "202": {
+          "201": {
             "content": {
               "application/json": {
                 "schema": {
@@ -13173,7 +13192,7 @@
                 }
               }
             },
-            "description": "New book; the import job started"
+            "description": "New book, mapped into chapters; no import started"
           },
           "400": {
             "content": {
@@ -13216,7 +13235,7 @@
             "description": "PDF exceeds 50 MB"
           }
         },
-        "summary": "Uploads a PDF book (U7). The server maps it into chapters in the background; the returned job\nreports progress. The same bytes twice find the same book (`200`, `existing: true`).",
+        "summary": "Uploads a PDF book (U7). The server maps it into chapters (the outline, or one cheap call\nwithout one) and imports nothing: a chapter is imported when the learner opens it. The same\nbytes twice find the same book (`200`, `existing: true`).",
         "tags": [
           "textbooks"
         ]
@@ -13682,10 +13701,10 @@
                 }
               }
             },
-            "description": "`details.reason` is `import_running`, `nothing_to_import` or `call_budget_used`"
+            "description": "`details.reason` is `import_running`, `nothing_to_import`, `import_rate_limited` or `chapter_retry_used`"
           }
         },
-        "summary": "Starts an import of the chapters still pending (or the listed ones) as a background job. The\nlifetime budget of 40 cheap calls per book applies; what does not fit stays queued.",
+        "summary": "Starts an import of the listed chapters (or every chapter still pending) as a background job.\nThis is how a chapter gets imported: the learner opens it. Each chapter gets one try plus one\nretry, and a book allows 8 chapter imports in a rolling hour; what does not fit stays pending.",
         "tags": [
           "textbooks"
         ]

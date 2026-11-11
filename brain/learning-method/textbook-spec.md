@@ -1,9 +1,9 @@
 ---
 type: spec
 title: Textbook Mode Backend Spec (U7, F37 part 1)
-description: Build spec for textbook import, covering the chapter map, stored objectives and quiz items, the textbook.jsonl ledger, the import job lifecycle, call budget, reading-check routes and DTOs, error cases, tests per crate and a file-by-file build order with verified paths.
-tags: [textbook, f37, u7, spec, pdf, ledger, jobs, fsrs, budget]
-timestamp: 2026-11-11
+description: Build spec for textbook import, covering the chapter map, stored objectives and quiz items, the textbook.jsonl ledger, the lazy per-chapter import job, the per-chapter retry and per-hour import limit, reading-check routes and DTOs, error cases, tests per crate and a file-by-file build order with verified paths.
+tags: [textbook, f37, u7, spec, pdf, ledger, jobs, fsrs, rate-limit, lazy-import]
+timestamp: 2026-11-12
 ---
 
 # Textbook Mode Backend Spec (U7, F37 part 1)
@@ -14,7 +14,7 @@ Every path and function named here was read on `staging` at `2fccf39` on 2026-11
 
 ## 1. What ships
 
-A learner uploads a PDF book. In the background the server maps it into chapters, then makes **one cheap call per chapter** (or per chapter part) that returns 5 to 12 learning objectives with their quiz items and source pages. All of it is stored as data. After that, "I read chapter N" returns a quiz built from the stored items, graded by code, feeding FSRS cards. Studying and the reading check make **zero** model calls.
+A learner uploads a PDF book. Upload maps it into chapters (the PDF outline, 0 model calls; one cheap TOC call without an outline) and imports **nothing**. When the learner opens a chapter, the server makes **one cheap call per part of that chapter** (one part up to 8,000 words) that returns 5 to 12 learning objectives with their quiz items and source pages. All of it is stored as data. After that, "I read chapter N" returns a quiz built from the stored items, graded by code, feeding FSRS cards. Studying and the reading check make **zero** model calls.
 
 Out of scope for U7: screens (U8), deleting a book, OCR of scanned pages, editing objectives, a digest line (U8 reads chapter status from the routes below).
 
@@ -28,7 +28,7 @@ Out of scope for U7: screens (U8), deleting a book, OCR of scanned pages, editin
 | D4 | Objectives and items reuse `lp_core::course::Item` unchanged; grading reuses the course grading (`grade` in `crates/lp-service/src/course/mod.rs`, `rating_for` in `lp-core`). | No duplicated domain logic (CLAUDE.md rule). |
 | D5 | Card ids are `t:{bookId}:{itemId}`; course cards are `c:{course}:{item}` (`card_id` in `course/mod.rs`). Cards are parked at `PARKED_DUE` until first answered, exactly like course cards. | Review queue never shows an unread chapter; prefixes never collide. |
 | D6 | Chapter objectives use the existing cheap role `placer` (`COURSE_ROLES` in `crates/lp-service/src/settings.rs`, default `claude-haiku-5-5`). No new role, no settings change. | Smallest change; the learner already controls the cheap model there. |
-| D7 | **Closed.** Hard lifetime cap: at most `MAX_AUTO_CALLS = 40` cheap calls per book, shared by the automatic import and every requested import, counted from the ledger's `Usage` totals (`auto_calls + requested_calls`, never a per-job counter). The TOC call, every part and every retry count. A retry re-checks the cap before it is sent. A chapter whose parts would not all fit in the remaining budget is not started: it stays `queued`, visible, never half-written. `requested: true` stays on `Usage` lines only so the usage route can show the split. The owner may revise the number. | Matches U7 item 4, "lifetime 40 per book". A fresh per-request cap allowed unbounded spend and endless retries of a poison chapter. |
+| D7 | **Revised by R4 (lazy import).** There is no lifetime cap and no automatic import. Upload maps the book and starts no job. A chapter is imported only when the learner opens it (`POST …/import` with that chapter). Each chapter gets **one try plus one retry** (`MAX_ATTEMPTS = 2`): both happen inside its one import, and a chapter whose try and retry both fail is final (`ChapterFailed { retryable: false }`); an engine outage that spent no content attempt stays retryable. Per book, at most `MAX_MANUAL_IMPORTS_PER_HOUR = 8` chapter imports in a rolling hour, on the server clock, counted from the ledger: the distinct `(job, chapter)` pairs with a requested `Usage` line in the last `IMPORT_WINDOW_MS` (`manual_import_times` in `lp-core`). Parts and retries inside one import do not use extra slots; the TOC call at upload is not an import. One job also stops after `MAX_JOB_CALLS` (8 × 3 parts × 2 attempts = 48) model calls, as a backstop. | Upload used to start a job over every pending chapter, up to the lifetime 40 (about 350k to 450k tokens a book) for chapters nobody read. Spend now follows reading, bounded by chapter, by hour and by job. |
 | D8 | The upload route is `POST …/sources/textbook` in `crates/lp-server/src/routes/sources.rs`, reusing its multipart parser. Everything else is in the new `routes/textbook.rs`. | The task names both files. |
 | D9 | The PDF input cap in the extractor rises from 40 MiB to 50 MiB (`MAX_PDF_INPUT_BYTES` in `crates/lp-agent/src/workbench/adapters.rs`), matching `MAX_PDF_BYTES = 50 * 1024 * 1024` in `sources.rs`. | Today a 45 MB upload is accepted and then fails in `pdf_path`. |
 | D10 | Page text is not stored. A retry or a requested import reads the stored PDF again. | Keeps the workspace small; extraction is cheap compared with a model call. |
@@ -41,7 +41,9 @@ Register with `pub mod textbook;` in `crates/lp-core/src/lib.rs`. No IO, no cloc
 
 | Name | Value | Meaning |
 |---|---|---|
-| `MAX_AUTO_CALLS` | `40` | Lifetime cheap calls per book across all imports (D7). The name is kept; it is not per job. |
+| `MAX_MANUAL_IMPORTS_PER_HOUR` | `8` | Chapter imports per book in any rolling `IMPORT_WINDOW_MS` (D7). |
+| `IMPORT_WINDOW_MS` | `3_600_000` | The rolling window, in epoch ms, read from the server clock. |
+| `MAX_JOB_CALLS` | `48` | Backstop on model calls in one import job (service constant). |
 | `PART_WORDS` | `8_000` | A chapter over this many words is split. |
 | `MAX_PARTS` | `3` | Parts per chapter at most. |
 | `MAX_PART_WORDS` | `10_000` | Hard cap on words sent in one call; the rest of the part is cut and the chapter marked `truncated`. |
@@ -245,54 +247,58 @@ impl<E: LlmEngine + 'static> TextbookService<E> {
 
 Plain result structs (no serde, no HTTP):
 
-- `Upload { book: String, job: Option<String>, existing: bool }`
+- `Upload { book: String, existing: bool }` (no job: upload starts none)
 - `BookSummary { id, title, total_pages, chapters: usize, ready: usize, state: BookPhase, created_at }`, where `BookPhase` is `Importing | Ready | Partial | Failed`, derived from the fold plus whether a job is running.
-- `BookView { meta: BookMeta, source: Option<MapSource>, chapters: Vec<ChapterRow>, job: Option<String>, auto_calls: u32, requested_calls: u32 }`
-- `ChapterRow { index, title, pages: PageRange, kind: ChapterKind, state: ChapterRowState, objectives: usize, status: ChapterStatus, error: Option<String>, truncated: bool }`, where `ChapterRowState` is `Pending | Importing | Ready | Failed | Skipped | Queued`. `Importing` is the chapter the running job is on. `Queued` means pending with no running job, after the cap was hit.
+- `BookView { meta: BookMeta, source: Option<MapSource>, chapters: Vec<ChapterRow>, job: Option<String>, auto_calls: u32, requested_calls: u32, hour_used: u32 }`
+- `ChapterRow { index, title, pages: PageRange, kind: ChapterKind, state: ChapterRowState, objectives: usize, status: ChapterStatus, error: Option<String>, truncated: bool, can_import: bool }`, where `ChapterRowState` is `Pending | Importing | Ready | Failed | Skipped`. `Importing` is the chapter the running job is on; `Pending` is a mapped chapter nobody has opened. `can_import` is true for a `Pending` chapter of kind `Chapter` and for a `Failed` chapter whose retry is unspent.
 - `ChapterDetail { row: ChapterRow, objectives: Vec<ObjectiveRow> }`, with `ObjectiveRow { id, text, pages: PageRange, items: usize }`. It never carries items.
 - `CheckView { check: String, chapter: u32, items: Vec<CheckItem> }`, with `CheckItem { id, objective: String, kind: ItemKind, q: String, options: Vec<String> }`. The options are shuffled with the course's `shuffled` helper, seeded by `t:{book}:{item}`. There is never an `answer`, `accept`, `why` or `must_name`.
 - `CheckFeedback { correct: bool, close: bool, answer: String, why: String, due: Option<i64> }`
-- `TextbookUsage { cheap_in, cheap_out, auto_calls, requested_calls, cap: u32 }`
+- `TextbookUsage { cheap_in, cheap_out, auto_calls, requested_calls, hour_used: u32, hour_cap: u32, next_slot_at: Option<i64> }`; `next_slot_at` is set only at the cap and is when the oldest counted import leaves the hour. `auto_calls` is now only the TOC call; chapter calls are `requested_calls`.
 
 ### 6.1 Upload
 
 1. The route has already checked the 50 MB cap, the `.pdf` name and the `%PDF-` magic (section 7). Compute SHA-256 → `book_id`.
-2. If `stores.textbooks.exists(book)`, return `Upload { existing: true, job: <the running job for this book, or None> }`. Nothing is written and nothing starts.
-3. Otherwise `save_source`, read `page_count` through the `Pdf` port in `spawn_blocking` (a failure deletes the book dir and returns `Invalid("…")` with the extractor's message), append `Imported`, and start the job (6.2) with `chapters: None`.
+2. If `stores.textbooks.exists(book)`, return `Upload { existing: true }`. Nothing is written and nothing starts.
+3. Otherwise `save_source`, read `page_count` through the `Pdf` port in `spawn_blocking` (a failure deletes the book dir and returns `Invalid("…")` with the extractor's message), append `Imported`, then **map** (below). No job is created and no chapter is imported.
 4. A second identical upload while the first is still saving: a per-book `Mutex` in `Inner` (as in `CourseService::lock_for`) serialises steps 2 and 3, so the second caller sees `existing: true`.
+
+**Map.** `outline()` reads no page text. With at least 2 chapters from `chapters_from_outline`, that is the whole map: 0 model calls. Otherwise the first `MAP_PAGES = 60` pages are read in 10-page windows (to find the printed page offset and the TOC), one TOC call is made (counted as a non-requested `Usage` with job `map_{id}`), and the result is `chapters_from_toc` or, under 2 chapters, `chunk_chapters`. Every page of that sample blank (a scanned book with no outline) is `Invalid("No text found. Scanned pages need OCR before import.")` and the book is removed. `Mapped` is appended, then `ChapterSkipped` for front and back matter. A book stored but not mapped (a crash between `Imported` and `Mapped`) is mapped by its first `import`.
+
+`chapters_from_outline` picks the leaf chapters: with fewer than 3 depth-0 entries and at least 3 at depth 1 it uses depth 1; otherwise depth-0 entries named like `Part I`, `Part 2: Basics` or `Book Three` that are followed by depth-1 entries are containers, dropped in favour of their depth-1 children, while other depth-0 entries (Preface, Index) stay.
 
 ### 6.2 Job lifecycle
 
 ```mermaid
 graph TD
-  start["import(): JobRecord kind Textbook, Running, delivery Claimed"] --> pages["read pages 10 at a time: page_texts in spawn_blocking"]
-  pages --> mapped{"Mapped in ledger?"}
-  mapped -->|"yes"| work
-  mapped -->|"no"| outline["outline(): 0 calls"]
-  outline -->|"entries"| save["append Mapped"]
-  outline -->|"none"| toc["toc_chapters: 1 call, counted"]
-  toc -->|"2 or more chapters"| save
-  toc -->|"fails or under 2"| chunks["chunk_chapters"] --> save
-  save --> work["for each chapter in pending_chapters or the requested list"]
-  work --> cap{"lifetime calls + this chapter's parts <= 40?"}
-  cap -->|"no: chapter stays queued"| finish
-  cap -->|"yes"| call["chapter_objectives per part"]
+  open["learner opens a chapter: POST import with that chapter"] --> check{"hour limit, retry unspent, not Ready or Skipped?"}
+  check -->|"no"| refuse["409 import_rate_limited or chapter_retry_used, 400 for Ready or Skipped"]
+  check -->|"yes"| start["import(): JobRecord kind Textbook, Running, delivery Claimed"]
+  start --> work["for each listed chapter, once, in order"]
+  work --> state{"Pending, or Failed and retryable?"}
+  state -->|"no"| work
+  state -->|"yes"| pages["read only this chapter's pages, 10 at a time"]
+  pages --> limit{"hour used < 8 and job calls fit?"}
+  limit -->|"no"| finish
+  limit -->|"yes"| call["chapter_objectives per part"]
   call -->|"ok"| done["append ChapterDone, upsert parked cards"]
-  call -->|"parse error, attempt 1"| call
+  call -->|"parse error or timeout, attempt 1"| call
+  call -->|"second failure"| failed["ChapterFailed retryable false"]
   call -->|"engine error twice running"| finish
   done --> work
+  failed --> work
   work -->|"none left"| finish["status Done, result summary"]
   start -.->|"abort"| cancelled["status Failed, error cancelled"]
 ```
 
-- **Start.** `import` returns `Conflict("an import is already running for this book")` if `Inner.running` already has the book. Otherwise it creates `JobRecord { id: "tbj_{hex16}_{n}", chat_id: "", kind: Textbook, status: Running, delivery: Claimed, created_at: now, result: Some({title, bookId, progress}), usage: vec![] }`, where `n` is the count of this book's earlier jobs in `stores.jobs`. It writes the record with `stores.jobs.create_job`, calls `notify`, stores a `CancellationToken` in `Inner.running`, `tokio::spawn`s the runner, and returns the id. `chapters: Some(list)` is only valid for indices that exist and are not `Ready`; anything else is `Invalid`.
+- **Start.** `import` returns `Conflict("an import is already running for this book")` if `Inner.running` already has the book. Otherwise it creates `JobRecord { id: "tbj_{hex16}_{n}", chat_id: "", kind: Textbook, status: Running, delivery: Claimed, created_at: now, result: Some({title, bookId, progress}), usage: vec![] }`, where `n` is the count of this book's earlier jobs in `stores.jobs`. It writes the record with `stores.jobs.create_job`, calls `notify`, stores a `CancellationToken` in `Inner.running`, `tokio::spawn`s the runner, and returns the id. `chapters: Some(list)` is deduplicated (each index once, in order) and is only valid for indices that exist and are neither `Ready` nor `Skipped` (`Invalid`); a `Failed` chapter whose retry is spent is `Conflict("chapter_retry_used")`. With `None`, every pending chapter is listed. Before the job is created, `import` refuses with `Conflict("import_rate_limited")` when the hour is already full.
 - **Progress.** `result` is `{"title":"Import <book title>","bookId":…,"progress":{"phase":"pages"|"map"|"objectives","pagesRead":u32,"totalPages":u32,"chaptersDone":u32,"chaptersTotal":u32}}`. It is written with `update_job` and then `notify` at most once per 10 pages and once per chapter. `pagesRead` and `totalPages` use the same keys `progress_field` in `chat/runtime.rs` already reads, so `JobItemDto.pages_read` and `total_pages` fill with no change.
-- **Pages.** Pages are read with `page_texts` in 10-page windows (`MAX_PDF_PAGES_PER_READ`), each in `spawn_blocking`, checking the cancel token between windows. Each page goes through `sanitize_page`. The pages are held in memory for the job only (400 pages × 20,000 chars is at most 8 MB). `printed_offset` runs once; if `BookMeta.page_offset` differs, the ledger is not rewritten: the value is used for this job only.
-- **Map.** Done once per book, guarded by the first `Mapped`. Use the outline if `chapters_from_outline` gives at least 2 chapters. Otherwise make the TOC call; if it fails, or `chapters_from_toc` yields fewer than 2 chapters, fall back to `chunk_chapters` (source `Chunks`). The same rule applies to a TOC result that parses but maps to fewer than 2 chapters: the call stays counted, the chunks are used.
-- **Chapters.** Chapters run one at a time. `Front` and `Back` chapters, and chapters under `MIN_CHAPTER_WORDS`, get `ChapterSkipped` with no call. For the rest, `split_parts` runs, then one `chapter_objectives` call per part on `engines("placer")`, a fresh engine per call so `usage()` deltas are exact, read before and after as `CourseService::ask` does. Each call is bounded by `tokio::time::timeout(120 s)` and `select!` on the cancel token. After every call, `Usage { calls: 1, … }` is appended **whether the call succeeded or not**, because a call counts once it was sent. The parts' results are merged through `accept_objectives`, numbered across parts. Fewer than `MIN_KEPT_OBJECTIVES` counts as a parse failure. On success, `ChapterDone` is appended, then cards are upserted (6.4). A crash between the two is repaired by 6.4's reconcile, not by re-calling the model.
-- **Retry.** A `CourseAgentError::Parse` (or a timeout) retries the whole chapter once (`MAX_ATTEMPTS`). The second failure appends `ChapterFailed { retryable: true }` and the job moves on. A `CourseAgentError::Engine(_)` appends `ChapterFailed { retryable: true, reason: "engine_unavailable" }`; two engine errors in a row end the job early, with `result.stopped = "engine_unavailable"`, and the remaining chapters stay pending.
-- **Cap.** The budget is the ledger's lifetime total: `remaining = 40 - (auto_calls + requested_calls)` from `fold_book`, re-read from the ledger before every chapter and before every call, including a retry. Before a chapter starts, it needs `remaining >= parts` (its parts, plus one more for the one retry only if the budget allows). If not, the chapter is not started: it stays pending and shows as `Queued`, never half-written. Mid-chapter, if a part fails and the retry would exceed the cap, the chapter is abandoned as a whole: nothing from its earlier parts is stored (`ChapterDone` is only appended with all parts), and it ends `ChapterFailed { retryable: true, reason: "budget" }`. The usage route shows `callsCap: 40` and the remaining budget; once the cap is reached, `import` returns `Conflict("call budget used")`.
-- **End.** `status: Done`, with `result.summary = {ready, failed, skipped, queued, calls}` and `result.error` set only when the job could not run at all (PDF unreadable, store failure). The record is written, `notify` called, `Inner.running` cleared and the `BusyGuard` dropped.
+- **Pages.** Only the pages of the chapter being imported are read, with `page_texts` in 10-page windows (`MAX_PDF_PAGES_PER_READ`), each in `spawn_blocking`, checking the cancel token between windows: a 25-page chapter is 3 extractor spawns, never one per page. Each page goes through `sanitize_page`. A chapter whose pages are all blank ends the job `Done` with `result.error = "No text found. Scanned pages need OCR before import."`, no call.
+- **Map.** Done at upload (6.1), never in the job.
+- **Chapters.** Chapters run one at a time, and each chapter's state is re-read from the ledger right before its work: only `Pending`, or `Failed` with `retryable`, runs; a repeat, a `Skipped` chapter or one another run finished is passed over. Chapters under `MIN_CHAPTER_WORDS` get `ChapterSkipped` with no call. For the rest, `split_parts` runs, then one `chapter_objectives` call per part on `engines("placer")`, a fresh engine per call so `usage()` deltas are exact, read before and after as `CourseService::ask` does. Each call is bounded by `tokio::time::timeout(120 s)` and `select!` on the cancel token. After every call, `Usage { calls: 1, … }` is appended **whether the call succeeded or not**, because a call counts once it was sent. The parts' results are merged through `accept_objectives`, numbered across parts. Fewer than `MIN_KEPT_OBJECTIVES` counts as a parse failure. On success, `ChapterDone` is appended, then cards are upserted (6.4). A crash between the two is repaired by 6.4's reconcile, not by re-calling the model.
+- **Retry.** A `CourseAgentError::Parse` (or a timeout) retries the whole chapter once (`MAX_ATTEMPTS`). The second failure appends `ChapterFailed { retryable: false }`: the one try and one retry are spent and the chapter is not offered again. A `CourseAgentError::Engine(_)` appends `ChapterFailed { reason: "engine_unavailable", retryable }` with `retryable` true when it hit the first attempt and false when it hit the retry; two engine errors in a row end the job early, with `result.stopped = "engine_unavailable"`, and the remaining chapters stay pending.
+- **Cap.** Before each chapter that would call a model, the job re-reads the ledger and counts the book's imports in the last hour (`hour_window`, server clock). At 8 the job ends with `result.stopped = "rate_limited"` and the remaining chapters stay pending, never half-written (`ChapterDone` is only appended with all parts). The job also tracks its own calls: if the chapter's worst case (parts × `MAX_ATTEMPTS`) would pass `MAX_JOB_CALLS`, it ends with `result.stopped = "call_cap"`. The usage route shows `hourUsed`, `hourCap: 8` and `nextSlotAt`.
+- **End.** `status: Done`, with `result.summary = {ready, failed, skipped, pending, calls}` and `result.error` set only when the job could not run at all (PDF unreadable, store failure). The record is written, `notify` called, `Inner.running` cleared and the `BusyGuard` dropped.
 - **Cancel.** `abort(job_id)` cancels the token and returns true. The runner notices at the next window or call, appends nothing more, and sets `status: Failed`, `result.error = "cancelled"`. Chapters already `Ready` stay. The partial call that was in flight still has its `Usage` appended if a reply came back.
 - **Recover.** `recover()` is a public method, not part of `new`, because the service is built lazily on the first textbook route and a restart would otherwise leave a stale `Running` job in `GET …/jobs`. The server calls `textbook_service(…).recover()` when a workspace is opened (the same place the workbench recovers), and `routes/jobs.rs` list builds the service too. Every `JobKind::Textbook` record still `Running` in `stores.jobs.all_report()` becomes `Done` with `result.error = "interrupted by a restart"`, and `notify` is called. The ledger is untouched; `POST …/import` resumes from `pending_chapters`.
 
@@ -314,6 +320,9 @@ Card creation is idempotent and reconciled in three places: after each `ChapterD
 | Upload is not a readable PDF (`page_count` fails, encrypted, 0 pages) | `Invalid(extractor message)`, book dir removed |
 | `import` while one runs | `Conflict` |
 | `import` with no pending chapters | `Conflict("nothing to import")` |
+| `import` when 8 chapters were imported in the last hour | `Conflict("import_rate_limited")`, no call |
+| `import` of a `Failed` chapter whose try and retry are spent | `Conflict("chapter_retry_used")`, no call |
+| `import` of a `Skipped` chapter, or a chapter index listed twice | `Invalid` for `Skipped`; duplicates are collapsed to one |
 | Reading check on a chapter that is not `Ready` | `Conflict("chapter_not_ready")` |
 | Answer twice | `Conflict("already_answered")` |
 | Store failure | `Store` |
@@ -322,9 +331,9 @@ Card creation is idempotent and reconciled in three places: after each `ChapterD
 | TOC yields fewer than 2 chapters | Fall back to `chunk_chapters` (6.2 Map). |
 | `book()` of a directory with `source.pdf` but no `Imported` line (crash during upload) | `NotFound`. `list()` omits it, and the next upload of the same bytes finds no ledger, overwrites the source and proceeds. |
 | Import of an already `Ready` chapter | Rejected as `Invalid`. Re-importing or refreshing a `Ready` chapter is out of scope for U7. |
-| Every page blank (scanned book) | the job ends `Done`, `error = "No text found. Scanned pages need OCR before import."`, no model call |
+| Every page of a chapter blank (scanned book with an outline) | the job ends `Done`, `error = "No text found. Scanned pages need OCR before import."`, no model call; with no outline the upload itself is refused (6.1) |
 
-Cost: `list`, `book`, `chapter`, `start_check`, `answer`, `self_grade` and `usage` never call `engines`. The only call sites are the TOC call and `chapter_objectives` inside the runner. Textbook usage lives in `textbook.jsonl`, and `CourseService::strong_stamps` only reads `courses/*/events.jsonl`, so the import never touches the G4 strong cap. No cheap hourly cap exists in code today, so there is nothing else to exempt.
+Cost: `list`, `book`, `chapter`, `start_check`, `answer`, `self_grade` and `usage` never call `engines`. The only call sites are the TOC call inside upload (0 with an outline, 1 without) and `chapter_objectives` inside the runner, which only runs for a chapter the learner opened. Upload makes 0 chapter calls (`upload_makes_zero_chapter_calls_and_starts_no_job`). Textbook usage lives in `textbook.jsonl`, and `CourseService::strong_stamps` only reads `courses/*/events.jsonl`, so the import never touches the G4 strong cap.
 
 ## 7. Server routes and DTOs
 
@@ -341,11 +350,11 @@ Ids: `{book}` must match `valid_book_id`, else `404`. `{check}` is `rc_[0-9a-f]{
 
 | Method and path | Body | Success | Errors |
 |---|---|---|---|
-| `POST /workspaces/{ws}/sources/textbook` (in `sources.rs`) | multipart, one field `file` (`.pdf`, magic `%PDF-`, at most `MAX_PDF_BYTES`); no `question` field | `202 TextbookUploadDto` for a new book; `200 TextbookUploadDto` with `existing: true` | `400 validation` (bad form, name, magic, unreadable PDF); `413` with `details.maxBytes` (same path as `pdf`); `404` workspace; `409` archived workspace |
+| `POST /workspaces/{ws}/sources/textbook` (in `sources.rs`) | multipart, one field `file` (`.pdf`, magic `%PDF-`, at most `MAX_PDF_BYTES`); no `question` field | `201 TextbookUploadDto` for a new, mapped book (no job started); `200 TextbookUploadDto` with `existing: true` | `400 validation` (bad form, name, magic, unreadable PDF); `413` with `details.maxBytes` (same path as `pdf`); `404` workspace; `409` archived workspace |
 | `GET /workspaces/{ws}/textbooks` | – | `200 TextbookListDto` | `404` |
 | `GET /workspaces/{ws}/textbooks/{book}` | – | `200 TextbookDto` | `404` |
 | `GET /workspaces/{ws}/textbooks/{book}/chapters/{n}` | – | `200 ChapterDetailDto` | `404` |
-| `POST /workspaces/{ws}/textbooks/{book}/import` | `ImportRequest { chapters?: u32[] }` (at most 200) | `202 ImportStartedDto` | `400`, `404`, `409 import_running`, `409 nothing_to_import` |
+| `POST /workspaces/{ws}/textbooks/{book}/import` | `ImportRequest { chapters?: u32[] }` (at most 200) | `202 ImportStartedDto` | `400`, `404`, `409 import_running`, `409 nothing_to_import`, `409 import_rate_limited`, `409 chapter_retry_used` |
 | `POST /workspaces/{ws}/textbooks/{book}/chapters/{n}/check` | – | `200 ReadingCheckDto` | `404`, `409 chapter_not_ready` |
 | `POST /workspaces/{ws}/textbooks/{book}/checks/{check}/answer` | `CheckAnswerRequest { item, text, confidence?, ms?, clientId? }` | `200 CheckFeedbackDto` | `400`, `404`, `409 already_answered` |
 | `POST /workspaces/{ws}/textbooks/{book}/checks/{check}/self-grade` | `SelfGradeRequest` (reuse the course DTO) | `204` | `400`, `404`, `409` |
@@ -359,22 +368,23 @@ A retry with the same `clientId` on `answer` returns the stored feedback, not `4
 All `#[derive(Serialize, ToSchema)]` (requests `Deserialize`), `#[serde(rename_all = "camelCase")]`, with `From<service struct>` impls and a round-trip unit test each, as in `docs/web/03-server-api.md` §DTO rule.
 
 ```
-TextbookUploadDto   { bookId, jobId: string|null, existing: bool, bytes: u64 }
+TextbookUploadDto   { bookId, existing: bool, bytes: u64 }
 TextbookListDto     { items: [TextbookSummaryDto] }
 TextbookSummaryDto  { id, title, totalPages, chapters, ready, state: "importing"|"ready"|"partial"|"failed", createdAt }
 TextbookDto         { id, title, fileName, totalPages, pageOffset: i32|null, mapSource: "outline"|"toc"|"chunks"|null,
-                      jobId: string|null, autoCalls, requestedCalls, callsCap: 40,
+                      jobId: string|null, autoCalls, requestedCalls, hourUsed, hourCap: 8,
                       chapters: [ChapterRowDto] }
 ChapterRowDto       { index, title, startPage, endPage, kind: "chapter"|"front"|"back",
-                      state: "pending"|"importing"|"ready"|"failed"|"skipped"|"queued",
-                      status: "not_read"|"checked"|"due", objectives: u32, error: string|null, truncated: bool }
+                      state: "pending"|"importing"|"ready"|"failed"|"skipped",
+                      status: "not_read"|"checked"|"due", objectives: u32, error: string|null, truncated: bool,
+                      canImport: bool }
 ChapterDetailDto    { chapter: ChapterRowDto, objectives: [{ id, text, startPage, endPage, items: u32 }] }
 ImportRequest       { chapters?: [u32] }
 ImportStartedDto    { jobId }
 ReadingCheckDto     { checkId, chapter, items: [{ id, objectiveId, kind: "mcq"|"recall", q, options: [string] }] }
 CheckAnswerRequest  { item, text, confidence?: 1..5, ms?: u64, clientId?: string }
 CheckFeedbackDto    { correct, close, answer, why, due: i64|null }
-TextbookUsageDto    { cheapIn, cheapOut, autoCalls, requestedCalls, callsCap }
+TextbookUsageDto    { cheapIn, cheapOut, autoCalls, requestedCalls, hourUsed, hourCap, nextSlotAt: i64|null }
 ```
 
 **Plain-text rule:** `title`, `error`, `q`, `options`, `answer`, `why` and objective `text` are untrusted. Clients render them as plain text only (section 8).
@@ -434,14 +444,17 @@ Every test must fail without its change (test plan rule 2).
 7. `toc_chapters_parses_and_validates`
 
 **lp-service (`crates/lp-service/src/textbook.rs` tests, with a counting fake engine like `Mock` in `course/tests.rs` and a fake `Pdf`)**
-1. `upload_maps_outline_with_zero_map_calls`
-2. `no_outline_makes_exactly_one_toc_call`
-3. `one_call_per_chapter_and_split_parts_counted`: total calls equal chapters plus extra parts.
-4. `auto_import_never_exceeds_40_calls`: a 60-chapter fake book gives 40 calls and the rest `Queued`.
-5. `requested_import_cannot_exceed_lifetime_40`: after an auto import at 40, a requested import makes 0 calls and returns `Conflict`; at 38 used, a 3-part chapter is not started and stays `Queued`.
-5b. `retry_rechecks_cap_at_39`: at 39 lifetime calls a failed chapter's retry is not sent (total stays 40) and nothing half-written is stored.
-6. `failed_chapter_retries_once_then_failed_retryable`
-7. `two_engine_errors_stop_job_early`
+1. `upload_makes_zero_chapter_calls_and_starts_no_job`: call counter 0 with an outline, ledger holds only `Imported` and `Mapped`, no job.
+1b. `upload_never_imports_a_60_chapter_book`
+1c. `opening_one_chapter_imports_only_that_chapter`
+1d. `import_reads_only_the_chapter_in_10_page_windows`: a fake `Pdf` records `page_texts` spawns, 25 pages are 3 reads and nothing at upload.
+2. `no_outline_makes_exactly_one_toc_call_at_upload`
+3. `one_call_per_chapter_and_split_parts_counted`: two parts are one import slot.
+4. `hour_limit_is_8_chapter_imports_per_rolling_hour`: 8 imports, the job stops with `rate_limited`, a refused import makes 0 calls, 59 minutes later it is still refused, past the hour it works; `the_hour_limit_is_checked_between_chapters_of_one_job`.
+5. `chapter_gets_one_try_plus_one_retry_then_it_is_final`: 2 calls, `chapter_retry_used` after; `retry_is_part_of_the_one_import_and_does_not_use_a_slot`.
+5b. `duplicate_chapter_indices_call_the_model_once`, `skipped_chapters_are_rejected_and_never_called`, `one_job_cannot_exceed_its_call_cap`.
+6. `unmapped_book_is_mapped_by_its_first_import`
+7. `two_engine_errors_stop_job_early_and_stay_retryable`
 8. `same_pdf_twice_no_duplicate_objectives_or_cards`: card count unchanged, one `Imported` line.
 9. `concurrent_identical_uploads_one_book`
 10. `cancel_marks_failed_and_keeps_ready_chapters`
@@ -502,7 +515,7 @@ Each step compiles and passes `make gate` on its own, including `api-check` (`gi
 | Reading check makes zero model calls | service test 13 |
 | Torn tail and concurrent append | store tests 2 and 3 |
 | Upload rejection and DTO leak | server tests 2 and 6 |
-| At most 40 calls per book, lifetime | service tests 4, 5 and 5b, usage route |
+| Upload makes 0 chapter calls; a chapter imports when opened; one try plus one retry; 8 imports per book per hour | service tests 1, 1c, 4, 5 and 5b, usage route, server test `textbook_import_is_limited_to_8_chapters_per_hour` |
 
 ## 12. Review log
 
@@ -530,3 +543,7 @@ Two independent reviews (Reviewer 1: claude, Reviewer 2: agy) returned REVISE. D
 | R2.7 `page_texts` failing mid-import | Accepted. Failure row in 6.5, test 10b. |
 | R2.7 items without cards, chapter never `Due` | Accepted. A chapter with no cards at all fails as `no_cards`; test 10c. |
 | R2.7 TOC under 2 chapters | Accepted. Falls back to `chunk_chapters`; test 10d. |
+
+### R4 (lazy import) changes
+
+D7 changed from a lifetime 40 per book to a per-chapter try plus one retry, 8 manual chapter imports per book per rolling hour (server clock, counted from ledger `Usage` lines), and a 48-call backstop per job. Upload no longer starts a job: `Upload.job`, `TextbookUploadDto.jobId`, `ChapterRowState::Queued` and `callsCap` are gone; `ChapterRowDto.canImport`, `hourUsed`, `hourCap` and `nextSlotAt` are new, and a new upload returns `201`. `pdftotext` was already one spawn per 10-page window; a test now pins it. `chapters_from_outline` now picks leaf chapters under `Part` containers. A security review found that a repeated or `Skipped` chapter index could re-run calls past the hourly cap; the list is now deduplicated, `Skipped` is rejected, and the job re-checks each chapter's state before its call.

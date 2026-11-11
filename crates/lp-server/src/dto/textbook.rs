@@ -24,8 +24,8 @@ pub struct TextbookUploadForm {
 #[serde(rename_all = "camelCase")]
 pub struct TextbookUploadDto {
     pub book_id: String,
-    /// The import job, `null` when the book was already stored and nothing is running.
-    pub job_id: Option<String>,
+    /// Always false after the upload returns: upload maps the book and starts no job. A chapter is
+    /// imported when the learner opens it (`POST …/import` with that chapter).
     pub existing: bool,
     pub bytes: u64,
 }
@@ -34,7 +34,6 @@ impl TextbookUploadDto {
     pub fn new(u: svc::Upload, bytes: u64) -> Self {
         Self {
             book_id: u.book,
-            job_id: u.job,
             existing: u.existing,
             bytes,
         }
@@ -137,7 +136,6 @@ pub enum ChapterStateDto {
     Ready,
     Failed,
     Skipped,
-    Queued,
 }
 
 impl From<svc::ChapterRowState> for ChapterStateDto {
@@ -148,7 +146,6 @@ impl From<svc::ChapterRowState> for ChapterStateDto {
             svc::ChapterRowState::Ready => Self::Ready,
             svc::ChapterRowState::Failed => Self::Failed,
             svc::ChapterRowState::Skipped => Self::Skipped,
-            svc::ChapterRowState::Queued => Self::Queued,
         }
     }
 }
@@ -183,10 +180,12 @@ pub struct ChapterRowDto {
     pub state: ChapterStateDto,
     pub status: ChapterStatusDto,
     pub objectives: u32,
-    /// A short code (`parse`, `budget`, `no_cards`, `engine_unavailable`, …); never page text.
+    /// A short code (`parse`, `timeout`, `no_cards`, `engine_unavailable`, …); never page text.
     pub error: Option<String>,
     /// The chapter was longer than one call may carry and its tail was cut.
     pub truncated: bool,
+    /// Importing it may start now: not imported yet, or failed with its retry unused.
+    pub can_import: bool,
 }
 
 impl From<svc::ChapterRow> for ChapterRowDto {
@@ -202,6 +201,7 @@ impl From<svc::ChapterRow> for ChapterRowDto {
             objectives: c.objectives as u32,
             error: c.error,
             truncated: c.truncated,
+            can_import: c.can_import,
         }
     }
 }
@@ -220,8 +220,9 @@ pub struct TextbookDto {
     pub job_id: Option<String>,
     pub auto_calls: u32,
     pub requested_calls: u32,
-    /// Lifetime cheap-call cap per book.
-    pub calls_cap: u32,
+    /// Chapter imports in the last hour, and the most a book allows in any rolling hour.
+    pub hour_used: u32,
+    pub hour_cap: u32,
     pub chapters: Vec<ChapterRowDto>,
 }
 
@@ -237,7 +238,8 @@ impl From<svc::BookView> for TextbookDto {
             job_id: b.job,
             auto_calls: b.auto_calls,
             requested_calls: b.requested_calls,
-            calls_cap: lp_core::textbook::MAX_AUTO_CALLS,
+            hour_used: b.hour_used,
+            hour_cap: lp_core::textbook::MAX_MANUAL_IMPORTS_PER_HOUR,
             chapters: b.chapters.into_iter().map(Into::into).collect(),
         }
     }
@@ -375,7 +377,11 @@ pub struct TextbookUsageDto {
     pub cheap_out: u64,
     pub auto_calls: u32,
     pub requested_calls: u32,
-    pub calls_cap: u32,
+    /// Chapter imports in the last hour, and the most a book allows in any rolling hour.
+    pub hour_used: u32,
+    pub hour_cap: u32,
+    /// Epoch ms when the oldest counted import leaves the hour; set only while at the cap.
+    pub next_slot_at: Option<i64>,
 }
 
 impl From<svc::TextbookUsage> for TextbookUsageDto {
@@ -385,7 +391,9 @@ impl From<svc::TextbookUsage> for TextbookUsageDto {
             cheap_out: u.cheap_out,
             auto_calls: u.auto_calls,
             requested_calls: u.requested_calls,
-            calls_cap: u.cap,
+            hour_used: u.hour_used,
+            hour_cap: u.hour_cap,
+            next_slot_at: u.next_slot_at,
         }
     }
 }
@@ -403,11 +411,12 @@ mod tests {
             title: "<img src=x onerror=1>".into(),
             pages: PageRange { start: 5, end: 9 },
             kind: ChapterKind::Chapter,
-            state: svc::ChapterRowState::Queued,
+            state: svc::ChapterRowState::Pending,
             objectives: 7,
             status: ChapterStatus::Due,
-            error: Some("budget".into()),
+            error: Some("parse".into()),
             truncated: true,
+            can_import: true,
         }
     }
 
@@ -429,7 +438,6 @@ mod tests {
         let v = serde_json::to_value(TextbookUploadDto::new(
             svc::Upload {
                 book: "tb_0123456789abcdef".into(),
-                job: None,
                 existing: true,
             },
             12,
@@ -437,7 +445,7 @@ mod tests {
         .unwrap();
         assert_eq!(
             v,
-            json!({"bookId":"tb_0123456789abcdef","jobId":null,"existing":true,"bytes":12})
+            json!({"bookId":"tb_0123456789abcdef","existing":true,"bytes":12})
         );
         let l = TextbookListDto {
             items: vec![svc::BookSummary {
@@ -464,8 +472,8 @@ mod tests {
         assert_eq!(
             r,
             json!({"index":2,"title":"<img src=x onerror=1>","startPage":5,"endPage":9,
-                "kind":"chapter","state":"queued","status":"due","objectives":7,
-                "error":"budget","truncated":true})
+                "kind":"chapter","state":"pending","status":"due","objectives":7,
+                "error":"parse","truncated":true,"canImport":true})
         );
         let book = TextbookDto::from(svc::BookView {
             meta: lp_core::textbook::BookMeta {
@@ -482,11 +490,16 @@ mod tests {
             job: Some("tbj_1".into()),
             auto_calls: 3,
             requested_calls: 1,
+            hour_used: 2,
         });
         let v = serde_json::to_value(book).unwrap();
         assert_eq!(v["mapSource"], "toc");
         assert_eq!(v["pageOffset"], -2);
-        assert_eq!(v["callsCap"], 40);
+        assert_eq!(
+            (v["hourUsed"].as_u64(), v["hourCap"].as_u64()),
+            (Some(2), Some(8))
+        );
+        assert!(v.get("callsCap").is_none());
         assert_eq!(v["jobId"], "tbj_1");
         assert_eq!(v["chapters"][0]["startPage"], 5);
         // titles stay byte-identical: no escaping on the server
@@ -542,12 +555,15 @@ mod tests {
             cheap_out: 2,
             auto_calls: 3,
             requested_calls: 4,
-            cap: 40,
+            hour_used: 8,
+            hour_cap: 8,
+            next_slot_at: Some(99),
         }))
         .unwrap();
         assert_eq!(
             u,
-            json!({"cheapIn":1,"cheapOut":2,"autoCalls":3,"requestedCalls":4,"callsCap":40})
+            json!({"cheapIn":1,"cheapOut":2,"autoCalls":3,"requestedCalls":4,
+                "hourUsed":8,"hourCap":8,"nextSlotAt":99})
         );
         assert_eq!(
             serde_json::to_value(ImportStartedDto { job_id: "j".into() }).unwrap(),
