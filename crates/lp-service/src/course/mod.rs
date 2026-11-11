@@ -60,7 +60,7 @@ const LESSONS: usize = 10;
 /// The `Course::method_version` every newly authored course gets.
 const METHOD_VERSION: u32 = 1;
 /// Cards for unstudied items are parked here until their first review replays real FSRS state.
-const PARKED_DUE: i64 = 253_402_300_799_000;
+pub(crate) const PARKED_DUE: i64 = 253_402_300_799_000;
 const KEEP_CHARS: usize = 500;
 
 // ------------------------------------------------------------------ public types
@@ -414,7 +414,7 @@ async fn blk<T: Send + 'static>(f: impl FnOnce() -> Res<T> + Send + 'static) -> 
 /// Options in a deterministic order keyed on `seed` (the existing `shuffle_options`), so the
 /// correct one is not predictably first and the order is stable across reloads. Display only:
 /// answers are compared by the stored option text.
-fn shuffled(options: &[String], seed: &str) -> Vec<String> {
+pub(crate) fn shuffled(options: &[String], seed: &str) -> Vec<String> {
     let opts: Vec<QuizOption> = options
         .iter()
         .map(|o| QuizOption {
@@ -440,21 +440,28 @@ fn same(a: &str, b: &str) -> bool {
 /// answer plus three other answers of the course as options (so Review, which is multiple choice,
 /// can show it); with fewer than three distinct other answers it has no card.
 fn flash_card(course: &Course, lesson: &Lesson, item: &Item) -> Option<FlashCard> {
+    let others: Vec<&str> = lesson
+        .items
+        .iter()
+        .chain(course.lessons.iter().flat_map(|l| &l.items))
+        .map(|i| i.answer.as_str())
+        .collect();
+    card_for(&card_id(&course.id, &item.id), item, &others)
+}
+
+/// The card builder shared with textbook mode: `id` is the full card id, `other_answers` are the
+/// candidates for a recall item's distractors, in order.
+pub(crate) fn card_for(id: &str, item: &Item, other_answers: &[&str]) -> Option<FlashCard> {
     let options: Vec<String> = match item.kind {
         ItemKind::Mcq => item.options.clone(),
         ItemKind::Recall => {
             let mut opts = vec![item.answer.clone()];
-            let others = lesson
-                .items
-                .iter()
-                .chain(course.lessons.iter().flat_map(|l| &l.items))
-                .map(|i| &i.answer);
-            for a in others {
+            for a in other_answers {
                 if opts.len() == 4 {
                     break;
                 }
                 if !opts.iter().any(|o| same(o, a)) && !a.trim().is_empty() {
-                    opts.push(a.clone());
+                    opts.push((*a).to_string());
                 }
             }
             if opts.len() < 4 {
@@ -464,11 +471,11 @@ fn flash_card(course: &Course, lesson: &Lesson, item: &Item) -> Option<FlashCard
         }
     };
     // Review serves a card's options as stored, so the card itself is stored shuffled.
-    let options = shuffled(&options, &card_id(&course.id, &item.id));
+    let options = shuffled(&options, id);
     let correct = options.iter().position(|o| o == &item.answer)?;
     let options: [String; 4] = options.try_into().ok()?;
     Some(FlashCard {
-        id: card_id(&course.id, &item.id).into(),
+        id: id.into(),
         front: item.q.clone(),
         options,
         correct_index: u8::try_from(correct).ok()?,
@@ -1096,7 +1103,7 @@ fn delta(before: (u64, u64), after: (u64, u64)) -> (u64, u64) {
 }
 
 /// `(correct, close)` for a typed or chosen answer.
-fn grade(item: &Item, text: &str) -> (bool, bool) {
+pub(crate) fn grade(item: &Item, text: &str) -> (bool, bool) {
     match item.kind {
         ItemKind::Mcq => (text.trim() == item.answer.trim(), false),
         ItemKind::Recall => match match_answer(item, text) {
