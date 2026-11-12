@@ -81,7 +81,8 @@ def textbook_smoke(api, w, pdf):
     check("jobId" not in up, "upload starts no import job")
     book = up["bookId"]
     st, mapped = api.call("GET", f"{w}/textbooks/{book}")
-    first = next((c for c in mapped["chapters"] if c["canImport"]), None)
+    importable = [c for c in mapped["chapters"] if c["canImport"]]
+    first = next((c for c in importable if c["title"].lower().startswith("chapter")), None) or (importable[0] if importable else None)
     check(first is not None, "the mapped book has a chapter to import")
     st, started = api.call("POST", f"{w}/textbooks/{book}/import", {"chapters": [first["index"]]})
     check(st == 202, f"opening chapter {first['index']} starts its import ({st})")

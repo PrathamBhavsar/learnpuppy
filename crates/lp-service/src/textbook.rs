@@ -1415,6 +1415,15 @@ impl<E: LlmEngine + 'static> Job<E> {
                     };
                 self.progress.pages_read += pages.len() as u32;
                 if pages.iter().all(|p| p.trim().is_empty()) {
+                    // An image-only chapter (a cover, a part page) can never import: skip it so
+                    // it stops offering Import, and still tell the user why.
+                    self.append(TextbookEvent::ChapterSkipped {
+                        ts: (self.me.clock)(),
+                        chapter: idx,
+                        reason: "no_text".into(),
+                    })
+                    .await?;
+                    self.set_current(None);
                     return Ok(Outcome::Failed(NO_TEXT.into()));
                 }
                 let page_words: Vec<(u32, usize)> = pages
@@ -2317,6 +2326,12 @@ mod tests {
         assert_eq!(r.engine.n(), 0);
         assert_eq!(job.result.unwrap()["error"], NO_TEXT);
         assert_eq!(r.ready(&up.book), 0);
+        assert_eq!(r.state(&up.book).chapters[0].state, ChapterState::Skipped);
+        let v = r.svc.book(&up.book).await.unwrap();
+        assert!(
+            !v.chapters[0].can_import,
+            "an empty chapter stops offering Import"
+        );
     }
 
     /// A job over `only`, built directly so its chapter list is not cleaned by `import`.
