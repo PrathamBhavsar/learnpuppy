@@ -7,6 +7,7 @@ export default {
   wordmark: "learn<b>puppy</b>",
   repo: "PrathamBhavsar/learnpuppy",
   scene: "graph",
+  shot: { name: "graph", alt: "The LearnPuppy knowledge graph: 150 propositions grouped into clusters like Tokio I/O driver and Futures and polling, coloured by source." },
   license: "MIT",
   stack: "Rust · React",
   status: "pre-release",
