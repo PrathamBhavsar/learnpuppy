@@ -12,11 +12,11 @@ export default {
   stack: "Rust · React",
   status: "pre-release",
   headline: "Learn it once.<br><em>Remember</em><br>it for good.",
-  sub: "A tutor that probes, plans and teaches. A <strong>Knowledge Graph</strong> that keeps what you learn. <strong>Spaced repetition</strong> that brings it back before it fades. All on your machine, driving the AI CLIs you already use.",
+  sub: "LearnPuppy is a tutor that probes, plans and teaches. It keeps what you learn in a knowledge graph and uses spaced repetition to bring it back before you forget it. Everything runs on your machine and drives the AI CLIs you already use.",
   heroCmd: "git clone https://github.com/PrathamBhavsar/learnpuppy && cd learnpuppy && make install",
 
-  liveTitle: "Facts, from the source.",
-  liveNote: "GitHub stats appear here once the repo is public. Until then these are facts read from the source: the code, `README.md` and `docs/web/`.",
+  liveTitle: "Project facts.",
+  liveNote: "GitHub stats show up here once the repo is public. Until then these facts are read from the source: the code, `README.md` and `docs/web/`.",
   facts: [
     ["Listens on", "`127.0.0.1` only"],
     ["Your data", "`~/.learnpuppy`, plain files"],
@@ -27,8 +27,8 @@ export default {
     ["License", "MIT, from `Cargo.toml`"],
   ],
 
-  featuresTitle: "Everything it does, listed.",
-  featuresLede: "One binary, a local web app, and the AI CLIs you are already logged into. What was checked against real CLIs, and what was not, is in the FAQ.",
+  featuresTitle: "What is in it.",
+  featuresLede: "It is one binary, a local web app, and whichever AI CLIs you are already logged into. The FAQ says what was checked against real CLIs and what was not.",
   features: [
     { title: "Learn", blurb: "Four phases in one chat, with the plan visible while you work.", items: [
       ["chat", "Probe", "Up to 8 questions find what you already know before anything is taught, as free text or choices."],
@@ -62,7 +62,7 @@ export default {
       ["shield", "Loopback and a launch token", "The server binds 127.0.0.1. `serve` prints a one-time URL; the token is traded for an HttpOnly, SameSite=Strict cookie and removed from the URL."],
       ["shield2", "Host and Origin checks", "A foreign Host is refused with 421. Writes need your own Origin and a CSRF header."],
       ["disk", "Plain files you own", "Append-only JSONL ledgers plus SQLite with full-text search, under `~/.learnpuppy`. Set `LEARNPUPPY_HOME` to move it."],
-      ["alert", "Tutor turns run caged, with a caveat", "Each CLI runs in an empty private directory, with tools off where the CLI allows it. codex and agy can still read files you can read."],
+      ["alert", "Tutor turns run in isolation, with a caveat", "Each CLI runs in an empty private directory, with tools off where the CLI allows it. codex and agy can still read files you can read."],
     ]},
     { title: "At your keyboard", blurb: "Built to be driven without a mouse.", items: [
       ["terminal", "Command palette", "Cmd K: navigate, switch workspace, start a chat, run ingest, start a review, search nodes in this workspace or all of them."],
@@ -73,8 +73,8 @@ export default {
     ]},
   ],
 
-  howTitle: "One topic, from fuzzy to remembered.",
-  howLede: "The learning loop is enforced by the server, not left to a prompt. The graph and the cards are written as a side effect of studying.",
+  howTitle: "What happens to one topic.",
+  howLede: "The server enforces the learning loop instead of leaving it to a prompt, and the graph and cards are written as a side effect of studying.",
   steps: [
     ["You name a topic", "Start a Teach chat in a workspace. If an agent CLI is not logged in, the app tells you the command to run."],
     ["Probe finds the edges", "Up to eight questions show what you already know and what you only think you know."],
@@ -84,7 +84,7 @@ export default {
     ["Reviews bring it back", "Cards come due on their own schedule. You rate each one and FSRS sets the next interval."],
   ],
 
-  installTitle: "Build it today.",
+  installTitle: "Install.",
   installLede: "Release downloads work once the repo is public. Until then, build from source: one command builds the web app and installs one binary.",
   install: [
     { id: "source", label: "Source", cmds: [
@@ -92,7 +92,7 @@ export default {
       "make install",
       "learnpuppy doctor",
       "learnpuppy serve",
-    ], note: "Needs Rust (rustup.rs) and bun (bun.sh), macOS or Linux,. `make release` builds `target/release/learnpuppy` without installing." },
+    ], note: "Needs Rust (rustup.rs) and bun (bun.sh), macOS or Linux. `make release` builds `target/release/learnpuppy` without installing." },
     { id: "binary", label: "Binary", cmds: [
       "curl --proto '=https' --tlsv1.2 -LsSf https://github.com/PrathamBhavsar/learnpuppy/releases/latest/download/lp-server-installer.sh | sh",
       "learnpuppy doctor",
@@ -103,16 +103,16 @@ export default {
   faq: [
     ["Is it ready to use?", "It is pre-release: version 0.1.0 with no tagged release, and the repository is currently private. Build from source today. The one-line installer and release tarballs start working when the repo is public."],
     ["What leaves my machine?", "Nothing, except the calls your own `claude`, `codex` and `agy` CLIs make, as they would anyway. LearnPuppy itself has no server and no account. It listens on `127.0.0.1` only."],
-    ["Do the tutor CLIs get access to my files?", "They are started with a cleared environment, in an empty private directory. claude runs with tools off. codex and agy run in a read-only sandbox, and read-only still means they can read files you can read, so treat those turns accordingly. This is written down in `docs/web/12-cli-isolation-and-failures.md`."],
+    ["Do the tutor CLIs get access to my files?", "They are started with a cleared environment, in an empty private directory. claude runs with tools off. codex and agy run in a read-only sandbox, and read-only still means they can read files you can read, so treat those turns accordingly. See `docs/web/12-cli-isolation-and-failures.md`."],
     ["Which AI do I need?", "At least one logged-in CLI: `claude`, `codex` or `agy`. Several Claude profiles work as separate rate-limit buckets and are failed over automatically. LearnPuppy has no login of its own."],
     ["What is verified, and what is not?", "Probe, Plan, Teach, Practice, workbench jobs (research, visual, PDF), ingest and Digest were checked against real CLIs. Review-all was only checked against the scripted engine and mocks. agy was out of quota during verification, so agy as the teacher is untested; failover away from it is tested. The graph legend's claim, concept, procedure and decision kinds are cosmetic."],
-    ["What is the animation in the hero?", "A synthetic illustration: a made-up forgetting curve that drops, then jumps back up at each review, with intervals that grow. It is not measured data and not a result from LearnPuppy."],
+    ["Is the screenshot real?", "It is the real web app running against its built-in mock data (`bun run dev:mock` in `web/`). The graph, chats and cards you see are sample data, not a real learner's."],
     ["Which scheduling algorithm?", "FSRS v5, ported from the ts-fsrs build with default weights, short-term steps on, fuzz off and a 0.9 target retention."],
     ["Which platforms?", "macOS and Linux. A release workflow for arm64 and x86_64 exists on a branch; it has not run on a tag yet."],
   ],
 
   footBlurb: "A local learning harness: tutor, Knowledge Graph and spaced repetition.",
-  footNote: "Pre-release. Nothing here is a benchmark.",
+  footNote: "Pre-release. No benchmarks are published yet.",
   footDocs: [["Install", "install"], ["Quickstart", "quickstart"], ["Security", "security"], ["FAQ", "faq"]],
   footProject: [["GitHub", "https://github.com/PrathamBhavsar/learnpuppy"], ["Issues", "https://github.com/PrathamBhavsar/learnpuppy/issues"]],
 };

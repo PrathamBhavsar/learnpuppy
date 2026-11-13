@@ -21,9 +21,9 @@ Shared across all workspaces: the CLI account pool and rate limits, role setting
 
 Create, rename, change the icon and color, archive, delete and restore. Each workspace card on the home screen shows its nodes, chains and chats, and a badge for due cards.
 
-- **Archive** makes a workspace read-only.
-- **Delete** asks you to type the name, aborts running work, and moves the folder to `.trash` inside your data folder. Restore it from Settings, or purge it.
-- **Export** produces a zip with the workspace metadata, graph, chats and a checksummed manifest. **Import** validates that zip and creates a new workspace. It never overwrites one.
+- Archive makes a workspace read-only.
+- Delete asks you to type the name, aborts running work, and moves the folder to `.trash` inside your data folder. Restore it from Settings, or purge it.
+- Export produces a zip with the workspace metadata, graph, chats and a checksummed manifest. Import validates that zip and creates a new workspace. It never overwrites one.
 
 ## Switching
 

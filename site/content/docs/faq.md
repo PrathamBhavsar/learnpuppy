@@ -2,7 +2,7 @@
 title: FAQ
 group: Reference
 order: 11
-description: Status, what was verified, limits, and the hero animation.
+description: Status, what was verified, limits, and the home page screenshot.
 ---
 
 # FAQ
@@ -30,9 +30,9 @@ Not verified, or limited:
 - The graph legend's claim, concept, procedure and decision kinds are cosmetic.
 - codex and agy turns are read-only sandboxed, which still lets them read your files.
 
-## What is the animation on the home page?
+## Is the screenshot on the home page real?
 
-A **synthetic illustration**. The curve is made up: recall decays, then jumps back up at each review, and the gaps between reviews grow. The percentage printed beside it comes from that made-up curve. It is not measured data and not a result from LearnPuppy. FSRS is the real scheduler; the curve only shows the idea.
+It is the real web app running against its built-in mock data (`bun run dev:mock` in `web/`). The graph, chats and cards in it are sample data, not a real learner's.
 
 ## Which scheduling algorithm?
 

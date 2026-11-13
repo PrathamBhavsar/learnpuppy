@@ -7,11 +7,11 @@ description: Probe, plan, teach, practice. What each phase does and the question
 
 # Learn
 
-A Learn chat has a conversation on the left and a **Plan** panel on the right.
+A Learn chat has a conversation on the left and a Plan panel on the right.
 
 ## Probe
 
-The tutor asks up to **8 questions** to find what you already know, as free text or choices. A counter shows "Question 3 of 8". Nothing is taught before this ends.
+The tutor asks up to 8 questions to find what you already know, as free text or choices. A counter shows "Question 3 of 8". Nothing is taught before this ends.
 
 ## Plan
 
@@ -33,7 +33,7 @@ An answered question stays readable as a recap: every option, which was right, w
 
 ## Practice
 
-A **Practice** chat starts from nodes you select in the [graph](#/graph) instead of a topic.
+A Practice chat starts from nodes you select in the [graph](#/graph) instead of a topic.
 
 ## Workbench jobs
 
@@ -43,8 +43,8 @@ Research, visual and PDF jobs run beside the chat. Attach a PDF in the composer 
 
 - `Enter` sends, `Shift+Enter` adds a line.
 - `Esc` stops a running turn and keeps the partial answer.
-- **Steer** lets you guide a turn while it runs.
-- If the server restarted mid-turn, the chat offers **Resume**.
+- Steer lets you guide a turn while it runs.
+- If the server restarted mid-turn, the chat offers Resume.
 - If every model account is busy, a banner shows the wait with a countdown and a Cancel button.
 - A failed turn shows Retry and "Copy diagnostics".
 
