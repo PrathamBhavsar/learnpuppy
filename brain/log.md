@@ -2,6 +2,10 @@
 
 Back to [Brain Index](/index.md). Related: [Overview](/overview.md), [Task DAG](/tasks/index.md).
 
+## [2026-11-13] Site theme pass
+
+- **Done**: Site restyled to product UI: light violet tokens from `web/src/styles/tokens.css`, Geist Mono headings, 10px radius, dark follows OS (softer violet). Pixel type only on logo + ASCII scene. Branch `feat/site-ui-theme`, merged to staging.
+
 ## 2026-11-11 — Open items closed (pratham404/deps-sqlite)
 - Strand probe (F06) and course `why` (F02) are wired into course creation. `create(goal, why)` writes the probe with one cheap call (falls back to the plain quiz if that comes back unusable); `submit_placement` grades a round and returns `next`, binary-searching each strand with `lp_core::method::probe` (middle level first, then up or down, at most 6 questions). `guessed` makes a right answer `edge`, `blocked` labels the strand `blocked`. Labels and `why` are stored on the course and returned by `/plan`; the ready gate shows the `why`. Web: why field on create, follow-up rounds with a one-line verdict, guess and prerequisite checkboxes.
 - Review (the `ocr` step ran as a self-review via `ocr delegate`, no LLM endpoint): a repeated or partial probe round is refused without changing anything, so a double submit cannot grade the next round blank.
