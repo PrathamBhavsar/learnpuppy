@@ -7,14 +7,14 @@ description: The cross-session graph, how to explore it, and practice from a sel
 
 # Knowledge Graph
 
-Every learning chat and every ingest run adds **propositions** (short statements of what you learned) and **chains** (how they connect) to one graph per workspace. It spans sessions, so a new topic can link to an old one.
+Every learning chat and every ingest run adds propositions (short statements of what you learned) and chains (how they connect) to one graph per workspace. It spans sessions, so a new topic can link to an old one.
 
 ## Explore
 
-- **Search** is full-text. Matches highlight and everything else dims. `Enter` flies to the first match.
-- **Filters:** source (claude, codex, agy, git, chat), cluster or session, and minimum degree.
+- Search is full-text. Matches highlight and everything else dims. `Enter` flies to the first match.
+- Filters: source (claude, codex, agy, git, chat), cluster or session, and minimum degree.
 - Toggle cluster outlines, labels (auto, always, never) and a minimap.
-- **Pan** by dragging, **zoom** with the wheel or pinch, **select** by clicking. `Shift` or `Cmd` click multi-selects, and `Shift` drag draws a marquee.
+- Pan by dragging, zoom with the wheel or pinch, select by clicking. `Shift` or `Cmd` click multi-selects, and `Shift` drag draws a marquee.
 - Keyboard: arrows move to the nearest neighbor, `Tab` cycles, `Enter` opens the drawer, `Esc` clears, `f` fits, `+` and `-` zoom.
 - Below the canvas, a focusable list of nodes mirrors the selection for screen readers.
 
@@ -30,7 +30,7 @@ A table view with three levels (groups, chains, propositions). Sort it, scope it
 
 ## Practice from selection
 
-Select nodes and press **Practice**. LearnPuppy creates a Practice chat on exactly those ideas and opens it.
+Select nodes and press Practice. LearnPuppy creates a Practice chat on exactly those ideas and opens it.
 
 ## Deleting
 

@@ -11,8 +11,8 @@ LearnPuppy is a single-user, local tool. The security model is to not be reachab
 
 ## Network
 
-- The server binds **127.0.0.1** (and `[::1]` when available). It tries the port you ask for, then the next ones up. The default start is 7878.
-- `serve` prints a **launch URL** with a one-time token. The first request trades the token for an `HttpOnly`, `SameSite=Strict` cookie and removes it from the URL. The server stores only a hash of the token in its lock file.
+- The server binds 127.0.0.1 (and `[::1]` when available). It tries the port you ask for, then the next ones up. The default start is 7878.
+- `serve` prints a launch URL with a one-time token. The first request trades the token for an `HttpOnly`, `SameSite=Strict` cookie and removes it from the URL. The server stores only a hash of the token in its lock file.
 - A request with a foreign `Host` is refused with 421. Writes must carry your own `Origin` and an `X-LP-CSRF` header.
 - Without the cookie, API routes return 401 and the browser shows an "open from terminal" screen. Only the health check is public.
 
@@ -29,7 +29,7 @@ Each CLI runs with a cleared environment and an empty private working directory,
 | CLI | Isolation | What remains |
 | --- | --- | --- |
 | claude | Tools off, user settings and `CLAUDE.md` not loaded. | Nothing beyond the model. |
-| codex | Read-only sandbox, user config ignored, ephemeral. | **Read-only still means it can read any file you can.** |
+| codex | Read-only sandbox, user config ignored, ephemeral. | Read-only still means it can read any file you can. |
 | agy | Sandbox flag. | The same class of residual as codex. |
 
 Treat codex and agy turns as able to read your files. The details and the evidence are in `docs/web/12-cli-isolation-and-failures.md` in the repo.

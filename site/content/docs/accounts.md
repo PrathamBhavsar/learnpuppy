@@ -11,9 +11,9 @@ LearnPuppy has no login of its own. It runs the agent CLIs already installed and
 
 ## The pool
 
-- **Claude:** every profile it finds, `~/.claude` plus `~/.claude-accounts/*`, and any extra folders you add in Accounts. Each profile is its own rate-limit bucket.
-- **codex** and **agy:** one login each.
-- **kiro-cli** and **opencode** are picked up too when installed and logged in.
+- Claude: every profile it finds, `~/.claude` plus `~/.claude-accounts/*`, and any extra folders you add in Accounts. Each profile is its own rate-limit bucket.
+- codex and agy: one login each.
+- kiro-cli and opencode are picked up too when installed and logged in.
 
 The Accounts screen shows each account's status, usage and cooldown, with Enable and Disable. For an account that needs a login it shows the exact command to run, with a copy button. Rescan re-reads the logins.
 

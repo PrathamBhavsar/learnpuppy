@@ -4,7 +4,7 @@
 
 ## Docs
 
-- [Introduction](https://prathambhavsar.github.io/learnpuppy/docs/#/intro): What LearnPuppy is, what it runs on, and what it is not.
+- [Introduction](https://prathambhavsar.github.io/learnpuppy/docs/#/intro): What LearnPuppy is, what runs where, and which screens it has.
 - [Install](https://prathambhavsar.github.io/learnpuppy/docs/#/install): Build from source today, or use the release installer once the repo is public.
 - [Quickstart](https://prathambhavsar.github.io/learnpuppy/docs/#/quickstart): From a built binary to your first learning chat and first review.
 - [Workspaces](https://prathambhavsar.github.io/learnpuppy/docs/#/workspaces): Isolated knowledge bases for separate subjects.
@@ -14,7 +14,7 @@
 - [Accounts](https://prathambhavsar.github.io/learnpuppy/docs/#/accounts): The CLI account pool, role slots and failover.
 - [Security](https://prathambhavsar.github.io/learnpuppy/docs/#/security): The local-only model, and what it does not protect against.
 - [CLI](https://prathambhavsar.github.io/learnpuppy/docs/#/cli): learnpuppy doctor, serve and migrate.
-- [FAQ](https://prathambhavsar.github.io/learnpuppy/docs/#/faq): Status, what was verified, limits, and the hero animation.
+- [FAQ](https://prathambhavsar.github.io/learnpuppy/docs/#/faq): Status, what was verified, limits, and the home page screenshot.
 
 ## Source
 
