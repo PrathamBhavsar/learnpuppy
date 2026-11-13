@@ -1,18 +1,51 @@
-/* learnpuppy skin: hot pink on cool violet-black ink */
+/* learnpuppy skin: mirrors the product UI (web/src/styles/tokens.css): light violet, Geist Mono headings, 10px radius.
+   Dark follows the OS and is a softer violet, not black. Pixel type stays on the logo and the ASCII scene only. */
 :root {
-  --bg: #09080d;
-  --bg-2: #100e17;
-  --bg-3: #181522;
-  --line: #1f1b2b;
-  --line-2: #342e47;
-  --fg: #f0ecf7;
-  --fg-dim: #a8a0bd;
-  --accent: #ff6ad5;
-  --accent-ink: #09080d;
+  color-scheme: light dark;
+  --bg: oklch(0.985 0.006 296);
+  --bg-2: oklch(0.962 0.012 296);
+  --bg-3: oklch(0.94 0.022 300);
+  --line: oklch(0.9 0.018 298);
+  --line-2: oklch(0.78 0.035 298);
+  --fg: oklch(0.2 0.025 299);
+  --fg-dim: oklch(0.48 0.07 297);
+  --accent: oklch(0.569 0.18 292);
+  --accent-ink: oklch(0.99 0 0);
+  --term: oklch(0.2 0.03 299);
+  --term-fg: oklch(0.95 0.01 296);
+  --radius: 10px;
+  --font-display: "Geist Mono", ui-monospace, "SF Mono", monospace;
 }
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: oklch(0.19 0.022 298);
+    --bg-2: oklch(0.23 0.026 298);
+    --bg-3: oklch(0.27 0.03 298);
+    --line: oklch(0.3 0.03 298);
+    --line-2: oklch(0.42 0.04 298);
+    --fg: oklch(0.96 0.01 296);
+    --fg-dim: oklch(0.76 0.045 296);
+    --accent: oklch(0.72 0.15 293);
+    --accent-ink: oklch(0.16 0.02 297);
+    --term: oklch(0.14 0.02 297);
+  }
+}
+.display, h2.display, h3.display, .doc h1, .doc h2, .flow h3, .foot h5 { letter-spacing: -0.02em; font-weight: 500; }
+.mark { font-family: "Geist Pixel Square", ui-monospace, monospace; letter-spacing: 0; }
+.btn, x-copy, .code, .nav-toggle, [role="tablist"], .flow code, .tab-note code, dialog.search { border-radius: var(--radius); }
+.btn { border-radius: calc(var(--radius) * 0.8); }
+[role="tablist"] button:first-child { border-radius: calc(var(--radius) - 1px) 0 0 calc(var(--radius) - 1px); }
+[role="tablist"] button:last-child { border-radius: 0 calc(var(--radius) - 1px) calc(var(--radius) - 1px) 0; }
+.flow .node { border-radius: 50%; } .flow .node::after { border-radius: 50%; }
+.code { background: var(--term); color: var(--term-fg); border-color: var(--term); }
+.code button { color: var(--term-fg); }
+.btn.ink { background: var(--term); color: var(--term-fg); border-color: var(--term); }
+.btn.ink:hover { background: transparent; color: var(--accent-ink); border-color: var(--accent-ink); }
+.btn.primary:hover { background: var(--fg); border-color: var(--fg); color: var(--bg); }
 .hero h1 { font-size: clamp(2.5rem, 6vw, 5rem); max-width: 15ch; }
 @media (max-width: 760px) { .hero h1 { font-size: clamp(2.25rem, 11vw, 3rem); } }
 /* long receipt values must wrap on phones instead of widening the page */
 .live > * { min-width: 0; }
 .receipt .v { min-width: 0; overflow-wrap: anywhere; }
 @media (max-width: 560px) { .receipt .dots { display: none; } .receipt li { justify-content: space-between; } }
+.install-grid .sec-lede, .tab-note { color: color-mix(in oklab, var(--accent-ink) 96%, var(--accent)); }
