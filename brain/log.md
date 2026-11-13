@@ -2,6 +2,11 @@
 
 Back to [Brain Index](/index.md). Related: [Overview](/overview.md), [Task DAG](/tasks/index.md).
 
+## [2026-11-13] Hero product screenshots
+
+- **Done**: Hero: ASCII scene replaced by a framed product screenshot (knowledge graph, MSW mock data via `bun run dev:mock`), light/dark `<picture>` by OS theme, "sample data" caption. `brand.shot` opts a site in; no shot keeps the ASCII canvas.
+- **Lesson**: capture at 1280x800 (dsf 2) then `cwebp -q 84 -resize 2000 0`; at 1120 SendDesk's responsive layout squeezes the ticket pane. Never shoot real data (`~/.learnpuppy` holds the user's own).
+
 ## [2026-11-13] Site theme pass
 
 - **Done**: Site restyled to product UI: light violet tokens from `web/src/styles/tokens.css`, Geist Mono headings, 10px radius, dark follows OS (softer violet). Pixel type only on logo + ASCII scene. Branch `feat/site-ui-theme`, merged to staging.
