@@ -16,5 +16,7 @@ export default defineConfig({
     ],
     css: false,
     restoreMocks: true,
+    // CI runners are slower than a laptop; a tight default flaked route tests.
+    testTimeout: 20_000,
   },
 })

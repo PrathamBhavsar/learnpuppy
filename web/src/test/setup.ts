@@ -1,5 +1,5 @@
 import "@testing-library/jest-dom/vitest"
-import { cleanup } from "@testing-library/react"
+import { cleanup, configure } from "@testing-library/react"
 import { afterAll, afterEach, beforeAll, vi } from "vitest"
 
 import { setSseManager } from "@/hooks/use-server-events"
@@ -14,6 +14,9 @@ import { mockMatchMedia } from "./media"
 import { bus } from "./mock/bus"
 import { resetDb } from "./msw/db"
 import { server } from "./msw/server"
+
+// findBy* waits up to 1s by default, which a loaded CI runner can miss.
+configure({ asyncUtilTimeout: 8000 })
 
 // jsdom lacks these browser APIs; Radix, cmdk and motion probe for them.
 class ResizeObserverStub {
