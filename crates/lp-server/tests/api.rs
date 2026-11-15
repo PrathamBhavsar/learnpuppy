@@ -462,11 +462,12 @@ async fn graph_layout_is_computed_in_the_background_then_cached() {
         (j["layoutPending"].as_bool(), j["positions"].is_null()),
         (Some(true), true)
     );
-    assert_eq!(
-        a.get(&ws("/graph")).await.etag(),
-        first.etag(),
-        "same state, same tag"
-    );
+    // A fast machine can finish the layout between the two reads; the tag
+    // is only comparable while the second read is still pending.
+    let second = a.get(&ws("/graph")).await;
+    if second.json()["layoutPending"].as_bool() == Some(true) {
+        assert_eq!(second.etag(), first.etag(), "same state, same tag");
+    }
 
     // `graph.changed` arrives once positions.json is on disk.
     let ev = loop {

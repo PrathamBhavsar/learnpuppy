@@ -41,6 +41,10 @@ jobs:
         working-directory: web
     steps:
       - uses: actions/checkout@v4
+      # vitest runs under node; the runner default (20) lacks what the upload tests need.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: 1.3.14
