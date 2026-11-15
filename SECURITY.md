@@ -15,4 +15,4 @@ Use GitHub's private vulnerability reporting on this repository (Security tab, "
 
 ## Supported versions
 
-Pre-release: only the latest commit on `main` is supported.
+Pre-release: only the latest commit on `prod` is supported.

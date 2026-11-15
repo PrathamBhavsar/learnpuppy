@@ -1278,7 +1278,7 @@ checksum = "f9f8bd3e56ce4dfc153cf470fffbfa98c7620958b312ca5c3a4b8d5181fd13c6"
 
 [[package]]
 name = "lp-agent"
-version = "0.1.0"
+version = "0.1.0-rc.1"
 dependencies = [
  "async-trait",
  "chrono",
@@ -1304,7 +1304,7 @@ dependencies = [
 
 [[package]]
 name = "lp-cli-driver"
-version = "0.1.0"
+version = "0.1.0-rc.1"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -1325,7 +1325,7 @@ dependencies = [
 
 [[package]]
 name = "lp-core"
-version = "0.1.0"
+version = "0.1.0-rc.1"
 dependencies = [
  "chrono",
  "hex",
@@ -1343,7 +1343,7 @@ dependencies = [
 
 [[package]]
 name = "lp-ingest"
-version = "0.1.0"
+version = "0.1.0-rc.1"
 dependencies = [
  "chrono",
  "hex",
@@ -1366,7 +1366,7 @@ dependencies = [
 
 [[package]]
 name = "lp-server"
-version = "0.1.0"
+version = "0.1.0-rc.1"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -1406,7 +1406,7 @@ dependencies = [
 
 [[package]]
 name = "lp-service"
-version = "0.1.0"
+version = "0.1.0-rc.1"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -1438,7 +1438,7 @@ dependencies = [
 
 [[package]]
 name = "lp-store"
-version = "0.1.0"
+version = "0.1.0-rc.1"
 dependencies = [
  "chrono",
  "lp-core",
