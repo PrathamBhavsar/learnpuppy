@@ -80,6 +80,8 @@ Base: `/api/v1`. JSON, camelCase on the wire (serde `rename_all = "camelCase"` i
   plan: null | { nodes[{id,title,status:"current"|"visited"|"upcoming"}], edges[{from,to}], currentId },
   probeProgress: {asked, max},   // MAX_PROBE_QUESTIONS = 8
   verdicts: [{callId, correct, explanation?}],   // from core `verdict`
+  answers: [{callId, question, options[{letter,text,picked,right}],   // one per answered probe/quiz,
+             picked[], right[], confidence?, multiSelect, freeText?}], // so the prompt survives the verdict
   jobs[{id,kind,status,title,artifactId?}],
   turn: {state:"idle"|"running"|"queued"|"error", turnId?, startedAt?} }
 ```
@@ -95,6 +97,46 @@ The server never sends the correct answer for an unanswered `quiz` (core already
 | `GET …/review/stats` | `{dueNow, dueToday, newToday, streak, reviewedToday, retention30d, forecast[14]}` |
 | `GET …/review/cards?state=&q=` | browse |
 | `POST …/review/sync` | `review::sync` + `export_cards` |
+
+### Courses
+Thin layer over `lp_service::course::CourseService`; one shared service per workspace (it holds session state and locks), built on first access, which also runs its restart recovery for courses stuck in `Writing`. `{id}` is `[a-z0-9_-]{1,128}`; anything else is `404`. Lengths: goal 1..500, question 1..2000, answer 5000, reason 2000. `CourseError`: `NotFound` -> `404`, `Invalid` -> `400 validation`, `Unavailable` -> `503 engine_unavailable` (same shape as other AI-limited errors), store failure -> `500`.
+
+Model-backed calls (`create`, `placement`, `ask`, `check`) are plain awaited POSTs run in a detached task, so a browser disconnect cannot cancel them half way. Writing and refilling are polled through `status`; there is no SSE for courses.
+
+| | |
+|---|---|
+| `GET …/courses` | `{courses[{id, title, version, updatedAt}]}` newest first |
+| `POST …/courses` | `{goal, why}` (both 1 to 500 chars, `why` required) -> `201 {id, items[{id, kind, q, options}]}`; one cheap call writes the strand probe (3 strands at 3 levels; falls back to a plain five-question quiz if that comes back unusable) and `items` is its first round, the middle level of each strand; nothing stored on `503` |
+| `POST …/courses/{id}/placement` | `{answers[{item, text, guessed?, blocked?}]}` -> `{graded[{item, correct, answer, why}], next[{id, kind, q, options}]}`; grades one round. `next` holds the follow-up questions for strands not settled yet (at most 2 per strand, 6 in all); answer them the same way. Once `next` is empty the Author starts in the background. A right answer flagged `guessed` counts as `edge`; `blocked` marks a missing prerequisite |
+| `GET …/courses/{id}/placement` | `{items[{id, kind, q, options}]}` the questions of the current round, same order and options as the response that returned them; empty once placement is over. Lets a reloaded page carry on |
+| `GET …/courses/{id}/misses` | `{misses[{q, answer, why}]}` mini lesson while writing |
+| `GET …/courses/{id}/status` | `{state: writing\|ready\|failed\|refilling, reason?}` |
+| `POST …/courses/{id}/retry` | `204`; rewrites a failed course |
+| `POST …/courses/{id}/next` | `{step: explain, lesson}` / `{step: ask, item{id, lesson, kind, q, options, ask}}` / `{step: waiting}` / `{step: done}`; stored content, no model |
+| `POST …/courses/{id}/seen` | `{lesson}` -> `204` |
+| `POST …/courses/{id}/answer` | `{item, text, confidence?, ms?}` -> `{correct, close, answer, why}`; graded by code |
+| `POST …/courses/{id}/self-grade` | `{item, grade: again\|hard\|good\|easy}` -> `204` |
+| `POST …/courses/{id}/flag` | `{item, reason}` -> `204` |
+| `POST …/courses/{id}/ask` | `{question}` -> `{reply}`; the question is kept even on `503` |
+| `POST …/courses/{id}/check` | `{item, text}` -> `{correct, note}` |
+| `GET …/courses/{id}/usage` | `{strongIn, strongOut, cheapIn, cheapOut, strongCallsThisHour, refillWaitingUntil?}` |
+
+A step's `item` and a placement item never carry `answer`, `accept` or `why` (tested on the serialized JSON). The answer comes back only in the feedback after the learner answered.
+
+### Learning method (M8)
+All under `/workspaces/{ws}`; thin layer over `lp_service::course`. A gate rejection is `409 conflict` with `details.gate` set to a stable machine-readable code (one per gate); the UI branches on it, never on the message.
+
+| | |
+|---|---|
+| `GET …/courses/{id}/plan` · `POST …/plan/confirm` · `POST …/plan/prereq` | plan view, confirm, prerequisite choice |
+| `POST …/courses/{id}/step` · `predict` · `explain-seen` · `note` · `quiz-answer` · `feynman` | lesson step loop |
+| `POST …/courses/{id}/break` · `close` · `braindump` · `review-dates` | break, session close, brain dump, review dates |
+| `GET …/courses/{id}/register` · `mastery` | register and mastery views |
+| `GET …/learning/clock` | session clock |
+| `POST …/learning/bout/start` · `heartbeat` · `end` · `focus-lost` · `override` | study bout lifecycle |
+| `GET …/learning/checkin/needed` · `POST …/learning/checkin` | check-in |
+| `GET/PUT …/learning/schedule` · `POST …/schedule/suggest` · `track` | schedule |
+| `GET/PUT …/learning/profile` | learner profile |
 
 ### Digest
 | | |

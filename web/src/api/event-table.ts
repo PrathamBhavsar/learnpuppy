@@ -137,6 +137,10 @@ export function applyEvent<N extends EventName>(
       inWs((id) => {
         void qc.invalidateQueries({ queryKey: keys.ws(id).jobs() })
         void qc.invalidateQueries({ queryKey: keys.ws(id).chats() })
+        // Textbook imports report chapter progress through the same job events.
+        void qc.invalidateQueries({
+          queryKey: [...keys.ws(id).all, "textbooks"],
+        })
         // Jobs are embedded in ClassroomView.
         void qc.invalidateQueries({
           predicate: (q) =>

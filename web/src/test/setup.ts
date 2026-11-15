@@ -57,6 +57,7 @@ afterEach(() => {
   document.documentElement.className = ""
   document.documentElement.removeAttribute("data-reduce-motion")
   document.documentElement.removeAttribute("data-density")
+  document.documentElement.removeAttribute("data-reading-font")
   document.documentElement.dir = "ltr"
   mockMatchMedia()
 })

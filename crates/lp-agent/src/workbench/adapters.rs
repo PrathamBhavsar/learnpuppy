@@ -9,6 +9,8 @@ use std::time::{Duration, Instant};
 use async_trait::async_trait;
 use scraper::{Html, Selector};
 
+use lp_core::textbook::OutlineEntry;
+
 use super::jobs::{Hit, Pdf, Web};
 
 const SEARCH_URL: &str = "https://html.duckduckgo.com/html/";
@@ -18,7 +20,7 @@ const MAX_REDIRECTS: usize = 4;
 const MAX_HITS: usize = 20;
 const PDF_TIMEOUT: Duration = Duration::from_secs(30);
 const MAX_PDF_BYTES: u64 = 8 << 20;
-const MAX_PDF_INPUT_BYTES: u64 = 40 << 20;
+const MAX_PDF_INPUT_BYTES: u64 = 50 << 20;
 const PDF_STALL_TIMEOUT: Duration = Duration::from_secs(10);
 
 /// Search through DuckDuckGo's HTML endpoint and fetch pages over http(s).
@@ -61,6 +63,8 @@ impl HttpWeb {
             let mut builder = reqwest::Client::builder()
                 .timeout(WEB_TIMEOUT)
                 .user_agent("learnpuppy")
+                // A proxy would resolve and connect on our behalf, bypassing the vetted pin.
+                .no_proxy()
                 .redirect(reqwest::redirect::Policy::none());
             if let Some((host, addr)) = self.vet(&mut url).await? {
                 builder = builder.resolve(&host, addr);
@@ -158,10 +162,12 @@ fn is_internal(ip: IpAddr) -> bool {
                 || v4.octets()[0] == 0 // 0.0.0.0/8
                 || (v4.octets()[0] == 100 && v4.octets()[1] & 0xc0 == 0x40) // 100.64.0.0/10 CGNAT
                 || v4.octets()[..3] == [192, 0, 0] // 192.0.0.0/24
+                || (v4.octets()[0] == 198 && v4.octets()[1] & 0xfe == 18) // 198.18.0.0/15 benchmarking
+                || v4.octets()[0] >= 240 // 240.0.0.0/4 reserved
         }
         IpAddr::V6(v6) => {
-            if let Some(v4) = v6.to_ipv4_mapped() {
-                return is_internal(v4.into());
+            if let Some(v4) = v6.to_ipv4() {
+                return is_internal(v4.into()); // mapped and IPv4-compatible forms
             }
             let seg = v6.segments();
             if seg[..6] == [0x64, 0xff9b, 0, 0, 0, 0] {
@@ -243,7 +249,7 @@ fn pdf_path(path: &str) -> Result<String, String> {
         return Err(format!("{path} is not a file"));
     }
     if meta.len() > MAX_PDF_INPUT_BYTES {
-        return Err("This PDF exceeds 40 MiB. Split or compress it first; scanned PDFs may need OCR before reading.".into());
+        return Err("This PDF exceeds 50 MiB. Split or compress it first; scanned PDFs may need OCR before reading.".into());
     }
     // A leading `-` must not be read as an option.
     Ok(if path.starts_with('-') {
@@ -367,26 +373,7 @@ impl Pdf for PdftotextPdf {
         if first == 0 || last < first || last - first >= super::jobs::MAX_PDF_PAGES_PER_READ {
             return Err("Read 1 to 10 PDF pages at a time, using 1-based page numbers".into());
         }
-        let arg = pdf_path(path)?;
-        let buf = pdf_command(
-            Command::new("pdftotext").args([
-                "-f",
-                &first.to_string(),
-                "-l",
-                &last.to_string(),
-                &arg,
-                "-",
-            ]),
-            PDF_TIMEOUT,
-            PDF_STALL_TIMEOUT,
-        )?;
-        let mut pages: Vec<String> = String::from_utf8_lossy(&buf)
-            .split('\x0c')
-            .map(str::to_owned)
-            .collect();
-        if pages.last().is_some_and(|p| p.trim().is_empty()) {
-            pages.pop();
-        }
+        let pages = extract_pages(path, first, last)?;
         if pages.iter().all(|p| p.trim().is_empty()) {
             return Err(
                 "No text found in this PDF range. Scanned pages need OCR before reading.".into(),
@@ -394,6 +381,143 @@ impl Pdf for PdftotextPdf {
         }
         Ok(pages)
     }
+
+    fn page_texts(&self, path: &str, first: usize, last: usize) -> Result<Vec<String>, String> {
+        if first == 0 || last < first || last - first >= super::jobs::MAX_PDF_PAGES_PER_READ {
+            return Err("Read 1 to 10 PDF pages at a time, using 1-based page numbers".into());
+        }
+        let want = last - first + 1;
+        let mut pages = extract_pages(path, first, last)?;
+        // `extract_pages` drops a trailing blank page; put it back so numbering never shifts.
+        if pages.len() > want {
+            return Err("PDF extractor returned more pages than requested".into());
+        }
+        pages.resize(want, String::new());
+        Ok(pages)
+    }
+
+    fn outline(&self, path: &str) -> Result<Vec<OutlineEntry>, String> {
+        let arg = pdf_path(path)?;
+        let out = pdf_command(
+            Command::new("pdftohtml")
+                .args(["-xml", "-i", "-q", "-stdout", "-f", "1", "-l", "1", &arg]),
+            PDF_TIMEOUT,
+            PDF_STALL_TIMEOUT,
+        );
+        match out {
+            Ok(buf) => Ok(parse_outline_xml(&String::from_utf8_lossy(&buf))),
+            Err(e) if e.contains("Poppler") => {
+                tracing::warn!("pdftohtml unavailable, importing without an outline");
+                Ok(vec![])
+            }
+            Err(e) => Err(e),
+        }
+    }
+}
+
+/// `pdftotext` for a page window, split on form feeds, trailing blank dropped.
+fn extract_pages(path: &str, first: usize, last: usize) -> Result<Vec<String>, String> {
+    let arg = pdf_path(path)?;
+    let buf = pdf_command(
+        Command::new("pdftotext").args([
+            "-f",
+            &first.to_string(),
+            "-l",
+            &last.to_string(),
+            &arg,
+            "-",
+        ]),
+        PDF_TIMEOUT,
+        PDF_STALL_TIMEOUT,
+    )?;
+    let mut pages: Vec<String> = String::from_utf8_lossy(&buf)
+        .split('\x0c')
+        .map(str::to_owned)
+        .collect();
+    if pages.last().is_some_and(|p| p.trim().is_empty()) {
+        pages.pop();
+    }
+    Ok(pages)
+}
+
+fn decode_entities(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    let mut rest = s;
+    while let Some(i) = rest.find('&') {
+        out.push_str(&rest[..i]);
+        rest = &rest[i..];
+        let Some(end) = rest.find(';').filter(|e| *e <= 10) else {
+            out.push('&');
+            rest = &rest[1..];
+            continue;
+        };
+        let name = &rest[1..end];
+        let ch = match name {
+            "amp" => Some('&'),
+            "lt" => Some('<'),
+            "gt" => Some('>'),
+            "quot" => Some('"'),
+            "apos" => Some('\''),
+            _ => name
+                .strip_prefix('#')
+                .and_then(|n| match n.strip_prefix(['x', 'X']) {
+                    Some(h) => u32::from_str_radix(h, 16).ok(),
+                    None => n.parse().ok(),
+                })
+                .and_then(char::from_u32),
+        };
+        match ch {
+            Some(c) => {
+                out.push(c);
+                rest = &rest[end + 1..];
+            }
+            None => {
+                out.push('&');
+                rest = &rest[1..];
+            }
+        }
+    }
+    out.push_str(rest);
+    out
+}
+
+/// Entries of the `<outline>` blocks of `pdftohtml -xml`, depth by nesting. Items without a
+/// `page` attribute are skipped. No XML crate: only tags of the outline are looked at.
+fn parse_outline_xml(xml: &str) -> Vec<OutlineEntry> {
+    let mut out = Vec::new();
+    let mut depth: i32 = -1; // -1 outside any outline, 0 for the top level
+    let mut rest = xml;
+    while let Some(lt) = rest.find('<') {
+        rest = &rest[lt + 1..];
+        let Some(gt) = rest.find('>') else { break };
+        let tag = &rest[..gt];
+        let after = &rest[gt + 1..];
+        if tag == "outline" {
+            depth += 1;
+        } else if tag == "/outline" {
+            depth -= 1;
+        } else if depth >= 0 && (tag == "item" || tag.starts_with("item ")) {
+            let page = tag
+                .split("page=\"")
+                .nth(1)
+                .and_then(|r| r.split('"').next())
+                .and_then(|n| n.parse().ok());
+            if let (false, Some(page)) = (tag.ends_with('/'), page) {
+                // The title is the text up to the next tag.
+                let text_end = after.find('<').unwrap_or(after.len());
+                let title = decode_entities(after[..text_end].trim());
+                if !title.is_empty() {
+                    out.push(OutlineEntry {
+                        title,
+                        page,
+                        depth: depth.clamp(0, 255) as u8,
+                    });
+                }
+            }
+        }
+        rest = after;
+    }
+    out
 }
 
 #[cfg(test)]
@@ -497,6 +621,12 @@ mod tests {
             "http://[fd00::1]/",
             "http://[fe80::1]/",
             "http://user:pw@example.com/",
+            "http://100.64.0.1/",
+            "http://0.1.2.3/",
+            "http://198.18.0.1/",
+            "http://240.0.0.1/",
+            "http://[64:ff9b::7f00:1]/",
+            "http://[::127.0.0.1]/",
         ] {
             assert!(web.fetch(url).await.is_err(), "{url} should be rejected");
         }
@@ -512,10 +642,22 @@ mod tests {
             "192.0.0.8",
             "64:ff9b::7f00:1",
             "64:ff9b::a9fe:a9fe",
+            "198.18.0.1",
+            "198.19.255.255",
+            "240.0.0.1",
+            "255.255.255.255",
+            "::127.0.0.1",
         ] {
             assert!(is_internal(ip.parse().unwrap()), "{ip}");
         }
-        for ip in ["100.63.0.1", "100.128.0.1", "192.0.1.1", "64:ff9b::808:808"] {
+        for ip in [
+            "100.63.0.1",
+            "100.128.0.1",
+            "192.0.1.1",
+            "198.17.0.1",
+            "198.20.0.1",
+            "64:ff9b::808:808",
+        ] {
             assert!(!is_internal(ip.parse().unwrap()), "{ip}");
         }
     }
@@ -584,7 +726,7 @@ mod tests {
             .set_len(MAX_PDF_INPUT_BYTES + 1)
             .unwrap();
         let error = PdftotextPdf.page_count(path.to_str().unwrap()).unwrap_err();
-        assert!(error.contains("40 MiB") && error.contains("OCR"), "{error}");
+        assert!(error.contains("50 MiB") && error.contains("OCR"), "{error}");
     }
 
     #[test]
@@ -632,6 +774,205 @@ mod tests {
         assert!(pages.first().unwrap().contains("page11"));
         assert!(pages.last().unwrap().contains("page20"));
         assert!(!pages.join("").contains("page21"));
+    }
+
+    #[test]
+    fn pdf_input_cap_is_50_mib() {
+        assert_eq!(MAX_PDF_INPUT_BYTES, 50 << 20);
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("ok.pdf");
+        std::fs::File::create(&path)
+            .unwrap()
+            .set_len((50 << 20) - 1)
+            .unwrap();
+        // 45 MB is no longer refused up front (the extractor then rejects the junk bytes).
+        let error = PdftotextPdf.page_count(path.to_str().unwrap()).unwrap_err();
+        assert!(!error.contains("MiB"), "{error}");
+    }
+
+    #[test]
+    fn parse_outline_xml_nested_and_entities() {
+        let xml = r#"<?xml version="1.0"?><pdf2xml><page number="1"><text>x &lt;b&gt;</text></page>
+<outline>
+<item page="3">Intro &amp; Basics</item>
+<item>No page</item>
+<outline>
+<item page="5">Sub &#65; &#x42; &quot;q&quot;</item>
+</outline>
+<item page="9">Second</item>
+</outline></pdf2xml>"#;
+        let e = parse_outline_xml(xml);
+        assert_eq!(
+            e,
+            vec![
+                OutlineEntry {
+                    title: "Intro & Basics".into(),
+                    page: 3,
+                    depth: 0
+                },
+                OutlineEntry {
+                    title: "Sub A B \"q\"".into(),
+                    page: 5,
+                    depth: 1
+                },
+                OutlineEntry {
+                    title: "Second".into(),
+                    page: 9,
+                    depth: 0
+                },
+            ]
+        );
+        assert!(parse_outline_xml("<pdf2xml><page number=\"1\"/></pdf2xml>").is_empty());
+        assert!(parse_outline_xml("<outline><item page=\"2\">cut").len() <= 1);
+    }
+
+    #[test]
+    fn pdftohtml_outline_real_fixture() {
+        if Command::new("pdftohtml").arg("-v").output().is_err() {
+            eprintln!("skipped: Poppler is missing");
+            return;
+        }
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("o.pdf");
+        std::fs::write(
+            &path,
+            pdf_with(
+                &[Some("one"), Some("two"), Some("three"), Some("four")],
+                &[("Alpha", 0, Some(("Alpha sub", 1))), ("Beta", 2, None)],
+            ),
+        )
+        .unwrap();
+        let e = PdftotextPdf.outline(path.to_str().unwrap()).unwrap();
+        let got: Vec<(&str, u32, u8)> = e
+            .iter()
+            .map(|x| (x.title.as_str(), x.page, x.depth))
+            .collect();
+        assert_eq!(
+            got,
+            vec![("Alpha", 1, 0), ("Alpha sub", 2, 1), ("Beta", 3, 0)]
+        );
+        let plain = dir.path().join("p.pdf");
+        std::fs::write(&plain, multi_page_pdf(3)).unwrap();
+        assert!(PdftotextPdf
+            .outline(plain.to_str().unwrap())
+            .unwrap()
+            .is_empty());
+    }
+
+    #[test]
+    fn page_texts_keeps_blank_pages() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("b.pdf");
+        std::fs::write(&path, pdf_with(&[Some("alpha"), None, Some("gamma")], &[])).unwrap();
+        let path = path.to_str().unwrap();
+        let pages = PdftotextPdf.page_texts(path, 1, 3).unwrap();
+        assert_eq!(pages.len(), 3);
+        assert!(
+            pages[0].contains("alpha") && pages[1].trim().is_empty() && pages[2].contains("gamma")
+        );
+        // page_range still reads text; an all-blank window is still its error for the chat job
+        let only = dir.path().join("only.pdf");
+        std::fs::write(&only, pdf_with(&[None, None], &[])).unwrap();
+        let only = only.to_str().unwrap();
+        assert!(PdftotextPdf.page_range(only, 1, 2).is_err());
+        assert_eq!(PdftotextPdf.page_texts(only, 1, 2).unwrap(), vec!["", ""]);
+        assert!(PdftotextPdf.page_texts(path, 1, 11).is_err());
+    }
+
+    #[test]
+    fn page_texts_pads_trailing_blank_page() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("t.pdf");
+        std::fs::write(&path, pdf_with(&[Some("alpha"), Some("beta"), None], &[])).unwrap();
+        let path = path.to_str().unwrap();
+        let all = PdftotextPdf.page_texts(path, 1, 3).unwrap();
+        assert_eq!(all.len(), 3);
+        assert!(all[1].contains("beta") && all[2].trim().is_empty());
+        let tail = PdftotextPdf.page_texts(path, 2, 3).unwrap();
+        assert_eq!(tail.len(), 2);
+        assert!(tail[0].contains("beta"));
+    }
+
+    /// `(title, page index, optional (child title, child page index))`.
+    type OutlineSpec<'a> = (&'a str, usize, Option<(&'a str, usize)>);
+
+    /// Minimal PDF with optional text per page (`None` is an image-only/blank page) and an
+    /// outline of `(title, page index, optional (child title, child page index))`.
+    fn pdf_with(pages: &[Option<&str>], outline: &[OutlineSpec]) -> String {
+        let (np, n) = (pages.len(), outline.len());
+        let children: Vec<(usize, &str, usize)> = outline
+            .iter()
+            .enumerate()
+            .filter_map(|(i, (_, _, c))| c.map(|(t, p)| (i, t, p)))
+            .collect();
+        let nc = children.len();
+        let page0 = 4 + n + nc;
+        let content0 = page0 + np;
+        let font = content0 + np;
+        let mut objs = vec![
+            if n > 0 {
+                "<< /Type /Catalog /Pages 2 0 R /Outlines 3 0 R >>".to_owned()
+            } else {
+                "<< /Type /Catalog /Pages 2 0 R >>".to_owned()
+            },
+            format!(
+                "<< /Type /Pages /Kids [{}] /Count {np} >>",
+                (0..np)
+                    .map(|i| format!("{} 0 R", page0 + i))
+                    .collect::<Vec<_>>()
+                    .join(" ")
+            ),
+            format!(
+                "<< /Type /Outlines /First 4 0 R /Last {} 0 R /Count {n} >>",
+                3 + n
+            ),
+        ];
+        for (i, (title, page, _)) in outline.iter().enumerate() {
+            let mut o = format!(
+                "<< /Title ({title}) /Parent 3 0 R /Dest [{} 0 R /Fit]",
+                page0 + page
+            );
+            if i > 0 {
+                o += &format!(" /Prev {} 0 R", 3 + i);
+            }
+            if i + 1 < n {
+                o += &format!(" /Next {} 0 R", 5 + i);
+            }
+            if let Some(k) = children.iter().position(|(ci, _, _)| *ci == i) {
+                o += &format!(" /First {0} 0 R /Last {0} 0 R /Count 1", 4 + n + k);
+            }
+            objs.push(o + " >>");
+        }
+        for (k, (parent, title, page)) in children.iter().enumerate() {
+            let _ = k;
+            objs.push(format!(
+                "<< /Title ({title}) /Parent {} 0 R /Dest [{} 0 R /Fit] >>",
+                4 + parent,
+                page0 + page
+            ));
+        }
+        for i in 0..np {
+            objs.push(format!(
+                "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 200 200] /Contents {} 0 R /Resources << /Font << /F1 {font} 0 R >> >> >>",
+                content0 + i
+            ));
+        }
+        for p in pages {
+            let s = p.map_or(String::new(), |t| {
+                format!("BT /F1 12 Tf 20 100 Td ({t}) Tj ET")
+            });
+            objs.push(format!("<< /Length {} >>\nstream\n{s}\nendstream", s.len()));
+        }
+        objs.push("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>".into());
+        let mut pdf = String::from("%PDF-1.4\n");
+        for (i, o) in objs.iter().enumerate() {
+            pdf.push_str(&format!("{} 0 obj\n{o}\nendobj\n", i + 1));
+        }
+        pdf.push_str(&format!(
+            "trailer\n<< /Root 1 0 R /Size {} >>\n%%EOF\n",
+            objs.len() + 1
+        ));
+        pdf
     }
 
     fn two_page_pdf() -> String {

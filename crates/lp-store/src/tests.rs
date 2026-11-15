@@ -27,12 +27,13 @@ fn chain(id: &str) -> GraphChain {
     }
 }
 
+/// `updated_at` is an offset from a realistic epoch-ms base (small values would read as seconds).
 fn chat(id: &str, updated_at: i64) -> ChatRecord {
     ChatRecord {
         id: id.into(),
         title: id.into(),
-        created_at: 1,
-        updated_at,
+        created_at: 1_700_000_000_000,
+        updated_at: 1_700_000_000_000 + updated_at,
         body: serde_json::json!({"messages": []}),
         turns: vec![],
         extractions: vec![],
@@ -104,7 +105,7 @@ fn atomic_write_survives_crash_before_rename() {
     assert_eq!(s.load_chat("c1").unwrap(), chat("c1", 1));
     assert_eq!(s.list_chats().unwrap().len(), 1);
     s.save_chat(&chat("c1", 2)).unwrap();
-    assert_eq!(s.load_chat("c1").unwrap().updated_at, 2);
+    assert_eq!(s.load_chat("c1").unwrap().updated_at, 1_700_000_000_002);
 }
 
 #[test]
@@ -300,6 +301,8 @@ fn tracker_tables_round_trip() {
         options: ["a".into(), "b".into(), "c".into(), "d".into()],
         correct_index: 2,
         rationale: "r".into(),
+        kind: Default::default(),
+        must_name: Vec::new(),
         card: Card::new(10),
     };
     s.upsert_card(&card).unwrap();
@@ -379,6 +382,8 @@ fn fcard(id: &str) -> FlashCard {
         options: ["a".into(), "b".into(), "c".into(), "d".into()],
         correct_index: 0,
         rationale: String::new(),
+        kind: Default::default(),
+        must_name: Vec::new(),
         card: Card::new(0),
     }
 }
@@ -539,4 +544,485 @@ fn unreadable_chat_and_job_files_are_reported_not_silent() {
     let (list, skipped) = jobs.all_report().unwrap();
     assert!(list.is_empty());
     assert!(skipped[0].ends_with("bad.json"));
+}
+
+mod course_store {
+    use super::*;
+    use lp_core::course::{Course, CourseEvent};
+    use std::os::unix::fs::PermissionsExt;
+
+    fn course(id: &str, learner: &str) -> Course {
+        Course {
+            id: id.into(),
+            learner: learner.into(),
+            lessons: vec![],
+            must_fix: vec![],
+            version: 1,
+            ..Course::default()
+        }
+    }
+
+    fn ev(n: u32) -> CourseEvent {
+        CourseEvent::Shown {
+            ts: i64::from(n),
+            lesson: format!("l{n}"),
+        }
+    }
+
+    #[test]
+    fn round_trip_list_delete_learner() {
+        let d = tempfile::tempdir().unwrap();
+        let s = FsCourseStore::new(d.path());
+        assert!(s.list().unwrap().is_empty());
+        assert_eq!(s.load_learner().unwrap(), "");
+        s.save_course(&course("c1", "\n  learn rust\nmore"))
+            .unwrap();
+        assert_eq!(s.load_course("c1").unwrap().learner, "\n  learn rust\nmore");
+        s.append_event("c1", &ev(1)).unwrap();
+        assert_eq!(s.events("c1").unwrap(), vec![ev(1)]);
+        std::fs::create_dir_all(d.path().join("courses/broken")).unwrap();
+        let l = s.list().unwrap();
+        assert_eq!(
+            (l.len(), l[0].title.as_str(), l[0].version),
+            (1, "learn rust", 1)
+        );
+        assert!(l[0].updated_at > 0);
+        s.save_learner("likes diagrams").unwrap();
+        assert_eq!(s.load_learner().unwrap(), "likes diagrams");
+        s.delete_course("c1").unwrap();
+        assert!(matches!(s.load_course("c1"), Err(StoreError::NotFound(_))));
+        s.delete_course("c1").unwrap();
+    }
+
+    #[test]
+    fn torn_tail_then_append() {
+        let d = tempfile::tempdir().unwrap();
+        let s = FsCourseStore::new(d.path());
+        s.append_event("c1", &ev(1)).unwrap();
+        let p = d.path().join("courses/c1/events.jsonl");
+        let mut f = std::fs::OpenOptions::new().append(true).open(&p).unwrap();
+        f.write_all(b"deadbeef\t{\"kind\":\"sho").unwrap();
+        assert_eq!(s.events("c1").unwrap(), vec![ev(1)]);
+        s.append_event("c1", &ev(2)).unwrap();
+        assert_eq!(s.events("c1").unwrap(), vec![ev(1), ev(2)]);
+    }
+
+    #[test]
+    fn concurrent_appends_from_independent_handles() {
+        let d = tempfile::tempdir().unwrap();
+        let hs: Vec<_> = (0..8u32)
+            .map(|t| {
+                let root = d.path().to_path_buf();
+                std::thread::spawn(move || {
+                    let s = FsCourseStore::new(root);
+                    for i in 0..25 {
+                        s.append_event("c1", &ev(t * 100 + i)).unwrap();
+                    }
+                })
+            })
+            .collect();
+        hs.into_iter().for_each(|h| h.join().unwrap());
+        assert_eq!(
+            FsCourseStore::new(d.path()).events("c1").unwrap().len(),
+            200
+        );
+    }
+
+    #[test]
+    fn roots_isolated() {
+        let (a, b) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+        let (sa, sb) = (FsCourseStore::new(a.path()), FsCourseStore::new(b.path()));
+        sa.save_course(&course("c1", "x")).unwrap();
+        sa.save_learner("me").unwrap();
+        sa.append_event("c1", &ev(1)).unwrap();
+        assert!(sb.list().unwrap().is_empty());
+        assert!(sb.events("c1").unwrap().is_empty());
+        assert_eq!(sb.load_learner().unwrap(), "");
+    }
+
+    #[test]
+    fn bad_ids_rejected() {
+        let d = tempfile::tempdir().unwrap();
+        let s = FsCourseStore::new(d.path());
+        for id in ["", "..", ".", "../x", "a/b", "A", "a.b", "a b", "a\\b"] {
+            assert!(s.save_course(&course(id, "x")).is_err(), "{id:?}");
+            assert!(s.load_course(id).is_err());
+            assert!(s.append_event(id, &ev(1)).is_err());
+            assert!(s.events(id).is_err());
+            assert!(s.delete_course(id).is_err());
+        }
+        assert!(s.save_course(&course("ok_1-x", "x")).is_ok());
+    }
+
+    #[test]
+    fn owner_only_permissions() {
+        let d = tempfile::tempdir().unwrap();
+        let s = FsCourseStore::new(d.path());
+        s.save_course(&course("c1", "x")).unwrap();
+        s.append_event("c1", &ev(1)).unwrap();
+        s.save_learner("me").unwrap();
+        let mode = |p: &str| {
+            std::fs::metadata(d.path().join(p))
+                .unwrap()
+                .permissions()
+                .mode()
+                & 0o777
+        };
+        assert_eq!(mode("courses/c1/course.json"), 0o600);
+        assert_eq!(mode("courses/c1/events.jsonl"), 0o600);
+        assert_eq!(mode("learner.json"), 0o600);
+        assert_eq!(mode("courses/c1"), 0o700);
+        assert_eq!(mode("courses"), 0o700);
+    }
+
+    #[test]
+    fn large_event_count_read() {
+        let d = tempfile::tempdir().unwrap();
+        let s = FsCourseStore::new(d.path());
+        for i in 0..3000 {
+            s.append_event("c1", &ev(i)).unwrap();
+        }
+        assert_eq!(s.events("c1").unwrap().len(), 3000);
+    }
+}
+
+#[test]
+fn second_based_timestamps_read_back_as_milliseconds() {
+    let dir = tempfile::tempdir().unwrap();
+    let s = FsChatStore::open(dir.path()).unwrap();
+    let mut old = chat("old", 0);
+    old.created_at = 1_793_131_000;
+    old.updated_at = 1_793_131_171;
+    s.save_chat(&old).unwrap();
+    let mut new = chat("new", 0);
+    new.updated_at = 1_793_131_171_000;
+    s.save_chat(&new).unwrap();
+    let loaded = s.load_chat("old").unwrap();
+    assert_eq!(
+        (loaded.created_at, loaded.updated_at),
+        (1_793_131_000_000, 1_793_131_171_000)
+    );
+    let listed = s.list_chats().unwrap();
+    assert!(listed.iter().all(|c| c.updated_at == 1_793_131_171_000));
+    assert_eq!(epoch_ms(0), 0);
+    let ws = tempfile::tempdir().unwrap();
+    let jobs = FsJobStore::open(ws.path().join("jobs")).unwrap();
+    let mut j = job("j1", JobStatus::Done);
+    j.created_at = 1_793_131_171;
+    jobs.create_job(&j).unwrap();
+    assert_eq!(
+        jobs.all_report().unwrap().0[0].created_at,
+        1_793_131_171_000
+    );
+}
+
+#[test]
+fn migrated_job_artifact_path_resolves_inside_the_workspace_only() {
+    let ws = tempfile::tempdir().unwrap();
+    let arts = ws.path().join("artifacts");
+    std::fs::create_dir_all(&arts).unwrap();
+    std::fs::write(arts.join("job_1.svg"), "<svg/>").unwrap();
+    let jobs = FsJobStore::open(ws.path().join("jobs")).unwrap();
+    let mut j = job("j1", JobStatus::Done);
+    j.result = Some(serde_json::json!({"artifact": "/old/home/.learnpuppy/artifacts/job_1.svg"}));
+    jobs.create_job(&j).unwrap();
+    let mut other = job("j2", JobStatus::Done);
+    other.result =
+        Some(serde_json::json!({"artifact": "/old/home/.learnpuppy/artifacts/gone.svg"}));
+    jobs.create_job(&other).unwrap();
+    let mut esc = job("j3", JobStatus::Done);
+    esc.result = Some(serde_json::json!({"artifact": "/old/../../etc/job_1.svg/.."}));
+    jobs.create_job(&esc).unwrap();
+    let got = jobs.all_report().unwrap().0;
+    let art = |id: &str| {
+        got.iter()
+            .find(|j| j.id == id)
+            .unwrap()
+            .result
+            .as_ref()
+            .unwrap()["artifact"]
+            .as_str()
+            .unwrap()
+            .to_owned()
+    };
+    assert_eq!(art("j1"), arts.join("job_1.svg").display().to_string());
+    assert_eq!(art("j2"), "/old/home/.learnpuppy/artifacts/gone.svg");
+    assert!(!art("j3").starts_with(ws.path().to_str().unwrap()));
+}
+
+mod learning_store {
+    use super::*;
+    use lp_core::method::register::{RegisterRow, RegisterStatus};
+
+    fn hb(n: i64) -> BoutEvent {
+        BoutEvent::Heartbeat {
+            ts: n,
+            bout: "b1".into(),
+        }
+    }
+
+    #[test]
+    fn round_trip_and_defaults() {
+        let d = tempfile::tempdir().unwrap();
+        let s = FsLearningStore::new(d.path());
+        assert!(s.bouts().unwrap().is_empty());
+        assert_eq!(s.load_schedule().unwrap(), Schedule::default());
+        s.append_bout(&hb(1)).unwrap();
+        s.append_checkin(&CheckIn {
+            ts: 1,
+            sleep_hours: 7.5,
+            note: String::new(),
+        })
+        .unwrap();
+        let rec = RegisterRecord {
+            ts: 2,
+            course: "c1".into(),
+            row: RegisterRow {
+                item: "i1".into(),
+                belief: "b".into(),
+                status: RegisterStatus::Open,
+                misses: 1,
+            },
+        };
+        s.append_register(&rec).unwrap();
+        assert_eq!(s.bouts().unwrap(), vec![hb(1)]);
+        assert_eq!(s.checkins().unwrap()[0].sleep_hours, 7.5);
+        assert_eq!(s.register().unwrap(), vec![rec]);
+        let sched = Schedule {
+            wake_time: "07:00".into(),
+            slots: vec!["09:00".into()],
+            ..Default::default()
+        };
+        s.save_schedule(&sched).unwrap();
+        assert_eq!(s.load_schedule().unwrap(), sched);
+    }
+
+    #[test]
+    fn profile_latest_wins() {
+        let d = tempfile::tempdir().unwrap();
+        let s = FsLearningStore::new(d.path());
+        for (ts, v) in [(1, "a"), (3, "c"), (2, "b")] {
+            s.append_profile(&ProfileEntry {
+                ts,
+                key: "k".into(),
+                value: v.into(),
+            })
+            .unwrap();
+        }
+        let p = s.profile().unwrap();
+        assert_eq!((p.len(), p[0].value.as_str()), (1, "c"));
+    }
+
+    #[test]
+    fn torn_tail_recovery() {
+        let d = tempfile::tempdir().unwrap();
+        let s = FsLearningStore::new(d.path());
+        s.append_bout(&hb(1)).unwrap();
+        let p = d.path().join("learning/bouts.jsonl");
+        let mut f = std::fs::OpenOptions::new().append(true).open(&p).unwrap();
+        f.write_all(b"deadbeef\t{\"kind\":\"Hea").unwrap();
+        assert_eq!(s.bouts().unwrap(), vec![hb(1)]);
+        s.append_bout(&hb(2)).unwrap();
+        assert_eq!(s.bouts().unwrap(), vec![hb(1), hb(2)]);
+    }
+
+    #[test]
+    fn concurrent_append() {
+        let d = tempfile::tempdir().unwrap();
+        let s = Arc::new(FsLearningStore::new(d.path()));
+        let hs: Vec<_> = (0..8)
+            .map(|t| {
+                let s = s.clone();
+                std::thread::spawn(move || {
+                    for i in 0..25 {
+                        s.append_bout(&hb(t * 100 + i)).unwrap();
+                    }
+                })
+            })
+            .collect();
+        for h in hs {
+            h.join().unwrap();
+        }
+        assert_eq!(s.bouts().unwrap().len(), 200);
+    }
+
+    #[test]
+    fn workspaces_isolated() {
+        let a = tempfile::tempdir().unwrap();
+        let b = tempfile::tempdir().unwrap();
+        let (sa, sb) = (
+            FsLearningStore::new(a.path()),
+            FsLearningStore::new(b.path()),
+        );
+        sa.append_bout(&hb(1)).unwrap();
+        assert!(sb.bouts().unwrap().is_empty());
+        let (ca, cb) = (FsCourseStore::new(a.path()), FsCourseStore::new(b.path()));
+        ca.append_session_log("c1", "2026-11-05", 1, "hi\n")
+            .unwrap();
+        assert_eq!(cb.read_session_log("c1", "2026-11-05", 1).unwrap(), "");
+        assert_eq!(ca.read_session_log("c1", "2026-11-05", 1).unwrap(), "hi\n");
+        assert!(ca.append_session_log("c1", "../x", 1, "").is_err());
+    }
+}
+
+mod textbook {
+    use super::*;
+    use lp_core::textbook::{BookMeta, TextbookEvent};
+
+    const BOOK: &str = "tb_0123456789abcdef";
+
+    fn imported(ts: i64) -> TextbookEvent {
+        TextbookEvent::Imported {
+            ts,
+            book: BookMeta {
+                id: BOOK.into(),
+                title: "T".into(),
+                file_name: "t.pdf".into(),
+                bytes: 3,
+                sha256: "0".repeat(64),
+                total_pages: 9,
+                page_offset: None,
+            },
+        }
+    }
+
+    fn skipped(ch: u32) -> TextbookEvent {
+        TextbookEvent::ChapterSkipped {
+            ts: 1,
+            chapter: ch,
+            reason: "short".into(),
+        }
+    }
+
+    #[test]
+    fn textbook_ledger_round_trip() {
+        let dir = tempfile::tempdir().unwrap();
+        let s = FsTextbookStore::new(dir.path());
+        assert!(s.events(BOOK).unwrap().is_empty());
+        assert!(!s.exists(BOOK).unwrap());
+        s.append_event(BOOK, &imported(1)).unwrap();
+        s.append_event(BOOK, &skipped(0)).unwrap();
+        assert_eq!(s.events(BOOK).unwrap(), vec![imported(1), skipped(0)]);
+        assert!(s.exists(BOOK).unwrap());
+        s.save_source(BOOK, b"%PDF-1.4").unwrap();
+        assert_eq!(
+            std::fs::read(s.source_path(BOOK).unwrap()).unwrap(),
+            b"%PDF-1.4"
+        );
+        use std::os::unix::fs::PermissionsExt;
+        let mode =
+            |p: std::path::PathBuf| std::fs::metadata(p).unwrap().permissions().mode() & 0o777;
+        assert_eq!(mode(s.source_path(BOOK).unwrap()), 0o600);
+        assert_eq!(mode(dir.path().join("textbooks").join(BOOK)), 0o700);
+        s.remove(BOOK).unwrap();
+        assert!(!s.exists(BOOK).unwrap());
+    }
+
+    #[test]
+    fn textbook_torn_tail_is_trimmed_on_next_append() {
+        let dir = tempfile::tempdir().unwrap();
+        let s = FsTextbookStore::new(dir.path());
+        s.append_event(BOOK, &imported(1)).unwrap();
+        s.append_event(BOOK, &skipped(0)).unwrap();
+        let path = dir
+            .path()
+            .join("textbooks")
+            .join(BOOK)
+            .join("textbook.jsonl");
+        let mut f = std::fs::OpenOptions::new()
+            .append(true)
+            .open(&path)
+            .unwrap();
+        f.write_all(b"deadbeef\t{\"type\":\"chapter_ski").unwrap();
+        drop(f);
+        assert_eq!(s.events(BOOK).unwrap().len(), 2);
+        s.append_event(BOOK, &skipped(1)).unwrap();
+        assert_eq!(
+            s.events(BOOK).unwrap(),
+            vec![imported(1), skipped(0), skipped(1)]
+        );
+    }
+
+    #[test]
+    fn textbook_concurrent_appends_all_land() {
+        let dir = tempfile::tempdir().unwrap();
+        let s = Arc::new(FsTextbookStore::new(dir.path()));
+        let threads: Vec<_> = (0..2)
+            .map(|t| {
+                let s = s.clone();
+                std::thread::spawn(move || {
+                    for i in 0..100 {
+                        s.append_event(BOOK, &skipped(t * 1000 + i)).unwrap();
+                    }
+                })
+            })
+            .collect();
+        threads.into_iter().for_each(|t| t.join().unwrap());
+        assert_eq!(s.events(BOOK).unwrap().len(), 200);
+        let raw = std::fs::read_to_string(
+            dir.path()
+                .join("textbooks")
+                .join(BOOK)
+                .join("textbook.jsonl"),
+        )
+        .unwrap();
+        assert_eq!(raw.lines().count(), 200);
+        assert_eq!(
+            crate::jsonl::read_all::<TextbookEvent>(
+                &dir.path()
+                    .join("textbooks")
+                    .join(BOOK)
+                    .join("textbook.jsonl")
+            )
+            .unwrap()
+            .len(),
+            200,
+            "every line has a good crc"
+        );
+    }
+
+    #[test]
+    fn textbook_two_workspaces_isolated() {
+        let (a, b) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+        let (sa, sb) = (
+            FsTextbookStore::new(a.path()),
+            FsTextbookStore::new(b.path()),
+        );
+        sa.append_event(BOOK, &imported(1)).unwrap();
+        assert!(sb.events(BOOK).unwrap().is_empty());
+        assert!(sb.list().unwrap().is_empty());
+        assert_eq!(sa.list().unwrap(), vec![BOOK.to_string()]);
+    }
+
+    #[test]
+    fn textbook_rejects_bad_book_ids() {
+        let dir = tempfile::tempdir().unwrap();
+        let s = FsTextbookStore::new(dir.path());
+        for bad in [
+            "../x",
+            "tb_XYZ",
+            "",
+            "tb_0123456789abcde/",
+            "tb_0123456789ABCDEF",
+        ] {
+            assert!(s.events(bad).is_err(), "{bad}");
+            assert!(s.append_event(bad, &imported(1)).is_err(), "{bad}");
+            assert!(s.save_source(bad, b"x").is_err(), "{bad}");
+            assert!(s.source_path(bad).is_err(), "{bad}");
+            assert!(s.exists(bad).is_err(), "{bad}");
+        }
+        assert!(!dir.path().join("textbooks").exists());
+    }
+
+    #[test]
+    fn textbook_list_omits_dir_without_imported_line() {
+        let dir = tempfile::tempdir().unwrap();
+        let s = FsTextbookStore::new(dir.path());
+        s.save_source(BOOK, b"%PDF-1.4").unwrap();
+        s.save_source("tb_ffffffffffffffff", b"%PDF-1.4").unwrap();
+        s.append_event("tb_ffffffffffffffff", &imported(1)).unwrap();
+        std::fs::create_dir_all(dir.path().join("textbooks").join("not-a-book")).unwrap();
+        assert_eq!(s.list().unwrap(), vec!["tb_ffffffffffffffff".to_string()]);
+        assert!(!s.exists(BOOK).unwrap());
+    }
 }

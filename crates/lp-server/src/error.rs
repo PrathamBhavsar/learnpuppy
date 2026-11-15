@@ -141,6 +141,12 @@ impl ApiError {
         }])
     }
 
+    /// A gate rejection (409 `conflict`): `gate` is the stable, machine-readable code the UI
+    /// switches on (docs/web/03 §Conventions), one per distinct learner-order violation.
+    pub fn gate(gate: &str, message: impl Into<String>) -> Self {
+        Self::new(ErrorCode::Conflict, message).with_details(serde_json::json!({ "gate": gate }))
+    }
+
     pub fn rate_limited(retry_after_ms: u64) -> Self {
         Self::new(ErrorCode::RateLimited, "all accounts are rate limited")
             .with_details(serde_json::json!({ "retryAfterMs": retry_after_ms }))

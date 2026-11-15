@@ -245,10 +245,18 @@
       },
       "AnswerDto": {
         "properties": {
+          "answer": {
+            "description": "The expected answer, set for a `recall` card.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "correct": {
             "type": "boolean"
           },
           "correctKey": {
+            "description": "Empty for a `recall` card.",
             "type": "string"
           },
           "explanation": {
@@ -281,11 +289,81 @@
         ],
         "type": "object"
       },
+      "AnswerMode": {
+        "enum": [
+          "mcq",
+          "recall"
+        ],
+        "type": "string"
+      },
+      "AnswerRecapDto": {
+        "description": "A question the learner already answered, kept in the transcript so the prompt does not vanish\nafter the verdict: what was asked, what they picked, what was right (docs/web/06 §Learn).",
+        "properties": {
+          "callId": {
+            "description": "The `quiz`/`probe` call this answer replies to (matches `MessageDto::answers_call_id`).",
+            "type": "string"
+          },
+          "confidence": {
+            "format": "int32",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "freeText": {
+            "description": "The learner's own words, when the answer carried any.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "multiSelect": {
+            "type": "boolean"
+          },
+          "options": {
+            "description": "The options in the order the learner saw them (shuffled per call, as in the dock).",
+            "items": {
+              "$ref": "#/components/schemas/RecapOptionDto"
+            },
+            "type": "array"
+          },
+          "picked": {
+            "description": "Display labels of the picked options (`B. the label`), empty for a free-form answer.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "question": {
+            "type": "string"
+          },
+          "right": {
+            "description": "Display labels of the right answers.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "callId",
+          "question",
+          "options",
+          "picked",
+          "right",
+          "multiSelect"
+        ],
+        "type": "object"
+      },
       "AnswerRequest": {
         "properties": {
           "choiceKey": {
-            "description": "`a`..`d`.",
-            "type": "string"
+            "description": "`a`..`d`. Required for an `mcq` card.",
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "clientId": {
             "type": "string"
@@ -306,11 +384,48 @@
               "integer",
               "null"
             ]
+          },
+          "text": {
+            "description": "The typed answer. Required for a `recall` card; graded by code.",
+            "type": [
+              "string",
+              "null"
+            ]
           }
         },
         "required": [
-          "choiceKey",
           "clientId"
+        ],
+        "type": "object"
+      },
+      "AskKindDto": {
+        "enum": [
+          "new",
+          "retry",
+          "interleave",
+          "review"
+        ],
+        "type": "string"
+      },
+      "AskQuestionRequest": {
+        "properties": {
+          "question": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "question"
+        ],
+        "type": "object"
+      },
+      "AskReplyDto": {
+        "properties": {
+          "reply": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "reply"
         ],
         "type": "object"
       },
@@ -344,6 +459,15 @@
         "enum": [
           "stated",
           "inferred"
+        ],
+        "type": "string"
+      },
+      "BookPhaseDto": {
+        "enum": [
+          "importing",
+          "ready",
+          "partial",
+          "failed"
         ],
         "type": "string"
       },
@@ -401,6 +525,119 @@
           "workspaces",
           "accounts",
           "banners"
+        ],
+        "type": "object"
+      },
+      "BoutStatusDto": {
+        "oneOf": [
+          {
+            "description": "Still under every limit; keep teaching.",
+            "properties": {
+              "activeMinutes": {
+                "format": "int32",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "status": {
+                "enum": [
+                  "active"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "activeMinutes",
+              "status"
+            ],
+            "type": "object"
+          },
+          {
+            "description": "This bout hit the 90-minute limit: Close, then wait out the gap.",
+            "properties": {
+              "status": {
+                "enum": [
+                  "bout_limit_reached"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "status"
+            ],
+            "type": "object"
+          },
+          {
+            "description": "Within the gap after the last bout ended.",
+            "properties": {
+              "remainingMinutes": {
+                "format": "int32",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "status": {
+                "enum": [
+                  "gap"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "remainingMinutes",
+              "status"
+            ],
+            "type": "object"
+          },
+          {
+            "description": "The day's minutes are spent; locked until the next day, override aside.",
+            "properties": {
+              "status": {
+                "enum": [
+                  "daily_limit_reached"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "status"
+            ],
+            "type": "object"
+          }
+        ]
+      },
+      "BrainDumpRequest": {
+        "properties": {
+          "text": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "text"
+        ],
+        "type": "object"
+      },
+      "BrainDumpResultDto": {
+        "description": "F29: the key facts a brain dump left out.",
+        "properties": {
+          "missed": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "missed"
+        ],
+        "type": "object"
+      },
+      "BreakRequest": {
+        "properties": {
+          "lesson": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "lesson"
         ],
         "type": "object"
       },
@@ -531,6 +768,9 @@
           },
           {
             "properties": {
+              "answerMode": {
+                "$ref": "#/components/schemas/AnswerMode"
+              },
               "correctKey": {
                 "type": "string"
               },
@@ -566,6 +806,7 @@
             },
             "required": [
               "options",
+              "answerMode",
               "correctKey",
               "rationale",
               "stability",
@@ -766,6 +1007,115 @@
         ],
         "type": "object"
       },
+      "ChapterDetailDto": {
+        "properties": {
+          "chapter": {
+            "$ref": "#/components/schemas/ChapterRowDto"
+          },
+          "objectives": {
+            "items": {
+              "$ref": "#/components/schemas/ObjectiveRowDto"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "chapter",
+          "objectives"
+        ],
+        "type": "object"
+      },
+      "ChapterKindDto": {
+        "enum": [
+          "chapter",
+          "front",
+          "back"
+        ],
+        "type": "string"
+      },
+      "ChapterRowDto": {
+        "properties": {
+          "canImport": {
+            "description": "Importing it may start now: not imported yet, or failed with its retry unused.",
+            "type": "boolean"
+          },
+          "endPage": {
+            "format": "int32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "error": {
+            "description": "A short code (`parse`, `timeout`, `no_cards`, `engine_unavailable`, …); never page text.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "index": {
+            "format": "int32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/ChapterKindDto"
+          },
+          "objectives": {
+            "format": "int32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "startPage": {
+            "description": "Physical, 1-based.",
+            "format": "int32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "state": {
+            "$ref": "#/components/schemas/ChapterStateDto"
+          },
+          "status": {
+            "$ref": "#/components/schemas/ChapterStatusDto"
+          },
+          "title": {
+            "type": "string"
+          },
+          "truncated": {
+            "description": "The chapter was longer than one call may carry and its tail was cut.",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "index",
+          "title",
+          "startPage",
+          "endPage",
+          "kind",
+          "state",
+          "status",
+          "objectives",
+          "truncated",
+          "canImport"
+        ],
+        "type": "object"
+      },
+      "ChapterStateDto": {
+        "enum": [
+          "pending",
+          "importing",
+          "ready",
+          "failed",
+          "skipped"
+        ],
+        "type": "string"
+      },
+      "ChapterStatusDto": {
+        "enum": [
+          "not_read",
+          "checked",
+          "due"
+        ],
+        "type": "string"
+      },
       "ChatDeltaData": {
         "properties": {
           "chatId": {
@@ -949,6 +1299,177 @@
         ],
         "type": "object"
       },
+      "CheckAnswerRequest": {
+        "properties": {
+          "clientId": {
+            "description": "A retry with the same id returns the stored feedback instead of `409`.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "confidence": {
+            "description": "1..=5.",
+            "format": "int32",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "item": {
+            "type": "string"
+          },
+          "ms": {
+            "description": "How long the learner took, measured by the client.",
+            "format": "int64",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "text": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "item",
+          "text"
+        ],
+        "type": "object"
+      },
+      "CheckDto": {
+        "properties": {
+          "correct": {
+            "type": "boolean"
+          },
+          "note": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "correct",
+          "note"
+        ],
+        "type": "object"
+      },
+      "CheckFeedbackDto": {
+        "properties": {
+          "answer": {
+            "type": "string"
+          },
+          "close": {
+            "description": "Near the right answer: the learner confirms with a self-grade.",
+            "type": "boolean"
+          },
+          "correct": {
+            "type": "boolean"
+          },
+          "due": {
+            "description": "Epoch ms the card is next due.",
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "why": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "correct",
+          "close",
+          "answer",
+          "why"
+        ],
+        "type": "object"
+      },
+      "CheckItemDto": {
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/ItemKindDto"
+          },
+          "objectiveId": {
+            "type": "string"
+          },
+          "options": {
+            "description": "Multiple choice only, shuffled; empty for recall.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "q": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "objectiveId",
+          "kind",
+          "q",
+          "options"
+        ],
+        "type": "object"
+      },
+      "CheckRequest": {
+        "properties": {
+          "item": {
+            "type": "string"
+          },
+          "text": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "item",
+          "text"
+        ],
+        "type": "object"
+      },
+      "CheckinNeededDto": {
+        "properties": {
+          "needed": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "needed"
+        ],
+        "type": "object"
+      },
+      "CheckinRequest": {
+        "properties": {
+          "note": {
+            "type": "string"
+          },
+          "sleepHours": {
+            "format": "float",
+            "type": "number"
+          }
+        },
+        "required": [
+          "sleepHours"
+        ],
+        "type": "object"
+      },
+      "CheckinResultDto": {
+        "description": "`review_only_suggested`: self-reported sleep came in under the poor-sleep threshold (F04).",
+        "properties": {
+          "reviewOnlySuggested": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "reviewOnlySuggested"
+        ],
+        "type": "object"
+      },
       "ChoiceDto": {
         "description": "An answer choice. `key` is `a`..`d` and is what `answer` takes.",
         "properties": {
@@ -968,6 +1489,13 @@
       "ClassroomViewDto": {
         "description": "Everything the Classroom renders, derived server-side from the stored session.",
         "properties": {
+          "answers": {
+            "description": "Answered `quiz`/`probe` questions, so the prompt stays readable after the verdict.",
+            "items": {
+              "$ref": "#/components/schemas/AnswerRecapDto"
+            },
+            "type": "array"
+          },
           "id": {
             "type": "string"
           },
@@ -1050,8 +1578,105 @@
           "messages",
           "probeProgress",
           "verdicts",
+          "answers",
           "jobs",
           "turn"
+        ],
+        "type": "object"
+      },
+      "ClockDto": {
+        "description": "F23's clock, plus F24's gap-pause flag and the limits the UI renders against.",
+        "properties": {
+          "bout": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "boutLimitMinutes": {
+            "format": "int32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "dailyLimitMinutes": {
+            "format": "int32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "gapPauseDue": {
+            "description": "F24: recomputed fresh on every call from the bout's own active-minute count, so it\nclears on its own once a heartbeat moves the count past the minute it was due on.",
+            "type": "boolean"
+          },
+          "gapPauseSeconds": {
+            "format": "int32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "minutesToday": {
+            "format": "int32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "overrideUsedToday": {
+            "type": "boolean"
+          },
+          "status": {
+            "$ref": "#/components/schemas/BoutStatusDto"
+          }
+        },
+        "required": [
+          "status",
+          "minutesToday",
+          "overrideUsedToday",
+          "gapPauseDue",
+          "gapPauseSeconds",
+          "boutLimitMinutes",
+          "dailyLimitMinutes"
+        ],
+        "type": "object"
+      },
+      "CloseReportDto": {
+        "description": "F30: the Close screen's numbers.",
+        "properties": {
+          "countLine": {
+            "type": "string"
+          },
+          "focus": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "resume": {
+            "description": "`None` once the course is fully done.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "sureTotal": {
+            "format": "int32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "sureWrong": {
+            "format": "int32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "takeaways": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "takeaways",
+          "focus",
+          "countLine",
+          "sureWrong",
+          "sureTotal"
         ],
         "type": "object"
       },
@@ -1108,6 +1733,138 @@
         ],
         "type": "object"
       },
+      "CourseAnswerRequest": {
+        "properties": {
+          "confidence": {
+            "description": "1..=5.",
+            "format": "int32",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "item": {
+            "type": "string"
+          },
+          "ms": {
+            "description": "How long the learner took, measured by the client.",
+            "format": "int64",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "text": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "item",
+          "text"
+        ],
+        "type": "object"
+      },
+      "CourseListDto": {
+        "properties": {
+          "courses": {
+            "items": {
+              "$ref": "#/components/schemas/CourseSummaryDto"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "courses"
+        ],
+        "type": "object"
+      },
+      "CoursePlanDto": {
+        "properties": {
+          "confirmed": {
+            "type": "boolean"
+          },
+          "lessons": {
+            "items": {
+              "$ref": "#/components/schemas/PlanLessonDto"
+            },
+            "type": "array"
+          },
+          "strands": {
+            "description": "Where the strand probe placed the learner, one entry per strand.",
+            "items": {
+              "$ref": "#/components/schemas/StrandDto"
+            },
+            "type": "array"
+          },
+          "why": {
+            "description": "The learner's one line on why this goal matters.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "confirmed",
+          "why",
+          "strands",
+          "lessons"
+        ],
+        "type": "object"
+      },
+      "CourseState": {
+        "enum": [
+          "writing",
+          "ready",
+          "failed",
+          "refilling"
+        ],
+        "type": "string"
+      },
+      "CourseStatusDto": {
+        "properties": {
+          "reason": {
+            "description": "Why the course failed (`failed` only).",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "state": {
+            "$ref": "#/components/schemas/CourseState"
+          }
+        },
+        "required": [
+          "state"
+        ],
+        "type": "object"
+      },
+      "CourseSummaryDto": {
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "updatedAt": {
+            "description": "Epoch ms.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "version": {
+            "format": "int32",
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "version",
+          "updatedAt"
+        ],
+        "type": "object"
+      },
       "CreateChat": {
         "description": "`POST …/chats`.",
         "properties": {
@@ -1128,6 +1885,22 @@
         },
         "required": [
           "kind"
+        ],
+        "type": "object"
+      },
+      "CreateCourseRequest": {
+        "properties": {
+          "goal": {
+            "type": "string"
+          },
+          "why": {
+            "description": "One line on why this goal matters to the learner (required).",
+            "type": "string"
+          }
+        },
+        "required": [
+          "goal",
+          "why"
         ],
         "type": "object"
       },
@@ -1183,6 +1956,24 @@
         "required": [
           "chatId",
           "turnId"
+        ],
+        "type": "object"
+      },
+      "CreatedCourseDto": {
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/PlacementItemDto"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "id",
+          "items"
         ],
         "type": "object"
       },
@@ -1547,6 +2338,17 @@
         ],
         "type": "object"
       },
+      "ExplainSeenRequest": {
+        "properties": {
+          "lesson": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "lesson"
+        ],
+        "type": "object"
+      },
       "ExportReadyData": {
         "properties": {
           "jobId": {
@@ -1573,6 +2375,60 @@
         ],
         "type": "object"
       },
+      "FeedbackDto": {
+        "properties": {
+          "answer": {
+            "type": "string"
+          },
+          "close": {
+            "description": "Near the right answer: the learner confirms with a self-grade.",
+            "type": "boolean"
+          },
+          "correct": {
+            "type": "boolean"
+          },
+          "why": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "correct",
+          "close",
+          "answer",
+          "why"
+        ],
+        "type": "object"
+      },
+      "FeynmanRequest": {
+        "properties": {
+          "explanation": {
+            "type": "string"
+          },
+          "lesson": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "lesson",
+          "explanation"
+        ],
+        "type": "object"
+      },
+      "FeynmanResultDto": {
+        "properties": {
+          "correct": {
+            "type": "boolean"
+          },
+          "note": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "correct",
+          "note"
+        ],
+        "type": "object"
+      },
       "FieldError": {
         "description": "One invalid input field; `path` is dotted (`profiles.teacher.model`, `items[2].id`).",
         "properties": {
@@ -1586,6 +2442,21 @@
         "required": [
           "path",
           "message"
+        ],
+        "type": "object"
+      },
+      "FlagRequest": {
+        "properties": {
+          "item": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "item",
+          "reason"
         ],
         "type": "object"
       },
@@ -1623,6 +2494,52 @@
         "required": [
           "rating",
           "clientId"
+        ],
+        "type": "object"
+      },
+      "GradedDto": {
+        "description": "A graded placement answer. The answer is revealed because the learner has now answered.",
+        "properties": {
+          "answer": {
+            "type": "string"
+          },
+          "correct": {
+            "type": "boolean"
+          },
+          "item": {
+            "type": "string"
+          },
+          "why": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "item",
+          "correct",
+          "answer",
+          "why"
+        ],
+        "type": "object"
+      },
+      "GradedListDto": {
+        "properties": {
+          "graded": {
+            "items": {
+              "$ref": "#/components/schemas/GradedDto"
+            },
+            "type": "array"
+          },
+          "next": {
+            "description": "The next round of the strand probe; empty once placement is over and the course is writing.",
+            "items": {
+              "$ref": "#/components/schemas/PlacementItemDto"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "graded",
+          "next"
         ],
         "type": "object"
       },
@@ -1859,6 +2776,17 @@
         ],
         "type": "object"
       },
+      "HeartbeatRequest": {
+        "properties": {
+          "bout": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "bout"
+        ],
+        "type": "object"
+      },
       "HelloData": {
         "properties": {
           "serverTime": {
@@ -1885,6 +2813,34 @@
         },
         "required": [
           "file"
+        ],
+        "type": "object"
+      },
+      "ImportRequest": {
+        "description": "At most 200 chapter indices; omit to import everything still pending.",
+        "properties": {
+          "chapters": {
+            "items": {
+              "format": "int32",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          }
+        },
+        "type": "object"
+      },
+      "ImportStartedDto": {
+        "properties": {
+          "jobId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "jobId"
         ],
         "type": "object"
       },
@@ -2066,6 +3022,69 @@
         ],
         "type": "object"
       },
+      "InsertPrereqRequest": {
+        "properties": {
+          "before": {
+            "type": "string"
+          },
+          "missing": {
+            "type": "string"
+          },
+          "visited": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "before",
+          "missing"
+        ],
+        "type": "object"
+      },
+      "ItemDto": {
+        "description": "A question: never the answer, the accepted forms or the explanation.",
+        "properties": {
+          "ask": {
+            "$ref": "#/components/schemas/AskKindDto"
+          },
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/ItemKindDto"
+          },
+          "lesson": {
+            "type": "string"
+          },
+          "options": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "q": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "lesson",
+          "kind",
+          "q",
+          "options",
+          "ask"
+        ],
+        "type": "object"
+      },
+      "ItemKindDto": {
+        "enum": [
+          "mcq",
+          "recall"
+        ],
+        "type": "string"
+      },
       "Job": {
         "properties": {
           "artifactId": {
@@ -2107,7 +3126,7 @@
             "type": "string"
           },
           "kind": {
-            "description": "`research`, `pdf`, `visual` or `demo`.",
+            "description": "`research`, `pdf`, `visual`, `demo` or `textbook`.",
             "type": "string"
           },
           "status": {
@@ -2131,6 +3150,31 @@
           "artifactId": {
             "type": [
               "string",
+              "null"
+            ]
+          },
+          "bookId": {
+            "description": "Textbook import jobs: the book being imported.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "chaptersDone": {
+            "description": "Textbook import jobs: chapters finished.",
+            "format": "int64",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "chaptersTotal": {
+            "description": "Textbook import jobs: chapters this run covers.",
+            "format": "int64",
+            "minimum": 0,
+            "type": [
+              "integer",
               "null"
             ]
           },
@@ -2224,6 +3268,64 @@
         ],
         "type": "object"
       },
+      "LessonDto": {
+        "properties": {
+          "explain": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "keyFacts": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "objective": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "objective",
+          "explain",
+          "keyFacts"
+        ],
+        "type": "object"
+      },
+      "LessonKindDto": {
+        "enum": [
+          "conceptual",
+          "procedural",
+          "definitional"
+        ],
+        "type": "string"
+      },
+      "MapSourceDto": {
+        "enum": [
+          "outline",
+          "toc",
+          "chunks"
+        ],
+        "type": "string"
+      },
+      "MasteryCountDto": {
+        "description": "The mastery bar's count line, e.g. \"11 of 14 confirmed, 3 open, 1 parked\".",
+        "properties": {
+          "countLine": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "countLine"
+        ],
+        "type": "object"
+      },
       "MessageDto": {
         "properties": {
           "answersCallId": {
@@ -2289,6 +3391,424 @@
           "compaction"
         ],
         "type": "string"
+      },
+      "MethodAnswerRequest": {
+        "properties": {
+          "confidence": {
+            "format": "int32",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "gap": {
+            "description": "\"I don't know\": a gap, never a miss (F12).",
+            "type": "boolean"
+          },
+          "item": {
+            "type": "string"
+          },
+          "lesson": {
+            "type": "string"
+          },
+          "ms": {
+            "format": "int64",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "reasoning": {
+            "type": "string"
+          },
+          "text": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "item",
+          "lesson"
+        ],
+        "type": "object"
+      },
+      "MethodAnswerResultDto": {
+        "oneOf": [
+          {
+            "description": "Graded on the spot: multiple choice, an exact recall match, or a gap.",
+            "properties": {
+              "correct": {
+                "type": "boolean"
+              },
+              "status": {
+                "enum": [
+                  "graded"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "correct",
+              "status"
+            ],
+            "type": "object"
+          },
+          {
+            "description": "A recall miss the rubric did not match: resolved later by a grader run (F15).",
+            "properties": {
+              "status": {
+                "enum": [
+                  "pending"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "status"
+            ],
+            "type": "object"
+          }
+        ]
+      },
+      "MethodAskKindDto": {
+        "enum": [
+          "review",
+          "new",
+          "retry",
+          "mixed"
+        ],
+        "type": "string"
+      },
+      "MethodItemDto": {
+        "properties": {
+          "angle": {
+            "description": "An alternate explanation to show ahead of this retry, when the lesson has one.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "ask": {
+            "$ref": "#/components/schemas/MethodAskKindDto"
+          },
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/ItemKindDto"
+          },
+          "lesson": {
+            "type": "string"
+          },
+          "options": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "q": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "lesson",
+          "kind",
+          "q",
+          "options",
+          "ask"
+        ],
+        "type": "object"
+      },
+      "MethodLessonDto": {
+        "properties": {
+          "explain": {
+            "type": "string"
+          },
+          "hook": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "keyFacts": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "rungText": {
+            "description": "The faded-example text at the current rung; procedural lessons only.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "title": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "hook",
+          "explain",
+          "keyFacts"
+        ],
+        "type": "object"
+      },
+      "MethodSettingDto": {
+        "description": "One tunable method setting with its default and allowed range.",
+        "properties": {
+          "default": {
+            "format": "int32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "max": {
+            "format": "int32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "min": {
+            "format": "int32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "name": {
+            "type": "string"
+          },
+          "value": {
+            "format": "int32",
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "name",
+          "value",
+          "default",
+          "min",
+          "max"
+        ],
+        "type": "object"
+      },
+      "MethodSettingsDto": {
+        "properties": {
+          "settings": {
+            "items": {
+              "$ref": "#/components/schemas/MethodSettingDto"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "settings"
+        ],
+        "type": "object"
+      },
+      "MethodStepDto": {
+        "description": "What comes next on a `method_version >= 1` course (`lp_core::method::Step`), with its content\nfilled in from the course; never an answer, a `why`, or a rubric.",
+        "oneOf": [
+          {
+            "properties": {
+              "step": {
+                "enum": [
+                  "confirm_plan"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "step"
+            ],
+            "type": "object"
+          },
+          {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/PredictDto"
+              },
+              {
+                "properties": {
+                  "step": {
+                    "enum": [
+                      "predict"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "step"
+                ],
+                "type": "object"
+              }
+            ]
+          },
+          {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/MethodLessonDto"
+              },
+              {
+                "properties": {
+                  "step": {
+                    "enum": [
+                      "explain"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "step"
+                ],
+                "type": "object"
+              }
+            ]
+          },
+          {
+            "properties": {
+              "lesson": {
+                "type": "string"
+              },
+              "step": {
+                "enum": [
+                  "notes"
+                ],
+                "type": "string"
+              },
+              "title": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "lesson",
+              "title",
+              "step"
+            ],
+            "type": "object"
+          },
+          {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/MethodItemDto"
+              },
+              {
+                "properties": {
+                  "step": {
+                    "enum": [
+                      "ask"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "step"
+                ],
+                "type": "object"
+              }
+            ]
+          },
+          {
+            "properties": {
+              "lesson": {
+                "type": "string"
+              },
+              "step": {
+                "enum": [
+                  "break"
+                ],
+                "type": "string"
+              },
+              "title": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "lesson",
+              "title",
+              "step"
+            ],
+            "type": "object"
+          },
+          {
+            "properties": {
+              "keyFacts": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "lesson": {
+                "type": "string"
+              },
+              "step": {
+                "enum": [
+                  "feynman"
+                ],
+                "type": "string"
+              },
+              "title": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "lesson",
+              "title",
+              "keyFacts",
+              "step"
+            ],
+            "type": "object"
+          },
+          {
+            "properties": {
+              "step": {
+                "enum": [
+                  "close"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "step"
+            ],
+            "type": "object"
+          }
+        ]
+      },
+      "MissDto": {
+        "properties": {
+          "answer": {
+            "type": "string"
+          },
+          "q": {
+            "type": "string"
+          },
+          "why": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "q",
+          "answer",
+          "why"
+        ],
+        "type": "object"
+      },
+      "MissListDto": {
+        "properties": {
+          "misses": {
+            "items": {
+              "$ref": "#/components/schemas/MissDto"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "misses"
+        ],
+        "type": "object"
       },
       "NextDto": {
         "properties": {
@@ -2410,6 +3930,20 @@
         ],
         "type": "object"
       },
+      "NoteRequest": {
+        "properties": {
+          "lesson": {
+            "type": "string"
+          },
+          "text": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "lesson"
+        ],
+        "type": "object"
+      },
       "NoteUploadDto": {
         "properties": {
           "artifactId": {
@@ -2441,6 +3975,40 @@
         },
         "required": [
           "file"
+        ],
+        "type": "object"
+      },
+      "ObjectiveRowDto": {
+        "properties": {
+          "endPage": {
+            "format": "int32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "id": {
+            "type": "string"
+          },
+          "items": {
+            "description": "How many stored quiz items; the items themselves are never sent here.",
+            "format": "int32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "startPage": {
+            "format": "int32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "text": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "text",
+          "startPage",
+          "endPage",
+          "items"
         ],
         "type": "object"
       },
@@ -2476,6 +4044,17 @@
           "workspaceId",
           "path",
           "otherPath"
+        ],
+        "type": "object"
+      },
+      "OverrideRequest": {
+        "properties": {
+          "reason": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "reason"
         ],
         "type": "object"
       },
@@ -2686,6 +4265,70 @@
         ],
         "type": "object"
       },
+      "PlacementAnswerDto": {
+        "properties": {
+          "blocked": {
+            "description": "The learner is missing a prerequisite for this strand.",
+            "type": "boolean"
+          },
+          "guessed": {
+            "description": "The learner was guessing: a right answer counts as `edge`, never `known`.",
+            "type": "boolean"
+          },
+          "item": {
+            "type": "string"
+          },
+          "text": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "item",
+          "text"
+        ],
+        "type": "object"
+      },
+      "PlacementItemDto": {
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/ItemKindDto"
+          },
+          "options": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "q": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "q",
+          "options"
+        ],
+        "type": "object"
+      },
+      "PlacementListDto": {
+        "description": "`GET …/placement`: the questions still to answer, empty once submitted.",
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/PlacementItemDto"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "type": "object"
+      },
       "PlanDto": {
         "properties": {
           "currentId": {
@@ -2728,6 +4371,33 @@
         ],
         "type": "object"
       },
+      "PlanLessonDto": {
+        "description": "A lesson as the plan map shows it: structure only, never its content.",
+        "properties": {
+          "dependsOn": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/LessonKindDto"
+          },
+          "title": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "kind",
+          "dependsOn"
+        ],
+        "type": "object"
+      },
       "PlanNodeDto": {
         "properties": {
           "id": {
@@ -2767,6 +4437,46 @@
         },
         "required": [
           "chatId"
+        ],
+        "type": "object"
+      },
+      "PredictDto": {
+        "properties": {
+          "lesson": {
+            "type": "string"
+          },
+          "options": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "q": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "lesson",
+          "title",
+          "q",
+          "options"
+        ],
+        "type": "object"
+      },
+      "PredictRequest": {
+        "properties": {
+          "guess": {
+            "type": "string"
+          },
+          "lesson": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "lesson"
         ],
         "type": "object"
       },
@@ -2924,6 +4634,27 @@
         ],
         "type": "object"
       },
+      "ProfileEntryDto": {
+        "description": "F34: one dated profile entry; the latest per key wins.",
+        "properties": {
+          "key": {
+            "type": "string"
+          },
+          "ts": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "value": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "ts",
+          "key",
+          "value"
+        ],
+        "type": "object"
+      },
       "ProfilePingBody": {
         "description": "A profile to try: provider, model and optional effort.",
         "properties": {
@@ -2965,6 +4696,20 @@
           "ok",
           "latencyMs",
           "message"
+        ],
+        "type": "object"
+      },
+      "ProfileResultDto": {
+        "properties": {
+          "entries": {
+            "items": {
+              "$ref": "#/components/schemas/ProfileEntryDto"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "entries"
         ],
         "type": "object"
       },
@@ -3019,6 +4764,10 @@
       "QueueCardDto": {
         "description": "A due card to answer. The correct option and rationale are withheld until `answer`.",
         "properties": {
+          "answerMode": {
+            "$ref": "#/components/schemas/AnswerMode",
+            "description": "`mcq` (pick a choice) or `recall` (type the answer; send `text`)."
+          },
           "due": {
             "format": "int64",
             "type": "integer"
@@ -3034,6 +4783,7 @@
             "type": "string"
           },
           "options": {
+            "description": "Empty for a `recall` card.",
             "items": {
               "$ref": "#/components/schemas/ChoiceDto"
             },
@@ -3053,6 +4803,7 @@
           "id",
           "front",
           "options",
+          "answerMode",
           "kind",
           "due",
           "state"
@@ -3085,6 +4836,78 @@
         ],
         "type": "object"
       },
+      "ReadingCheckDto": {
+        "properties": {
+          "chapter": {
+            "format": "int32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "checkId": {
+            "type": "string"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/CheckItemDto"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "checkId",
+          "chapter",
+          "items"
+        ],
+        "type": "object"
+      },
+      "ReadyAnswersDto": {
+        "description": "F03's ready-gate checklist; `focus_seconds` is the time the focus timer actually ran.",
+        "properties": {
+          "focusSeconds": {
+            "format": "int32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "phoneAway": {
+            "type": "boolean"
+          },
+          "tabsClosed": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "phoneAway",
+          "tabsClosed",
+          "focusSeconds"
+        ],
+        "type": "object"
+      },
+      "RecapOptionDto": {
+        "description": "One option of an answered question, lettered and flagged as the learner saw it. The grade lives\nin `picked`/`right`, so the SPA renders it without re-deriving anything (CLAUDE.md).",
+        "properties": {
+          "letter": {
+            "type": "string"
+          },
+          "picked": {
+            "description": "The learner picked this option.",
+            "type": "boolean"
+          },
+          "right": {
+            "description": "This option is right.",
+            "type": "boolean"
+          },
+          "text": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "letter",
+          "text",
+          "picked",
+          "right"
+        ],
+        "type": "object"
+      },
       "RegenerateDto": {
         "properties": {
           "cardIds": {
@@ -3110,6 +4933,54 @@
           "rejected"
         ],
         "type": "object"
+      },
+      "RegisterListDto": {
+        "properties": {
+          "rows": {
+            "items": {
+              "$ref": "#/components/schemas/RegisterRowDto"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "rows"
+        ],
+        "type": "object"
+      },
+      "RegisterRowDto": {
+        "description": "F19: one misconception row, folded live from the course's events (no stored ledger yet).",
+        "properties": {
+          "belief": {
+            "type": "string"
+          },
+          "item": {
+            "type": "string"
+          },
+          "misses": {
+            "format": "int32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "status": {
+            "$ref": "#/components/schemas/RegisterStatusDto"
+          }
+        },
+        "required": [
+          "item",
+          "belief",
+          "status",
+          "misses"
+        ],
+        "type": "object"
+      },
+      "RegisterStatusDto": {
+        "enum": [
+          "open",
+          "retested-ok",
+          "recurring"
+        ],
+        "type": "string"
       },
       "RejectedCardDto": {
         "properties": {
@@ -3160,6 +5031,73 @@
         ],
         "type": "object"
       },
+      "ReviewDateDto": {
+        "description": "F32: one proposed first test, labelled by the fact it covers.",
+        "properties": {
+          "cardId": {
+            "type": "string"
+          },
+          "due": {
+            "description": "Epoch ms.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "label": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "cardId",
+          "label",
+          "due"
+        ],
+        "type": "object"
+      },
+      "ReviewDateEntry": {
+        "properties": {
+          "cardId": {
+            "type": "string"
+          },
+          "due": {
+            "description": "Epoch ms.",
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "cardId",
+          "due"
+        ],
+        "type": "object"
+      },
+      "ReviewDateListDto": {
+        "properties": {
+          "dates": {
+            "items": {
+              "$ref": "#/components/schemas/ReviewDateDto"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "dates"
+        ],
+        "type": "object"
+      },
+      "ReviewDatesRequest": {
+        "properties": {
+          "dates": {
+            "items": {
+              "$ref": "#/components/schemas/ReviewDateEntry"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "dates"
+        ],
+        "type": "object"
+      },
       "ReviewLogDto": {
         "properties": {
           "deviceId": {
@@ -3180,6 +5118,25 @@
           "ts",
           "rating",
           "deviceId"
+        ],
+        "type": "object"
+      },
+      "ScheduleDto": {
+        "description": "F01: weekly slots and wake time. `.ics` export is deferred past G4.",
+        "properties": {
+          "slots": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "wakeTime": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "wakeTime",
+          "slots"
         ],
         "type": "object"
       },
@@ -3228,6 +5185,33 @@
           "workspaceName",
           "node",
           "score"
+        ],
+        "type": "object"
+      },
+      "SeenRequest": {
+        "properties": {
+          "lesson": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "lesson"
+        ],
+        "type": "object"
+      },
+      "SelfGradeRequest": {
+        "properties": {
+          "grade": {
+            "description": "`again`, `hard`, `good` or `easy`.",
+            "type": "string"
+          },
+          "item": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "item",
+          "grade"
         ],
         "type": "object"
       },
@@ -3596,6 +5580,56 @@
         ],
         "type": "object"
       },
+      "SetMethodSettingRequest": {
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "value": {
+            "format": "int32",
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "name",
+          "value"
+        ],
+        "type": "object"
+      },
+      "SetProfileRequest": {
+        "properties": {
+          "key": {
+            "type": "string"
+          },
+          "value": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "key",
+          "value"
+        ],
+        "type": "object"
+      },
+      "SetScheduleRequest": {
+        "properties": {
+          "slots": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "wakeTime": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "wakeTime",
+          "slots"
+        ],
+        "type": "object"
+      },
       "SettingsDto": {
         "description": "The global settings the UI edits.",
         "properties": {
@@ -3642,6 +5676,34 @@
         ],
         "type": "object"
       },
+      "SlotRecordDto": {
+        "properties": {
+          "day": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "slot": {
+            "type": "string"
+          },
+          "state": {
+            "$ref": "#/components/schemas/SlotStateDto"
+          }
+        },
+        "required": [
+          "day",
+          "slot",
+          "state"
+        ],
+        "type": "object"
+      },
+      "SlotStateDto": {
+        "enum": [
+          "kept",
+          "missed",
+          "upcoming"
+        ],
+        "type": "string"
+      },
       "SourcesDto": {
         "properties": {
           "agy": {
@@ -3676,6 +5738,21 @@
           "git",
           "allow",
           "sinceDays"
+        ],
+        "type": "object"
+      },
+      "StartBoutRequest": {
+        "properties": {
+          "course": {
+            "type": "string"
+          },
+          "ready": {
+            "$ref": "#/components/schemas/ReadyAnswersDto"
+          }
+        },
+        "required": [
+          "course",
+          "ready"
         ],
         "type": "object"
       },
@@ -3754,6 +5831,139 @@
         ],
         "type": "object"
       },
+      "StepDto": {
+        "description": "The next thing to show.",
+        "oneOf": [
+          {
+            "properties": {
+              "lesson": {
+                "$ref": "#/components/schemas/LessonDto"
+              },
+              "step": {
+                "enum": [
+                  "explain"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "lesson",
+              "step"
+            ],
+            "type": "object"
+          },
+          {
+            "properties": {
+              "item": {
+                "$ref": "#/components/schemas/ItemDto"
+              },
+              "step": {
+                "enum": [
+                  "ask"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "item",
+              "step"
+            ],
+            "type": "object"
+          },
+          {
+            "description": "Nothing stored is left; poll `status` and ask again.",
+            "properties": {
+              "step": {
+                "enum": [
+                  "waiting"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "step"
+            ],
+            "type": "object"
+          },
+          {
+            "properties": {
+              "step": {
+                "enum": [
+                  "done"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "step"
+            ],
+            "type": "object"
+          }
+        ]
+      },
+      "StrandDto": {
+        "properties": {
+          "label": {
+            "$ref": "#/components/schemas/StrandLabelDto"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "label"
+        ],
+        "type": "object"
+      },
+      "StrandLabelDto": {
+        "enum": [
+          "known",
+          "edge",
+          "unknown",
+          "blocked"
+        ],
+        "type": "string"
+      },
+      "SubmitPlacementRequest": {
+        "properties": {
+          "answers": {
+            "items": {
+              "$ref": "#/components/schemas/PlacementAnswerDto"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "answers"
+        ],
+        "type": "object"
+      },
+      "SuggestSlotsRequest": {
+        "properties": {
+          "wakeTime": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "wakeTime"
+        ],
+        "type": "object"
+      },
+      "SuggestSlotsResultDto": {
+        "properties": {
+          "slots": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "slots"
+        ],
+        "type": "object"
+      },
       "SyncDto": {
         "properties": {
           "cards": {
@@ -3771,6 +5981,232 @@
         ],
         "type": "object"
       },
+      "TextbookDto": {
+        "properties": {
+          "autoCalls": {
+            "format": "int32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "chapters": {
+            "items": {
+              "$ref": "#/components/schemas/ChapterRowDto"
+            },
+            "type": "array"
+          },
+          "fileName": {
+            "type": "string"
+          },
+          "hourCap": {
+            "format": "int32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "hourUsed": {
+            "description": "Chapter imports in the last hour, and the most a book allows in any rolling hour.",
+            "format": "int32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "id": {
+            "type": "string"
+          },
+          "jobId": {
+            "description": "The running import job.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "mapSource": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/MapSourceDto"
+              }
+            ]
+          },
+          "pageOffset": {
+            "description": "Physical minus printed page number, when one was found.",
+            "format": "int32",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "requestedCalls": {
+            "format": "int32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "title": {
+            "type": "string"
+          },
+          "totalPages": {
+            "format": "int32",
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "fileName",
+          "totalPages",
+          "autoCalls",
+          "requestedCalls",
+          "hourUsed",
+          "hourCap",
+          "chapters"
+        ],
+        "type": "object"
+      },
+      "TextbookListDto": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/TextbookSummaryDto"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "type": "object"
+      },
+      "TextbookSummaryDto": {
+        "properties": {
+          "chapters": {
+            "format": "int32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "createdAt": {
+            "description": "Epoch ms of the first import.",
+            "format": "int64",
+            "type": "integer"
+          },
+          "id": {
+            "type": "string"
+          },
+          "ready": {
+            "format": "int32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "state": {
+            "$ref": "#/components/schemas/BookPhaseDto"
+          },
+          "title": {
+            "type": "string"
+          },
+          "totalPages": {
+            "format": "int32",
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "totalPages",
+          "chapters",
+          "ready",
+          "state",
+          "createdAt"
+        ],
+        "type": "object"
+      },
+      "TextbookUploadDto": {
+        "properties": {
+          "bookId": {
+            "type": "string"
+          },
+          "bytes": {
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "existing": {
+            "description": "Always false after the upload returns: upload maps the book and starts no job. A chapter is\nimported when the learner opens it (`POST …/import` with that chapter).",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "bookId",
+          "existing",
+          "bytes"
+        ],
+        "type": "object"
+      },
+      "TextbookUploadForm": {
+        "description": "A PDF book, at most 50 MB.",
+        "properties": {
+          "file": {
+            "format": "binary",
+            "type": "string"
+          }
+        },
+        "required": [
+          "file"
+        ],
+        "type": "object"
+      },
+      "TextbookUsageDto": {
+        "properties": {
+          "autoCalls": {
+            "format": "int32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "cheapIn": {
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "cheapOut": {
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "hourCap": {
+            "format": "int32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "hourUsed": {
+            "description": "Chapter imports in the last hour, and the most a book allows in any rolling hour.",
+            "format": "int32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "nextSlotAt": {
+            "description": "Epoch ms when the oldest counted import leaves the hour; set only while at the cap.",
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "requestedCalls": {
+            "format": "int32",
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "cheapIn",
+          "cheapOut",
+          "autoCalls",
+          "requestedCalls",
+          "hourUsed",
+          "hourCap"
+        ],
+        "type": "object"
+      },
       "ToolCall": {
         "properties": {
           "id": {
@@ -3783,6 +6219,20 @@
         "required": [
           "id",
           "name"
+        ],
+        "type": "object"
+      },
+      "TrackSlotsResultDto": {
+        "properties": {
+          "slots": {
+            "items": {
+              "$ref": "#/components/schemas/SlotRecordDto"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "slots"
         ],
         "type": "object"
       },
@@ -4118,6 +6568,10 @@
             "description": "`ltr`, `rtl` or `auto`.",
             "type": "string"
           },
+          "readingFont": {
+            "description": "`sans`, `serif` or `mono`.",
+            "type": "string"
+          },
           "reduceMotion": {
             "type": "boolean"
           },
@@ -4130,9 +6584,55 @@
           "theme",
           "direction",
           "density",
+          "readingFont",
           "reduceMotion",
           "confirmDestructive",
           "autoOpenBrowser"
+        ],
+        "type": "object"
+      },
+      "UsageDto": {
+        "properties": {
+          "cheapIn": {
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "cheapOut": {
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "refillWaitingUntil": {
+            "description": "While a refill waits for a strong slot: when one frees up (epoch ms).",
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "strongCallsThisHour": {
+            "format": "int32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "strongIn": {
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "strongOut": {
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "strongIn",
+          "strongOut",
+          "cheapIn",
+          "cheapOut",
+          "strongCallsThisHour"
         ],
         "type": "object"
       },
@@ -4340,7 +6840,7 @@
       "name": "MIT"
     },
     "title": "LearnPuppy",
-    "version": "0.1.0"
+    "version": "0.1.0-rc.1"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -5926,6 +8426,2063 @@
         ]
       }
     },
+    "/workspaces/{ws}/courses": {
+      "get": {
+        "operationId": "get_workspaces_ws_courses",
+        "parameters": [
+          {
+            "description": "Workspace id",
+            "in": "path",
+            "name": "ws",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CourseListDto"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "summary": "Courses, newest first.",
+        "tags": [
+          "courses"
+        ]
+      },
+      "post": {
+        "operationId": "post_workspaces_ws_courses",
+        "parameters": [
+          {
+            "description": "Workspace id",
+            "in": "path",
+            "name": "ws",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateCourseRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreatedCourseDto"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Bad goal"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Workspace archived"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "No AI available"
+          }
+        },
+        "summary": "Starts a course: runs placement on a cheap model (can take many seconds). Nothing is stored when\nno AI can answer (503 `engine_unavailable`).",
+        "tags": [
+          "courses"
+        ]
+      }
+    },
+    "/workspaces/{ws}/courses/{id}/answer": {
+      "post": {
+        "operationId": "post_workspaces_ws_courses_id_answer",
+        "parameters": [
+          {
+            "description": "Workspace id",
+            "in": "path",
+            "name": "ws",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Course id",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CourseAnswerRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FeedbackDto"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Workspace archived"
+          }
+        },
+        "summary": "Grades an answer with code. Mcq: send the option text; recall: the typed answer.",
+        "tags": [
+          "courses"
+        ]
+      }
+    },
+    "/workspaces/{ws}/courses/{id}/ask": {
+      "post": {
+        "operationId": "post_workspaces_ws_courses_id_ask",
+        "parameters": [
+          {
+            "description": "Workspace id",
+            "in": "path",
+            "name": "ws",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Course id",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AskQuestionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AskReplyDto"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Workspace archived"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "No AI available"
+          }
+        },
+        "summary": "A short answer to a learner question (cheap model). The question is kept even when no AI can\nanswer now (503 `engine_unavailable`).",
+        "tags": [
+          "courses"
+        ]
+      }
+    },
+    "/workspaces/{ws}/courses/{id}/braindump": {
+      "post": {
+        "operationId": "post_workspaces_ws_courses_id_braindump",
+        "parameters": [
+          {
+            "description": "Workspace id",
+            "in": "path",
+            "name": "ws",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Course id",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BrainDumpRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BrainDumpResultDto"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "summary": "F29: the key facts a brain dump left out. Never touches the store.",
+        "tags": [
+          "courses"
+        ]
+      }
+    },
+    "/workspaces/{ws}/courses/{id}/break": {
+      "post": {
+        "operationId": "post_workspaces_ws_courses_id_break",
+        "parameters": [
+          {
+            "description": "Workspace id",
+            "in": "path",
+            "name": "ws",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Course id",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BreakRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Gate rejection"
+          }
+        },
+        "summary": "F21: offered once per lesson, after two straight misses, instead of a third angle.",
+        "tags": [
+          "courses"
+        ]
+      }
+    },
+    "/workspaces/{ws}/courses/{id}/check": {
+      "post": {
+        "operationId": "post_workspaces_ws_courses_id_check",
+        "parameters": [
+          {
+            "description": "Workspace id",
+            "in": "path",
+            "name": "ws",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Course id",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CheckRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CheckDto"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Workspace archived"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "No AI available"
+          }
+        },
+        "summary": "\"Check my answer\": a cheap model judges a typed answer.",
+        "tags": [
+          "courses"
+        ]
+      }
+    },
+    "/workspaces/{ws}/courses/{id}/close": {
+      "post": {
+        "operationId": "post_workspaces_ws_courses_id_close",
+        "parameters": [
+          {
+            "description": "Workspace id",
+            "in": "path",
+            "name": "ws",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Course id",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CloseReportDto"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "summary": "F29-F31/F32/F35: ends the session — makes an FSRS card for every fact confirmed just now,\nwrites the confirmed-fact nodes to the Knowledge Graph, and appends the session log.",
+        "tags": [
+          "courses"
+        ]
+      }
+    },
+    "/workspaces/{ws}/courses/{id}/explain-seen": {
+      "post": {
+        "operationId": "post_workspaces_ws_courses_id_explain_seen",
+        "parameters": [
+          {
+            "description": "Workspace id",
+            "in": "path",
+            "name": "ws",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Course id",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExplainSeenRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Gate rejection"
+          }
+        },
+        "summary": "F10/F16: marks a lesson's explanation (or one rung of a procedure) as read.",
+        "tags": [
+          "courses"
+        ]
+      }
+    },
+    "/workspaces/{ws}/courses/{id}/feynman": {
+      "post": {
+        "operationId": "post_workspaces_ws_courses_id_feynman",
+        "parameters": [
+          {
+            "description": "Workspace id",
+            "in": "path",
+            "name": "ws",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Course id",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FeynmanRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FeynmanResultDto"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Gate rejection"
+          }
+        },
+        "summary": "F18: an explain-it-to-a-ten-year-old pass. The model's verdict never blocks the gate.",
+        "tags": [
+          "courses"
+        ]
+      }
+    },
+    "/workspaces/{ws}/courses/{id}/flag": {
+      "post": {
+        "operationId": "post_workspaces_ws_courses_id_flag",
+        "parameters": [
+          {
+            "description": "Workspace id",
+            "in": "path",
+            "name": "ws",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Course id",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FlagRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Workspace archived"
+          }
+        },
+        "summary": "\"This looks wrong\": flags an item.",
+        "tags": [
+          "courses"
+        ]
+      }
+    },
+    "/workspaces/{ws}/courses/{id}/mastery": {
+      "get": {
+        "operationId": "get_workspaces_ws_courses_id_mastery",
+        "parameters": [
+          {
+            "description": "Workspace id",
+            "in": "path",
+            "name": "ws",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Course id",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MasteryCountDto"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "summary": "F14: the mastery bar's count line across the whole course.",
+        "tags": [
+          "courses"
+        ]
+      }
+    },
+    "/workspaces/{ws}/courses/{id}/misses": {
+      "get": {
+        "operationId": "get_workspaces_ws_courses_id_misses",
+        "parameters": [
+          {
+            "description": "Workspace id",
+            "in": "path",
+            "name": "ws",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Course id",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MissListDto"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "summary": "The questions the learner missed in placement, with answers: a mini lesson while the course is\nwritten.",
+        "tags": [
+          "courses"
+        ]
+      }
+    },
+    "/workspaces/{ws}/courses/{id}/next": {
+      "post": {
+        "operationId": "post_workspaces_ws_courses_id_next",
+        "parameters": [
+          {
+            "description": "Workspace id",
+            "in": "path",
+            "name": "ws",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Course id",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StepDto"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Workspace archived"
+          }
+        },
+        "summary": "The next step of the session from stored content (no model call). A POST because it advances\nthe session.",
+        "tags": [
+          "courses"
+        ]
+      }
+    },
+    "/workspaces/{ws}/courses/{id}/note": {
+      "post": {
+        "operationId": "post_workspaces_ws_courses_id_note",
+        "parameters": [
+          {
+            "description": "Workspace id",
+            "in": "path",
+            "name": "ws",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Course id",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NoteRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Gate rejection"
+          }
+        },
+        "summary": "F11: the notes gate between explanation and quiz.",
+        "tags": [
+          "courses"
+        ]
+      }
+    },
+    "/workspaces/{ws}/courses/{id}/placement": {
+      "get": {
+        "operationId": "get_workspaces_ws_courses_id_placement",
+        "parameters": [
+          {
+            "description": "Workspace id",
+            "in": "path",
+            "name": "ws",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Course id",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlacementListDto"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "summary": "The placement questions still to answer (empty once submitted), so a reloaded page can carry on.",
+        "tags": [
+          "courses"
+        ]
+      },
+      "post": {
+        "operationId": "post_workspaces_ws_courses_id_placement",
+        "parameters": [
+          {
+            "description": "Workspace id",
+            "in": "path",
+            "name": "ws",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Course id",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SubmitPlacementRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GradedListDto"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Workspace archived"
+          }
+        },
+        "summary": "Grades one placement round with code. While `next` is non-empty answer those questions the same\nway; once it is empty the course is being written in the background, poll `status`.",
+        "tags": [
+          "courses"
+        ]
+      }
+    },
+    "/workspaces/{ws}/courses/{id}/plan": {
+      "get": {
+        "operationId": "get_workspaces_ws_courses_id_plan",
+        "parameters": [
+          {
+            "description": "Workspace id",
+            "in": "path",
+            "name": "ws",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Course id",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CoursePlanDto"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "summary": "The plan map. A `method_version == 0` course (the stored-sequence path) has none: `404`.",
+        "tags": [
+          "courses"
+        ]
+      }
+    },
+    "/workspaces/{ws}/courses/{id}/plan/confirm": {
+      "post": {
+        "operationId": "post_workspaces_ws_courses_id_plan_confirm",
+        "parameters": [
+          {
+            "description": "Workspace id",
+            "in": "path",
+            "name": "ws",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Course id",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Gate rejection"
+          }
+        },
+        "summary": "F07: confirms the plan map. `409 plan_has_cycle` if the plan (still) contains one.",
+        "tags": [
+          "courses"
+        ]
+      }
+    },
+    "/workspaces/{ws}/courses/{id}/plan/prereq": {
+      "post": {
+        "operationId": "post_workspaces_ws_courses_id_plan_prereq",
+        "parameters": [
+          {
+            "description": "Workspace id",
+            "in": "path",
+            "name": "ws",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Course id",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InsertPrereqRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CoursePlanDto"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Gate rejection"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "No AI available"
+          }
+        },
+        "summary": "F20: writes one short prerequisite lesson (one cheap model call) and splices it into the\nfrozen plan ahead of `before`. `409 prereq_cycle` / `409 prereq_reorders_visited` if it would.",
+        "tags": [
+          "courses"
+        ]
+      }
+    },
+    "/workspaces/{ws}/courses/{id}/predict": {
+      "post": {
+        "operationId": "post_workspaces_ws_courses_id_predict",
+        "parameters": [
+          {
+            "description": "Workspace id",
+            "in": "path",
+            "name": "ws",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Course id",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PredictRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Gate rejection"
+          }
+        },
+        "summary": "F09: an ungraded prediction before a conceptual explanation.",
+        "tags": [
+          "courses"
+        ]
+      }
+    },
+    "/workspaces/{ws}/courses/{id}/quiz-answer": {
+      "post": {
+        "operationId": "post_workspaces_ws_courses_id_quiz_answer",
+        "parameters": [
+          {
+            "description": "Workspace id",
+            "in": "path",
+            "name": "ws",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Course id",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MethodAnswerRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MethodAnswerResultDto"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Gate rejection"
+          }
+        },
+        "summary": "F12/F13/F15/F19/F21/F27: grades a quiz answer with code, never a model.",
+        "tags": [
+          "courses"
+        ]
+      }
+    },
+    "/workspaces/{ws}/courses/{id}/register": {
+      "get": {
+        "operationId": "get_workspaces_ws_courses_id_register",
+        "parameters": [
+          {
+            "description": "Workspace id",
+            "in": "path",
+            "name": "ws",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Course id",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RegisterListDto"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "summary": "F19: the misconception register, folded live from the course's events.",
+        "tags": [
+          "courses"
+        ]
+      }
+    },
+    "/workspaces/{ws}/courses/{id}/retry": {
+      "post": {
+        "operationId": "post_workspaces_ws_courses_id_retry",
+        "parameters": [
+          {
+            "description": "Workspace id",
+            "in": "path",
+            "name": "ws",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Course id",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Workspace archived"
+          }
+        },
+        "summary": "Starts writing a failed course again.",
+        "tags": [
+          "courses"
+        ]
+      }
+    },
+    "/workspaces/{ws}/courses/{id}/review-dates": {
+      "get": {
+        "operationId": "get_workspaces_ws_courses_id_review_dates",
+        "parameters": [
+          {
+            "description": "Workspace id",
+            "in": "path",
+            "name": "ws",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Course id",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReviewDateListDto"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "summary": "F32: the batched first-test proposal for facts confirmed at close.",
+        "tags": [
+          "courses"
+        ]
+      },
+      "post": {
+        "operationId": "post_workspaces_ws_courses_id_review_dates",
+        "parameters": [
+          {
+            "description": "Workspace id",
+            "in": "path",
+            "name": "ws",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Course id",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReviewDatesRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "summary": "F32: saves the learner's chosen first-test dates (never more than a day out).",
+        "tags": [
+          "courses"
+        ]
+      }
+    },
+    "/workspaces/{ws}/courses/{id}/seen": {
+      "post": {
+        "operationId": "post_workspaces_ws_courses_id_seen",
+        "parameters": [
+          {
+            "description": "Workspace id",
+            "in": "path",
+            "name": "ws",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Course id",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SeenRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Workspace archived"
+          }
+        },
+        "summary": "Marks a lesson explanation as read.",
+        "tags": [
+          "courses"
+        ]
+      }
+    },
+    "/workspaces/{ws}/courses/{id}/self-grade": {
+      "post": {
+        "operationId": "post_workspaces_ws_courses_id_self_grade",
+        "parameters": [
+          {
+            "description": "Workspace id",
+            "in": "path",
+            "name": "ws",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Course id",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SelfGradeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Workspace archived"
+          }
+        },
+        "summary": "The learner's own grade for a recall item (`again`, `hard`, `good`, `easy`).",
+        "tags": [
+          "courses"
+        ]
+      }
+    },
+    "/workspaces/{ws}/courses/{id}/status": {
+      "get": {
+        "operationId": "get_workspaces_ws_courses_id_status",
+        "parameters": [
+          {
+            "description": "Workspace id",
+            "in": "path",
+            "name": "ws",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Course id",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CourseStatusDto"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "summary": "`writing`, `ready`, `failed` (with a reason) or `refilling`. Poll this while waiting.",
+        "tags": [
+          "courses"
+        ]
+      }
+    },
+    "/workspaces/{ws}/courses/{id}/step": {
+      "post": {
+        "operationId": "post_workspaces_ws_courses_id_step",
+        "parameters": [
+          {
+            "description": "Workspace id",
+            "in": "path",
+            "name": "ws",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Course id",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MethodStepDto"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "No open bout, or the bout clock is locked"
+          }
+        },
+        "summary": "What's next, due reviews served first (F05). Read-only: `Shown`, `Predicted` and the rest are\nlogged only when the learner acts on the step through its own endpoint, never here.",
+        "tags": [
+          "courses"
+        ]
+      }
+    },
+    "/workspaces/{ws}/courses/{id}/usage": {
+      "get": {
+        "operationId": "get_workspaces_ws_courses_id_usage",
+        "parameters": [
+          {
+            "description": "Workspace id",
+            "in": "path",
+            "name": "ws",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Course id",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UsageDto"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "summary": "Tokens spent by tier and the strong-call budget.",
+        "tags": [
+          "courses"
+        ]
+      }
+    },
     "/workspaces/{ws}/digest": {
       "get": {
         "operationId": "get_workspaces_ws_digest",
@@ -6943,6 +11500,888 @@
         ]
       }
     },
+    "/workspaces/{ws}/learning/bout/end": {
+      "post": {
+        "operationId": "post_workspaces_ws_learning_bout_end",
+        "parameters": [
+          {
+            "description": "Workspace id",
+            "in": "path",
+            "name": "ws",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HeartbeatRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClockDto"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "summary": "Ends the open bout.",
+        "tags": [
+          "courses"
+        ]
+      }
+    },
+    "/workspaces/{ws}/learning/bout/focus-lost": {
+      "post": {
+        "operationId": "post_workspaces_ws_learning_bout_focus_lost",
+        "parameters": [
+          {
+            "description": "Workspace id",
+            "in": "path",
+            "name": "ws",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HeartbeatRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "summary": "The tab lost focus; logged, no effect on the clock.",
+        "tags": [
+          "courses"
+        ]
+      }
+    },
+    "/workspaces/{ws}/learning/bout/heartbeat": {
+      "post": {
+        "operationId": "post_workspaces_ws_learning_bout_heartbeat",
+        "parameters": [
+          {
+            "description": "Workspace id",
+            "in": "path",
+            "name": "ws",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HeartbeatRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClockDto"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "summary": "Records a heartbeat for the open bout and returns the fresh clock.",
+        "tags": [
+          "courses"
+        ]
+      }
+    },
+    "/workspaces/{ws}/learning/bout/override": {
+      "post": {
+        "operationId": "post_workspaces_ws_learning_bout_override",
+        "parameters": [
+          {
+            "description": "Workspace id",
+            "in": "path",
+            "name": "ws",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OverrideRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Already used today"
+          }
+        },
+        "summary": "F23's one logged override a day; lifts the gap and the daily limit until tomorrow.",
+        "tags": [
+          "courses"
+        ]
+      }
+    },
+    "/workspaces/{ws}/learning/bout/start": {
+      "post": {
+        "operationId": "post_workspaces_ws_learning_bout_start",
+        "parameters": [
+          {
+            "description": "Workspace id",
+            "in": "path",
+            "name": "ws",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StartBoutRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClockDto"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Refused"
+          }
+        },
+        "summary": "Starts a bout, or returns the open one (restoring it after a restart). Refused inside the gap\nor when the day is spent (`409` with `details.gate: gap|daily_limit`), or when F03's ready\nchecklist is not complete (`409 not_ready`).",
+        "tags": [
+          "courses"
+        ]
+      }
+    },
+    "/workspaces/{ws}/learning/checkin": {
+      "post": {
+        "operationId": "post_workspaces_ws_learning_checkin",
+        "parameters": [
+          {
+            "description": "Workspace id",
+            "in": "path",
+            "name": "ws",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CheckinRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CheckinResultDto"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "summary": "Records the day's sleep check-in; suggests a review-only day under the poor-sleep threshold.",
+        "tags": [
+          "courses"
+        ]
+      }
+    },
+    "/workspaces/{ws}/learning/checkin/needed": {
+      "get": {
+        "operationId": "get_workspaces_ws_learning_checkin_needed",
+        "parameters": [
+          {
+            "description": "Workspace id",
+            "in": "path",
+            "name": "ws",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CheckinNeededDto"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "summary": "True only before the first check-in or bout of the day (F04).",
+        "tags": [
+          "courses"
+        ]
+      }
+    },
+    "/workspaces/{ws}/learning/clock": {
+      "get": {
+        "operationId": "get_workspaces_ws_learning_clock",
+        "parameters": [
+          {
+            "description": "Workspace id",
+            "in": "path",
+            "name": "ws",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClockDto"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "summary": "F23's clock plus F24's gap-pause flag, built purely from the append-only bout log.",
+        "tags": [
+          "courses"
+        ]
+      }
+    },
+    "/workspaces/{ws}/learning/profile": {
+      "get": {
+        "operationId": "get_workspaces_ws_learning_profile",
+        "parameters": [
+          {
+            "description": "Workspace id",
+            "in": "path",
+            "name": "ws",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProfileResultDto"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "summary": "F34: the current profile entries (latest per key), excluding per-course whys.",
+        "tags": [
+          "courses"
+        ]
+      },
+      "post": {
+        "operationId": "post_workspaces_ws_learning_profile",
+        "parameters": [
+          {
+            "description": "Workspace id",
+            "in": "path",
+            "name": "ws",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetProfileRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProfileResultDto"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "summary": "Adds a dated profile entry; the latest per key wins and older ones stay in the log.",
+        "tags": [
+          "courses"
+        ]
+      }
+    },
+    "/workspaces/{ws}/learning/schedule": {
+      "get": {
+        "operationId": "get_workspaces_ws_learning_schedule",
+        "parameters": [
+          {
+            "description": "Workspace id",
+            "in": "path",
+            "name": "ws",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScheduleDto"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "summary": "F01: the saved wake time and weekly slots.",
+        "tags": [
+          "courses"
+        ]
+      },
+      "post": {
+        "operationId": "post_workspaces_ws_learning_schedule",
+        "parameters": [
+          {
+            "description": "Workspace id",
+            "in": "path",
+            "name": "ws",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetScheduleRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScheduleDto"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "summary": "Saves the wake time and weekly slots (\"HH:MM\").",
+        "tags": [
+          "courses"
+        ]
+      }
+    },
+    "/workspaces/{ws}/learning/schedule/suggest": {
+      "post": {
+        "operationId": "post_workspaces_ws_learning_schedule_suggest",
+        "parameters": [
+          {
+            "description": "Workspace id",
+            "in": "path",
+            "name": "ws",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SuggestSlotsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuggestSlotsResultDto"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "summary": "Three suggested slots: the first about 3 hours after waking, then one bout plus gap apart.",
+        "tags": [
+          "courses"
+        ]
+      }
+    },
+    "/workspaces/{ws}/learning/schedule/track": {
+      "get": {
+        "operationId": "get_workspaces_ws_learning_schedule_track",
+        "parameters": [
+          {
+            "description": "Workspace id",
+            "in": "path",
+            "name": "ws",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TrackSlotsResultDto"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "summary": "Kept, missed or upcoming for each slot over the last two weeks.",
+        "tags": [
+          "courses"
+        ]
+      }
+    },
+    "/workspaces/{ws}/learning/settings": {
+      "get": {
+        "operationId": "get_workspaces_ws_learning_settings",
+        "parameters": [
+          {
+            "description": "Workspace id",
+            "in": "path",
+            "name": "ws",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MethodSettingsDto"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "summary": "Every tunable method setting with its default and allowed range (the plan's defaults ship as\nsettings, not as facts).",
+        "tags": [
+          "courses"
+        ]
+      },
+      "post": {
+        "operationId": "post_workspaces_ws_learning_settings",
+        "parameters": [
+          {
+            "description": "Workspace id",
+            "in": "path",
+            "name": "ws",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetMethodSettingRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MethodSettingsDto"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Workspace archived"
+          }
+        },
+        "summary": "Changes one setting for this workspace; the value must sit inside the setting's range.",
+        "tags": [
+          "courses"
+        ]
+      }
+    },
     "/workspaces/{ws}/repair": {
       "post": {
         "operationId": "post_workspaces_ws_repair",
@@ -7710,6 +13149,615 @@
           "chats"
         ]
       }
+    },
+    "/workspaces/{ws}/sources/textbook": {
+      "post": {
+        "operationId": "post_workspaces_ws_sources_textbook",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "ws",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/TextbookUploadForm"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TextbookUploadDto"
+                }
+              }
+            },
+            "description": "The book was already stored"
+          },
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TextbookUploadDto"
+                }
+              }
+            },
+            "description": "New book, mapped into chapters; no import started"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": ""
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "PDF exceeds 50 MB"
+          }
+        },
+        "summary": "Uploads a PDF book (U7). The server maps it into chapters (the outline, or one cheap call\nwithout one) and imports nothing: a chapter is imported when the learner opens it. The same\nbytes twice find the same book (`200`, `existing: true`).",
+        "tags": [
+          "textbooks"
+        ]
+      }
+    },
+    "/workspaces/{ws}/textbooks": {
+      "get": {
+        "operationId": "get_workspaces_ws_textbooks",
+        "parameters": [
+          {
+            "description": "Workspace id",
+            "in": "path",
+            "name": "ws",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TextbookListDto"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "summary": "Imported books, newest first.",
+        "tags": [
+          "textbooks"
+        ]
+      }
+    },
+    "/workspaces/{ws}/textbooks/{book}": {
+      "get": {
+        "operationId": "get_workspaces_ws_textbooks_book",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "ws",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Book id, `tb_` + 16 hex",
+            "in": "path",
+            "name": "book",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TextbookDto"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "summary": "One book with its chapter map and per-chapter import state.",
+        "tags": [
+          "textbooks"
+        ]
+      }
+    },
+    "/workspaces/{ws}/textbooks/{book}/chapters/{n}": {
+      "get": {
+        "operationId": "get_workspaces_ws_textbooks_book_chapters_n",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "ws",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "book",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Chapter index",
+            "in": "path",
+            "name": "n",
+            "required": true,
+            "schema": {
+              "format": "int32",
+              "minimum": 0,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChapterDetailDto"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "summary": "One chapter with its learning objectives (never their quiz items).",
+        "tags": [
+          "textbooks"
+        ]
+      }
+    },
+    "/workspaces/{ws}/textbooks/{book}/chapters/{n}/check": {
+      "post": {
+        "operationId": "post_workspaces_ws_textbooks_book_chapters_n_check",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "ws",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "book",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Chapter index",
+            "in": "path",
+            "name": "n",
+            "required": true,
+            "schema": {
+              "format": "int32",
+              "minimum": 0,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReadingCheckDto"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "`details.reason` is `chapter_not_ready`"
+          }
+        },
+        "summary": "\"I read chapter N\": a quiz of stored items, one per objective. No model call.",
+        "tags": [
+          "textbooks"
+        ]
+      }
+    },
+    "/workspaces/{ws}/textbooks/{book}/checks/{check}/answer": {
+      "post": {
+        "operationId": "post_workspaces_ws_textbooks_book_checks_check_answer",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "ws",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "book",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "`rc_` + 32 hex",
+            "in": "path",
+            "name": "check",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CheckAnswerRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CheckFeedbackDto"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "`details.reason` is `already_answered`"
+          }
+        },
+        "summary": "Grades one answer by code and feeds the item's FSRS card. A retry with the same `clientId`\nreturns the stored feedback.",
+        "tags": [
+          "textbooks"
+        ]
+      }
+    },
+    "/workspaces/{ws}/textbooks/{book}/checks/{check}/self-grade": {
+      "post": {
+        "operationId": "post_workspaces_ws_textbooks_book_checks_check_self_grade",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "ws",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "book",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "check",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SelfGradeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Graded"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "summary": "The learner's own grade for a typed answer that was close or wrong.",
+        "tags": [
+          "textbooks"
+        ]
+      }
+    },
+    "/workspaces/{ws}/textbooks/{book}/import": {
+      "post": {
+        "operationId": "post_workspaces_ws_textbooks_book_import",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "ws",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "book",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ImportRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportStartedDto"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": ""
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "`details.reason` is `import_running`, `nothing_to_import`, `import_rate_limited` or `chapter_retry_used`"
+          }
+        },
+        "summary": "Starts an import of the listed chapters (or every chapter still pending) as a background job.\nThis is how a chapter gets imported: the learner opens it. Each chapter gets one try plus one\nretry, and a book allows 8 chapter imports in a rolling hour; what does not fit stays pending.",
+        "tags": [
+          "textbooks"
+        ]
+      }
+    },
+    "/workspaces/{ws}/textbooks/{book}/usage": {
+      "get": {
+        "operationId": "get_workspaces_ws_textbooks_book_usage",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "ws",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "book",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TextbookUsageDto"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "summary": "Cheap-model tokens and calls spent on this book, against the lifetime cap.",
+        "tags": [
+          "textbooks"
+        ]
+      }
     }
   },
   "servers": [
@@ -7741,6 +13789,14 @@
     {
       "description": "FSRS spaced repetition",
       "name": "review"
+    },
+    {
+      "description": "Courses: stored lessons, placement, follow-ups",
+      "name": "courses"
+    },
+    {
+      "description": "Textbook mode: PDF import, chapters, reading checks",
+      "name": "textbooks"
     },
     {
       "description": "Decision digest",

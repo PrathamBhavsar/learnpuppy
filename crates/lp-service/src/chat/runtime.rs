@@ -250,6 +250,10 @@ pub struct JobView {
     /// PDF jobs: pages read so far and the document's page count.
     pub pages_read: Option<u64>,
     pub total_pages: Option<u64>,
+    /// Textbook import jobs: the book, and chapters finished of the chapters this run covers.
+    pub book_id: Option<String>,
+    pub chapters_done: Option<u64>,
+    pub chapters_total: Option<u64>,
     pub created_at: i64,
 }
 
@@ -270,6 +274,14 @@ impl From<&JobRecord> for JobView {
                 .map(str::to_owned),
             pages_read: progress_field(j, "pagesRead"),
             total_pages: progress_field(j, "totalPages"),
+            book_id: j
+                .result
+                .as_ref()
+                .and_then(|r| r.get("bookId"))
+                .and_then(Value::as_str)
+                .map(str::to_owned),
+            chapters_done: progress_field(j, "chaptersDone"),
+            chapters_total: progress_field(j, "chaptersTotal"),
             created_at: j.created_at,
         }
     }
@@ -279,7 +291,7 @@ fn progress_field(j: &JobRecord, key: &str) -> Option<u64> {
     j.result.as_ref()?.get("progress")?.get(key)?.as_u64()
 }
 
-fn job_info(j: &JobRecord) -> ev::JobInfo {
+pub fn job_info(j: &JobRecord) -> ev::JobInfo {
     let v = JobView::from(j);
     ev::JobInfo {
         id: v.id,

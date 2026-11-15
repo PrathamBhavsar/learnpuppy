@@ -346,7 +346,10 @@ mod tests {
         assert_eq!(a.id.0, "claude:me@x.com");
         add_claude(&root, &home, &mut s, &prof).unwrap();
         assert_eq!(s.claude_dirs.len(), 1);
-        assert_eq!(Settings::load(&root).unwrap(), s);
+        // Loading adds the default course roles in memory; everything else round-trips.
+        let mut expected = s.clone();
+        expected.fill_course_roles();
+        assert_eq!(Settings::load(&root).unwrap(), expected);
 
         let empty = d.path().join("empty");
         std::fs::create_dir_all(&empty).unwrap();

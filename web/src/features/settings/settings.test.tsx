@@ -88,6 +88,25 @@ describe("Settings: appearance", () => {
     await user.click(screen.getByTestId("density-comfortable"))
     expect(document.documentElement.dataset["density"]).toBeUndefined()
   })
+
+  it("reading font switches the prose font and persists", async () => {
+    const { user } = await open()
+    await user.click(await screen.findByTestId("reading-font-serif"))
+    expect(document.documentElement.dataset["readingFont"]).toBe("serif")
+    expect(localStorage.getItem("lp-reading-font")).toBe("serif")
+    await waitFor(() => expect(state.db.settings.ui.readingFont).toBe("serif"))
+    await user.click(screen.getByTestId("reading-font-sans"))
+    expect(document.documentElement.dataset["readingFont"]).toBeUndefined()
+  })
+
+  it("legacy classroom switch is off by default and persists", async () => {
+    const { user } = await open()
+    const sw = await screen.findByTestId("legacy-classroom")
+    expect(sw).toHaveAttribute("aria-checked", "false")
+    await user.click(sw)
+    expect(localStorage.getItem("lp-legacy-classroom")).toBe("1")
+    expect(sw).toHaveAttribute("aria-checked", "true")
+  })
 })
 
 describe("Settings: behavior", () => {

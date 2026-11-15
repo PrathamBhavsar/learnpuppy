@@ -4,11 +4,13 @@ export type Theme = "light" | "dark" | "system"
 export type ResolvedTheme = "light" | "dark"
 export type Direction = "ltr" | "rtl"
 export type Density = "comfortable" | "compact"
+export type ReadingFont = "sans" | "serif" | "mono"
 
 export const THEME_KEY = "lp-theme"
 export const DIR_KEY = "lp-dir"
 export const REDUCE_MOTION_KEY = "lp-reduce-motion"
 export const DENSITY_KEY = "lp-density"
+export const READING_FONT_KEY = "lp-reading-font"
 export const THEMES: readonly Theme[] = ["light", "dark", "system"]
 
 export function isTheme(value: unknown): value is Theme {
@@ -61,6 +63,21 @@ export function applyDensity(density: Density): void {
   if (density === "compact")
     document.documentElement.dataset.density = "compact"
   else delete document.documentElement.dataset.density
+}
+
+export function isReadingFont(value: unknown): value is ReadingFont {
+  return value === "sans" || value === "serif" || value === "mono"
+}
+
+export function readReadingFont(): ReadingFont {
+  const stored = storage.get(READING_FONT_KEY)
+  return isReadingFont(stored) ? stored : "sans"
+}
+
+/** `html[data-reading-font]` switches `--font-prose` (styles/type.css); sans is the default and sets nothing. */
+export function applyReadingFont(font: ReadingFont): void {
+  if (font === "sans") delete document.documentElement.dataset.readingFont
+  else document.documentElement.dataset.readingFont = font
 }
 
 export function applyReduceMotion(on: boolean): void {

@@ -344,6 +344,39 @@ pub struct VerdictDto {
     pub explanation: Option<String>,
 }
 
+/// One option of an answered question, lettered and flagged as the learner saw it. The grade lives
+/// in `picked`/`right`, so the SPA renders it without re-deriving anything (CLAUDE.md).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct RecapOptionDto {
+    pub letter: String,
+    pub text: String,
+    /// The learner picked this option.
+    pub picked: bool,
+    /// This option is right.
+    pub right: bool,
+}
+
+/// A question the learner already answered, kept in the transcript so the prompt does not vanish
+/// after the verdict: what was asked, what they picked, what was right (docs/web/06 §Learn).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct AnswerRecapDto {
+    /// The `quiz`/`probe` call this answer replies to (matches `MessageDto::answers_call_id`).
+    pub call_id: String,
+    pub question: String,
+    /// The options in the order the learner saw them (shuffled per call, as in the dock).
+    pub options: Vec<RecapOptionDto>,
+    /// Display labels of the picked options (`B. the label`), empty for a free-form answer.
+    pub picked: Vec<String>,
+    /// Display labels of the right answers.
+    pub right: Vec<String>,
+    pub confidence: Option<u8>,
+    pub multi_select: bool,
+    /// The learner's own words, when the answer carried any.
+    pub free_text: Option<String>,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum JobStatusDto {
@@ -356,7 +389,7 @@ pub enum JobStatusDto {
 #[serde(rename_all = "camelCase")]
 pub struct JobDto {
     pub id: String,
-    /// `research`, `pdf`, `visual` or `demo`.
+    /// `research`, `pdf`, `visual`, `demo` or `textbook`.
     pub kind: String,
     pub status: JobStatusDto,
     pub title: String,
@@ -494,6 +527,8 @@ pub struct ClassroomViewDto {
     pub plan: Option<PlanDto>,
     pub probe_progress: ProbeProgressDto,
     pub verdicts: Vec<VerdictDto>,
+    /// Answered `quiz`/`probe` questions, so the prompt stays readable after the verdict.
+    pub answers: Vec<AnswerRecapDto>,
     pub problem_result: Option<ProblemResultDto>,
     pub jobs: Vec<JobDto>,
     pub turn: TurnDto,
@@ -708,6 +743,76 @@ fn verdicts(s: &Session) -> Vec<VerdictDto> {
         .collect()
 }
 
+/// Every recap the transcript needs: one per answered `probe`/`quiz` call, in answer order.
+fn answer_recaps(s: &Session) -> Vec<AnswerRecapDto> {
+    s.messages
+        .iter()
+        .filter_map(|m| {
+            let Msg::Answer { call_id, text } = m else {
+                return None;
+            };
+            let call = s.messages.iter().find_map(|m| match m {
+                Msg::Assistant { calls, .. } => calls
+                    .iter()
+                    .find(|c| c.id == *call_id && matches!(c.name.as_str(), "probe" | "quiz")),
+                _ => None,
+            })?;
+            let q = serde_json::from_value::<QuizInput>(call.args.clone()).ok()?;
+            Some(recap(call_id, &q, text))
+        })
+        .collect()
+}
+
+/// The learner's own words in an answer record (`answer: …`), without the picked option and the
+/// confidence part. Probes accept them next to a selection.
+fn free_text(text: &str) -> Option<String> {
+    let body = text.split("; confidence: ").next().unwrap_or(text);
+    let (_, rest) = body.split_once("answer: ")?;
+    let rest = rest.trim();
+    (!rest.is_empty()).then(|| rest.to_owned())
+}
+
+fn recap(call_id: &str, q: &QuizInput, text: &str) -> AnswerRecapDto {
+    let shown = shuffle_options(&q.options, call_id);
+    let graded = chat::grade(q, text);
+    let picked: Vec<String> = graded
+        .iter()
+        .flat_map(|g| g.picked.iter())
+        .map(|v| chat::option_label(&shown, v))
+        .collect();
+    let right: Vec<String> = q
+        .correct_answer
+        .values()
+        .iter()
+        .map(|v| chat::option_label(&shown, v))
+        .collect();
+    let is_picked = |v: &str| {
+        graded
+            .as_ref()
+            .is_some_and(|g| g.picked.iter().any(|p| p == v))
+    };
+    let is_right = |v: &str| q.correct_answer.values().iter().any(|r| r == v);
+    AnswerRecapDto {
+        call_id: call_id.to_owned(),
+        question: q.question.clone(),
+        options: shown
+            .iter()
+            .enumerate()
+            .map(|(i, o)| RecapOptionDto {
+                letter: chat::letter(i).to_string(),
+                text: o.label.clone(),
+                picked: is_picked(&o.value),
+                right: is_right(&o.value),
+            })
+            .collect(),
+        picked,
+        right,
+        confidence: chat::confidence_in(text),
+        multi_select: q.multi_select,
+        free_text: free_text(text),
+    }
+}
+
 impl ClassroomViewDto {
     /// `turn` is the live turn state; the stored session knows nothing of it.
     pub fn new(rec: &ChatRecord, jobs: &[JobRecord], turn: TurnDto) -> Self {
@@ -731,6 +836,7 @@ impl ClassroomViewDto {
                 max: MAX_PROBE_QUESTIONS,
             },
             verdicts: verdicts(&s),
+            answers: answer_recaps(&s),
             problem_result: problem_result(&s),
             jobs: jobs
                 .iter()
@@ -905,6 +1011,12 @@ pub struct JobItemDto {
     pub pages_read: Option<u64>,
     /// PDF jobs: the document's page count.
     pub total_pages: Option<u64>,
+    /// Textbook import jobs: the book being imported.
+    pub book_id: Option<String>,
+    /// Textbook import jobs: chapters finished.
+    pub chapters_done: Option<u64>,
+    /// Textbook import jobs: chapters this run covers.
+    pub chapters_total: Option<u64>,
     pub created_at: i64,
 }
 
@@ -920,6 +1032,9 @@ impl From<chat::JobView> for JobItemDto {
             error: j.error,
             pages_read: j.pages_read,
             total_pages: j.total_pages,
+            book_id: j.book_id,
+            chapters_done: j.chapters_done,
+            chapters_total: j.chapters_total,
             created_at: j.created_at,
         }
     }
@@ -1104,6 +1219,65 @@ pub(crate) mod tests {
             answers[0].text
         );
         assert!(!answers[0].text.contains("opt_secret_right"));
+    }
+
+    #[test]
+    fn answered_questions_stay_in_the_transcript_with_what_was_picked_and_what_was_right() {
+        let mut s = Session::new("c1", Kind::Teach);
+        s.messages.push(call("q#1", "quiz", secret_quiz()));
+        s.answer(
+            "q#1",
+            "selected: opt_b; answer: sounds like the heap; confidence: 2/5",
+        );
+        let dto = ClassroomViewDto::new(&record(&s), &[], idle());
+
+        let [recap] = &dto.answers[..] else {
+            panic!("one recap per answered question: {:?}", dto.answers);
+        };
+        assert_eq!(recap.call_id, "q#1");
+        assert_eq!(recap.question, "Who owns the value?");
+        assert_eq!(recap.confidence, Some(2));
+        assert_eq!(recap.free_text.as_deref(), Some("sounds like the heap"));
+        assert!(!recap.multi_select);
+
+        let letters: Vec<_> = recap.options.iter().map(|o| o.letter.as_str()).collect();
+        assert_eq!(letters, ["A", "B", "C"]);
+        let mut texts: Vec<_> = recap.options.iter().map(|o| o.text.as_str()).collect();
+        texts.sort_unstable();
+        assert_eq!(texts, ["The binding", "The heap", "The stack"]);
+
+        let picked: Vec<_> = recap.options.iter().filter(|o| o.picked).collect();
+        let right: Vec<_> = recap.options.iter().filter(|o| o.right).collect();
+        assert_eq!(
+            picked.len(),
+            1,
+            "exactly one pick, never the right one here"
+        );
+        assert_eq!(right.len(), 1);
+        assert_eq!(picked[0].text, "The heap");
+        assert_eq!(right[0].text, "The binding");
+        assert_eq!(recap.picked, [format!("{}. The heap", picked[0].letter)]);
+        assert_eq!(recap.right, [format!("{}. The binding", right[0].letter)]);
+
+        // The learner's pick reads like the bubble it replaces, and no option value leaks.
+        let wire = serde_json::to_string(&dto).unwrap();
+        assert!(wire.contains("Who owns the value?"));
+        assert!(!wire.contains("opt_b") && !wire.contains("opt_secret_right"));
+    }
+
+    #[test]
+    fn free_text_answers_have_no_pick_but_still_keep_the_question() {
+        let mut s = Session::new("c1", Kind::Teach);
+        s.messages.push(call("p#1", "probe", secret_quiz()));
+        s.answer("p#1", "answer: la pila; confidence: 3/5");
+        let [recap] = &ClassroomViewDto::new(&record(&s), &[], idle()).answers[..] else {
+            panic!("a probe answer keeps its question");
+        };
+        assert_eq!(recap.question, "Who owns the value?");
+        assert!(recap.picked.is_empty());
+        assert_eq!(recap.right.len(), 1);
+        assert_eq!(recap.free_text.as_deref(), Some("la pila"));
+        assert_eq!(recap.confidence, Some(3));
     }
 
     #[test]

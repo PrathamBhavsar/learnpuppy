@@ -6,7 +6,7 @@ export const SETTINGS_INFO = {
     title: "Appearance",
     short: "How the app looks: colours, reading direction, motion and spacing.",
     body: [
-      "Theme picks light, dark or the same as your computer. Direction mirrors the layout for right-to-left languages such as Arabic. Reduce motion swaps movement for simple fades. Density Compact tightens the spacing so more fits on screen.",
+      "Theme picks light, dark or the same as your computer. Direction mirrors the layout for right-to-left languages such as Arabic. Reduce motion swaps movement for simple fades. Density Compact tightens the spacing so more fits on screen. Reading font sets the font for lessons, chat and the digest.",
     ],
   },
   behavior: {
@@ -69,6 +69,13 @@ export const WS_SETTINGS_INFO = {
       "Changes apply as soon as you press Save. The name must be unique among your workspaces.",
     ],
   },
+  method: {
+    title: "Study method",
+    short: "The limits and defaults the learning method runs on.",
+    body: [
+      "A bout is one focused block. The defaults (90 minutes, a 2 hour gap, 270 minutes a day) come from the study research behind the method, and the evidence for some of those numbers is weak. Every one is yours to change, and Reset brings back the default.",
+    ],
+  },
   sources: {
     title: "Sources",
     short: "Which folders and tools this workspace may read when you ingest.",
@@ -96,5 +103,6 @@ export const WS_SETTINGS_GUIDE_PARTS: InfoContent[] = [
   WS_SETTINGS_INFO.general,
   WS_SETTINGS_INFO.sources,
   WS_SETTINGS_INFO.overrides,
+  WS_SETTINGS_INFO.method,
   WS_SETTINGS_INFO.danger,
 ]

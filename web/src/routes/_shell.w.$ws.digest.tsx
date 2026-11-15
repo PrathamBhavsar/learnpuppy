@@ -8,6 +8,7 @@ import {
   type DigestFilters,
 } from "@/features/digest/digest-screen"
 import { isRangePreset } from "@/features/digest/range"
+import { TextbookDueLine } from "@/features/textbook/DueLine"
 
 type DigestSearch = {
   range?: DigestFilters["range"]
@@ -79,6 +80,14 @@ function Screen() {
         decision: search.decision,
       }}
       onFilters={onFilters}
+      summary={
+        <TextbookDueLine
+          ws={ws}
+          onOpen={() =>
+            void navigate({ to: "/w/$ws/textbook", params: { ws } })
+          }
+        />
+      }
     />
   )
 }

@@ -71,6 +71,7 @@ export function chatFixtures(now: number): ClassroomView[] {
   const base = {
     viewVersion: 3,
     verdicts: [],
+    answers: [],
     jobs: [],
     turn: { state: "idle" as const },
   }
@@ -228,6 +229,43 @@ export function chatFixtures(now: number): ClassroomView[] {
           explanation: "Right: futures are lazy.",
         },
       ],
+      answers: [
+        {
+          callId: "call_quiz_1",
+          question: "Is a future eager or lazy?",
+          options: [
+            {
+              letter: "A",
+              text: "Eager: it starts the moment it is created",
+              picked: false,
+              right: false,
+            },
+            {
+              letter: "B",
+              text: "Lazy: nothing runs until polled",
+              picked: true,
+              right: true,
+            },
+            {
+              letter: "C",
+              text: "Neither: the executor decides",
+              picked: false,
+              right: false,
+            },
+            {
+              letter: "D",
+              text: "Both, depending on the runtime",
+              picked: false,
+              right: false,
+            },
+          ],
+          picked: ["B. Lazy: nothing runs until polled"],
+          right: ["B. Lazy: nothing runs until polled"],
+          confidence: 5,
+          multiSelect: false,
+          freeText: null,
+        },
+      ],
     },
     {
       ...base,
@@ -361,6 +399,38 @@ export function chatFixtures(now: number): ClassroomView[] {
     },
     {
       ...base,
+      id: "c_limited",
+      kind: "teach",
+      title: "Mutex across await",
+      phase: "teach",
+      messages: [
+        msg(
+          "m1",
+          "user",
+          "Why can holding a Mutex across await deadlock?",
+          now - 4 * HOUR
+        ),
+      ],
+      pending: null,
+      plan: PLAN(["current", "upcoming", "upcoming", "upcoming"]),
+      probeProgress: { asked: 8, max: 8 },
+      turn: {
+        state: "error",
+        turnId: "turn_lim_1",
+        startedAt: now - 4 * HOUR,
+        clientId: "client_lim_1",
+        error: {
+          code: "RATE_LIMITED",
+          message: "limited",
+          provider: "claude",
+          resetsAt: now + HOUR,
+          retryable: true,
+          interrupted: false,
+        },
+      },
+    },
+    {
+      ...base,
       id: "c_queued",
       kind: "teach",
       title: "Send and Sync",
@@ -486,6 +556,7 @@ export function chatsForOtherWorkspaces(
     plan: PLAN(["current", "upcoming", "upcoming", "upcoming"]),
     probeProgress: { asked: 8, max: 8 },
     verdicts: [],
+    answers: [],
     jobs: [],
     turn: { state: "idle" },
   })

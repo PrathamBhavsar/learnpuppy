@@ -305,11 +305,7 @@ fn dump_tracker(db: &Path) -> Result<Vec<(&'static str, Vec<u8>, usize)>> {
         let mut stmt = conn
             .prepare(&format!("SELECT * FROM {table} ORDER BY rowid"))
             .map_err(sql_err)?;
-        let cols: Vec<String> = stmt
-            .column_names()
-            .iter()
-            .map(|c| (*c).to_owned())
-            .collect();
+        let cols: Vec<String> = stmt.column_names().map(str::to_owned).collect();
         let mut rows = stmt.query([]).map_err(sql_err)?;
         let (mut buf, mut n) = (vec![], 0);
         while let Some(row) = rows.next().map_err(sql_err)? {

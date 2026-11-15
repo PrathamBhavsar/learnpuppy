@@ -100,6 +100,7 @@ export const chatHandlers = [
       title: topic.slice(0, 60) || "Practice",
       phase: body.kind === "teach" ? "probe" : "practice",
       viewVersion: 1,
+      answers: [],
       messages: topic
         ? [
             {
@@ -254,7 +255,11 @@ export const chatHandlers = [
     const items = (chatsOf(params["ws"]) ?? []).flatMap((c) =>
       c.jobs.map((job) => ({ ...job, chatId: c.id, createdAt: state.db.now }))
     )
-    return HttpResponse.json({ items })
+    // Textbook imports are workspace jobs with no chat (chatId "").
+    const books = (state.db.textbooks.get(String(params["ws"])) ?? []).flatMap(
+      (b) => (b.job ? [b.job] : [])
+    )
+    return HttpResponse.json({ items: [...books, ...items] })
   }),
   http.post(`${API}/jobs/:id/abort`, ({ params }) => {
     for (const chat of chatsOf(params["ws"]) ?? []) {
@@ -268,6 +273,18 @@ export const chatHandlers = [
           createdAt: state.db.now,
         })
       }
+    }
+    for (const b of state.db.textbooks.get(String(params["ws"])) ?? []) {
+      const job = b.job
+      if (!job || job.id !== params["id"]) continue
+      job.status = "failed"
+      job.error = "cancelled"
+      b.book.jobId = null
+      // Chapters not finished go back to pending, as on the server.
+      for (const c of b.book.chapters)
+        if (c.state === "importing") c.state = "pending"
+      bus.emit("job.updated", { job }, String(params["ws"]))
+      return HttpResponse.json(job)
     }
     return notFound("Job")
   }),

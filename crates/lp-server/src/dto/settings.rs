@@ -54,6 +54,8 @@ pub struct UiSettingsDto {
     pub direction: String,
     /// `comfortable` or `compact`.
     pub density: String,
+    /// `sans`, `serif` or `mono`.
+    pub reading_font: String,
     pub reduce_motion: bool,
     pub confirm_destructive: bool,
     pub auto_open_browser: bool,
@@ -65,6 +67,7 @@ impl From<UiSettings> for UiSettingsDto {
             theme: u.theme,
             direction: u.direction,
             density: u.density,
+            reading_font: u.reading_font,
             reduce_motion: u.reduce_motion,
             confirm_destructive: u.confirm_destructive,
             auto_open_browser: u.auto_open_browser,
@@ -78,6 +81,7 @@ impl From<UiSettingsDto> for UiSettings {
             theme: u.theme,
             direction: u.direction,
             density: u.density,
+            reading_font: u.reading_font,
             reduce_motion: u.reduce_motion,
             confirm_destructive: u.confirm_destructive,
             auto_open_browser: u.auto_open_browser,
@@ -439,6 +443,7 @@ mod tests {
         let j = serde_json::to_value(dto()).unwrap();
         assert_eq!(j["learningStyle"], "visual");
         assert_eq!(j["ui"]["reduceMotion"], false);
+        assert_eq!(j["ui"]["readingFont"], "sans");
         assert_eq!(j["profiles"]["teacher"]["provider"], "agy");
     }
 
@@ -462,6 +467,7 @@ mod tests {
         d.learning_style = "loud".into();
         d.concurrency_cap = 9;
         d.ui.theme = "neon".into();
+        d.ui.reading_font = "comic".into();
         let errs = d.apply_to(&Settings::default(), &[]).unwrap_err();
         let paths: Vec<_> = errs.iter().map(|e| e.path.as_str()).collect();
         for want in [
@@ -474,6 +480,7 @@ mod tests {
             "learningStyle",
             "concurrencyCap",
             "ui.theme",
+            "ui.readingFont",
         ] {
             assert!(paths.contains(&want), "{want} missing from {paths:?}");
         }
@@ -498,7 +505,8 @@ mod tests {
         assert!(c.providers[0].models.contains(&"gpt-6.1-sol".to_owned()));
         assert!(c.providers[2].models.contains(&"sonnet".to_owned()));
         assert!(c.efforts.contains(&"xhigh".to_owned()));
-        assert_eq!(c.roles.len(), 9);
+        assert_eq!(c.roles.len(), 13);
+        assert!(c.roles.contains(&"author".to_owned()));
     }
 
     #[test]

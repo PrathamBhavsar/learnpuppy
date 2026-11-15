@@ -1,0 +1,80 @@
+[
+ {
+  "angle_leaks": 5,
+  "dropped": 3,
+  "file": "/Users/pratham/code/learnpuppy-wt-staging/bench/cheap_tutor/results/r5/outputs/music-1.json",
+  "items": 60,
+  "lessons": 10,
+  "needs_repair": 0,
+  "parsed": true,
+  "procedural_with_rungs": 2,
+  "warnings": 0,
+  "with_angles": 10,
+  "with_predict": 6
+ },
+ {
+  "angle_leaks": 3,
+  "dropped": 2,
+  "file": "/Users/pratham/code/learnpuppy-wt-staging/bench/cheap_tutor/results/r5/outputs/music-2.json",
+  "items": 60,
+  "lessons": 10,
+  "needs_repair": 0,
+  "parsed": true,
+  "procedural_with_rungs": 4,
+  "warnings": 1,
+  "with_angles": 10,
+  "with_predict": 6
+ },
+ {
+  "angle_leaks": 5,
+  "dropped": 2,
+  "file": "/Users/pratham/code/learnpuppy-wt-staging/bench/cheap_tutor/results/r5/outputs/rust-1.json",
+  "items": 60,
+  "lessons": 10,
+  "needs_repair": 0,
+  "parsed": true,
+  "procedural_with_rungs": 2,
+  "warnings": 1,
+  "with_angles": 10,
+  "with_predict": 9
+ },
+ {
+  "angle_leaks": 4,
+  "dropped": 1,
+  "file": "/Users/pratham/code/learnpuppy-wt-staging/bench/cheap_tutor/results/r5/outputs/rust-2.json",
+  "items": 60,
+  "lessons": 10,
+  "needs_repair": 0,
+  "parsed": true,
+  "procedural_with_rungs": 1,
+  "warnings": 2,
+  "with_angles": 10,
+  "with_predict": 10
+ },
+ {
+  "angle_leaks": 5,
+  "dropped": 2,
+  "file": "/Users/pratham/code/learnpuppy-wt-staging/bench/cheap_tutor/results/r5/outputs/spanish-1.json",
+  "items": 60,
+  "lessons": 10,
+  "needs_repair": 0,
+  "parsed": true,
+  "procedural_with_rungs": 4,
+  "warnings": 0,
+  "with_angles": 10,
+  "with_predict": 8
+ },
+ {
+  "angle_leaks": 4,
+  "dropped": 3,
+  "file": "/Users/pratham/code/learnpuppy-wt-staging/bench/cheap_tutor/results/r5/outputs/spanish-2.json",
+  "items": 60,
+  "lessons": 10,
+  "needs_repair": 0,
+  "parsed": true,
+  "procedural_with_rungs": 3,
+  "warnings": 2,
+  "with_angles": 10,
+  "with_predict": 7
+ }
+]

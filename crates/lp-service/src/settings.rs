@@ -8,7 +8,7 @@ use anyhow::Context;
 use serde::{Deserialize, Serialize};
 
 /// Roles that take a profile: the loop agents plus the workbench sub-agents.
-pub const PROFILE_ROLES: [&str; 9] = [
+pub const PROFILE_ROLES: [&str; 13] = [
     "prober",
     "teacher",
     "practice",
@@ -18,7 +18,13 @@ pub const PROFILE_ROLES: [&str; 9] = [
     "visual",
     "demo",
     "pdf",
+    "author",
+    "placer",
+    "follow_up",
+    "distiller",
 ];
+/// Course roles: `author` is the one strong role; `placer` and `follow_up` are cheap.
+pub const COURSE_ROLES: [&str; 3] = ["author", "placer", "follow_up"];
 pub const PROVIDERS: [&str; 5] = ["codex", "agy", "claude", "kiro", "opencode"];
 pub const EFFORTS: [&str; 6] = ["low", "medium", "high", "xhigh", "max", "ultra"];
 
@@ -79,6 +85,16 @@ impl Profile {
     }
 }
 
+/// A starter profile; course roles fall back across providers, the rest stay on their CLI.
+fn starter(provider: &str, model: &str, effort: Option<&str>, role: &str) -> Profile {
+    Profile {
+        provider: provider.into(),
+        model: model.into(),
+        effort: effort.map(Into::into),
+        fallback: COURSE_ROLES.contains(&role),
+    }
+}
+
 impl LearningStyle {
     pub fn parse(s: &str) -> anyhow::Result<Self> {
         match s {
@@ -136,7 +152,7 @@ pub const FREE_OPENCODE_FALLBACK: &str = "opencode/big-pickle";
 pub const FREE_KIRO_MODELS: [&str; 2] = ["qwen3-coder-next", "auto"];
 
 /// The coordinator's starter table: role, provider, model, effort.
-const DEFAULT_PROFILES: [(&str, &str, &str, Option<&str>); 9] = [
+const DEFAULT_PROFILES: [(&str, &str, &str, Option<&str>); 13] = [
     ("prober", "codex", "gpt-6.1-sol", Some("low")),
     ("teacher", "agy", "gemini-4-argon-high", None),
     ("practice", "codex", "gpt-6-astra", Some("medium")),
@@ -146,11 +162,16 @@ const DEFAULT_PROFILES: [(&str, &str, &str, Option<&str>); 9] = [
     ("visual", "agy", "gemini-4-argon-high", None),
     ("demo", "codex", "gpt-6.1-sol", Some("medium")),
     ("pdf", "agy", "gemini-3.8-flash-medium", None),
+    ("author", "claude", "claude-opus-5-5", Some("low")),
+    ("placer", "claude", "claude-haiku-5-5", None),
+    ("follow_up", "claude", "claude-haiku-5-5", None),
+    ("distiller", "claude", "claude-haiku-5-5", None),
 ];
 
 pub const THEMES: [&str; 3] = ["dark", "light", "system"];
 pub const DIRECTIONS: [&str; 3] = ["ltr", "rtl", "auto"];
 pub const DENSITIES: [&str; 2] = ["comfortable", "compact"];
+pub const READING_FONTS: [&str; 3] = ["sans", "serif", "mono"];
 /// Parallel model calls the server allows (docs/web/06 Settings → Behavior).
 pub const CONCURRENCY_RANGE: std::ops::RangeInclusive<u8> = 1..=6;
 pub const DEFAULT_CONCURRENCY: u8 = 2;
@@ -165,6 +186,8 @@ pub struct UiSettings {
     pub direction: String,
     /// One of [`DENSITIES`].
     pub density: String,
+    /// One of [`READING_FONTS`]: the font for lesson prose, chat and digest text.
+    pub reading_font: String,
     pub reduce_motion: bool,
     pub confirm_destructive: bool,
     pub auto_open_browser: bool,
@@ -176,6 +199,7 @@ impl Default for UiSettings {
             theme: "dark".into(),
             direction: "ltr".into(),
             density: "comfortable".into(),
+            reading_font: "sans".into(),
             reduce_motion: false,
             confirm_destructive: true,
             auto_open_browser: true,
@@ -190,6 +214,7 @@ impl UiSettings {
             ("ui.theme", &self.theme, &THEMES[..]),
             ("ui.direction", &self.direction, &DIRECTIONS[..]),
             ("ui.density", &self.density, &DENSITIES[..]),
+            ("ui.readingFont", &self.reading_font, &READING_FONTS[..]),
         ] {
             if !ok.contains(&v.as_str()) {
                 out.push((path, format!("must be one of: {}", ok.join(", "))));
@@ -240,11 +265,26 @@ impl Settings {
         }
     }
 
+    /// Reads `settings.json`. A missing course role (`author`, `placer`, `follow_up`) gets its
+    /// default in memory, so a file written before courses existed still routes them; every other
+    /// role is left as saved and nothing is written back.
     pub fn load(root: &Path) -> anyhow::Result<Self> {
-        match std::fs::read(Self::path(root)) {
-            Ok(b) => serde_json::from_slice(&b).context("settings.json"),
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(Self::default()),
-            Err(e) => Err(e.into()),
+        let mut s: Self = match std::fs::read(Self::path(root)) {
+            Ok(b) => serde_json::from_slice(&b).context("settings.json")?,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Self::default(),
+            Err(e) => return Err(e.into()),
+        };
+        s.fill_course_roles();
+        Ok(s)
+    }
+
+    /// Adds the default profile of each course role that has none.
+    pub fn fill_course_roles(&mut self) {
+        for (role, provider, model, effort) in DEFAULT_PROFILES {
+            if COURSE_ROLES.contains(&role) && !self.profiles.contains_key(role) {
+                self.profiles
+                    .insert(role.into(), starter(provider, model, effort, role));
+            }
         }
     }
 
@@ -257,13 +297,8 @@ impl Settings {
     /// Writes the starter profile table and the visual learning style.
     pub fn apply_defaults(&mut self) {
         for (role, provider, model, effort) in DEFAULT_PROFILES {
-            let p = Profile {
-                provider: provider.into(),
-                model: model.into(),
-                effort: effort.map(Into::into),
-                fallback: false,
-            };
-            self.profiles.insert(role.into(), p);
+            self.profiles
+                .insert(role.into(), starter(provider, model, effort, role));
         }
         self.learning_style = LearningStyle::Visual;
     }
@@ -323,11 +358,26 @@ mod tests {
     #[test]
     fn settings_round_trip_and_default_when_missing() {
         let d = tempfile::tempdir().unwrap();
-        assert_eq!(Settings::load(d.path()).unwrap(), Settings::default());
-        let mut s = Settings::default();
+        let mut empty = Settings::default();
+        empty.fill_course_roles();
+        assert_eq!(Settings::load(d.path()).unwrap(), empty);
+        let mut s = empty;
         s.pins.insert("teacher".into(), "agy:default".into());
         s.save(d.path()).unwrap();
         assert_eq!(Settings::load(d.path()).unwrap(), s);
+    }
+
+    #[test]
+    fn reading_font_defaults_to_sans_and_round_trips() {
+        let d = tempfile::tempdir().unwrap();
+        std::fs::write(d.path().join("settings.json"), r#"{"ui":{"theme":"dark"}}"#).unwrap();
+        let mut s = Settings::load(d.path()).unwrap();
+        assert_eq!(s.ui.reading_font, "sans");
+        s.ui.reading_font = "serif".into();
+        s.save(d.path()).unwrap();
+        assert_eq!(Settings::load(d.path()).unwrap().ui.reading_font, "serif");
+        s.ui.reading_font = "comic".into();
+        assert_eq!(s.ui.validate().len(), 1);
     }
 
     #[test]
@@ -339,7 +389,7 @@ mod tests {
         )
         .unwrap();
         let s = Settings::load(d.path()).unwrap();
-        assert!(s.profiles.is_empty());
+        assert_eq!(s.profiles.len(), COURSE_ROLES.len());
         assert_eq!(s.learning_style, LearningStyle::Default);
         assert_eq!(s.pins["teacher"], "agy:auto");
     }
@@ -364,11 +414,17 @@ mod tests {
         assert_eq!(s.learning_style, LearningStyle::Visual);
         // The starter table passes the same validation as user input.
         for p in s.profiles.values() {
+            let valid = Profile::new(&p.provider, &p.model, p.effort.as_deref()).unwrap();
             assert_eq!(
-                &Profile::new(&p.provider, &p.model, p.effort.as_deref()).unwrap(),
-                p
+                valid,
+                Profile {
+                    fallback: false,
+                    ..p.clone()
+                }
             );
         }
+        assert!(COURSE_ROLES.iter().all(|r| s.profiles[*r].fallback));
+        assert!(!s.profiles["prober"].fallback);
         let d = tempfile::tempdir().unwrap();
         s.save(d.path()).unwrap();
         assert_eq!(Settings::load(d.path()).unwrap(), s);
@@ -431,5 +487,37 @@ mod tests {
         assert!(id.starts_with("dev"));
         assert_eq!(Settings::load(d.path()).unwrap().device_id, id);
         assert_eq!(s.ensure_device(d.path()).unwrap(), id);
+    }
+
+    #[test]
+    fn a_file_without_course_roles_gets_their_defaults_and_keeps_the_rest() {
+        let d = tempfile::tempdir().unwrap();
+        let raw = r#"{"profiles":{"prober":{"provider":"kiro","model":"auto"}}}"#;
+        std::fs::write(d.path().join("settings.json"), raw).unwrap();
+        let s = Settings::load(d.path()).unwrap();
+        assert_eq!(s.profiles["prober"].provider, "kiro");
+        assert!(!s.profiles["prober"].fallback);
+        let a = &s.profiles["author"];
+        assert_eq!(
+            (a.provider.as_str(), a.model.as_str(), a.effort.as_deref()),
+            ("claude", "claude-opus-5-5", Some("low"))
+        );
+        for r in ["placer", "follow_up"] {
+            assert_eq!(s.profiles[r].model, "claude-haiku-5-5");
+        }
+        assert!(COURSE_ROLES.iter().all(|r| s.profiles[*r].fallback));
+        assert_eq!(s.profiles.len(), 1 + COURSE_ROLES.len());
+        // The file itself is untouched, and a saved course role is not overwritten.
+        assert_eq!(
+            std::fs::read_to_string(d.path().join("settings.json")).unwrap(),
+            raw
+        );
+        let mut t = s.clone();
+        t.profiles.get_mut("author").unwrap().model = "claude-sonnet-5-5".into();
+        t.save(d.path()).unwrap();
+        assert_eq!(
+            Settings::load(d.path()).unwrap().profiles["author"].model,
+            "claude-sonnet-5-5"
+        );
     }
 }

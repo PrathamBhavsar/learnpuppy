@@ -6,18 +6,21 @@ pub mod artifacts;
 pub mod chats;
 pub mod chats_write;
 pub mod common;
+pub mod courses;
 pub mod digest;
 pub mod exports;
 pub mod graph;
 pub mod graph_write;
 pub mod ingest;
 pub mod jobs;
+pub mod learning;
 pub mod review;
 pub mod search;
 pub mod sources;
 pub mod system;
 #[cfg(feature = "test-hooks")]
 pub mod testhooks;
+pub mod textbook;
 pub mod workspaces;
 
 use axum::Router;
@@ -36,9 +39,12 @@ pub fn api() -> Router<AppState> {
         .merge(chats::routes())
         .merge(chats_write::routes())
         .merge(jobs::routes())
+        .merge(textbook::routes())
         .merge(artifacts::routes())
         .merge(sources::routes())
         .merge(review::routes())
+        .merge(courses::routes())
+        .merge(learning::routes())
         .merge(digest::routes())
         .merge(accounts::routes())
         .merge(search::routes())

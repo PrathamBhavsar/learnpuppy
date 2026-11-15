@@ -26,6 +26,8 @@ smol_str.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
 tokio-util.workspace = true
+uuid.workspace = true
+bytes.workspace = true
 tracing.workspace = true
 tempfile.workspace = true
 # Workspace export/import archives: deflate only. zip leaves the flate2 backend to us; pick the

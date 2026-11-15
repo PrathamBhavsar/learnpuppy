@@ -59,6 +59,11 @@ pub fn server_token(root: &Path) -> PathBuf {
     root.join("server.token")
 }
 
+/// One workspace's learning directory (bouts, check-ins, register, profile, schedule).
+pub fn learning_dir(ws_root: &Path) -> PathBuf {
+    ws_root.join("learning")
+}
+
 pub fn logs_dir(root: &Path) -> PathBuf {
     root.join("logs")
 }
@@ -88,6 +93,10 @@ mod tests {
         assert_eq!(state_json(r), Path::new("/r/state.json"));
         assert_eq!(settings_json(r), Path::new("/r/settings.json"));
         assert_eq!(server_lock(r), Path::new("/r/server.lock"));
+        assert_eq!(
+            learning_dir(Path::new("/r/workspaces/w")),
+            Path::new("/r/workspaces/w/learning")
+        );
         assert_eq!(logs_dir(r), Path::new("/r/logs"));
         assert_eq!(trash_dir(r), Path::new("/r/.trash"));
         assert_eq!(workspaces_dir(r), Path::new("/r/workspaces"));

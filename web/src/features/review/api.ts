@@ -112,15 +112,19 @@ export function useAnswerCard(ws: string) {
     mutationFn: async ({
       cardId,
       choiceKey,
+      text,
     }: {
       cardId: string
-      choiceKey: string
+      /** Multiple-choice cards. */
+      choiceKey?: string
+      /** Recall cards: the typed answer, graded on the server by code. */
+      text?: string
     }) =>
       normalizeAnswer(
         unwrap(
           await api.POST("/workspaces/{ws}/review/{card}/answer", {
             params: { path: { ws, card: cardId } },
-            body: { choiceKey, clientId: newClientId() },
+            body: { choiceKey, text, clientId: newClientId() },
           })
         )
       ),

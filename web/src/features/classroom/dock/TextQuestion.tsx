@@ -9,6 +9,7 @@ import { Spinner } from "@/components/ui/spinner"
 import { Textarea } from "@/components/ui/textarea"
 
 import { classroomInfo } from "../info"
+import { ThinkingField, useThinking } from "./ThinkingField"
 
 type TextQuestionProps = {
   pending: PendingQuestion
@@ -33,9 +34,16 @@ function wordCount(text: string): number {
 /** Free-text questions: probe, recall (with "I don't know"), explain and `ask_user_question`. */
 export function TextQuestion({ pending, busy, onSubmit }: TextQuestionProps) {
   const { text, setText, submit: submitDraft } = useDraft(pending.callId)
+  const think = useThinking(pending.callId)
   const canSubmit = !busy && text.trim() !== ""
   const submit = () => {
-    if (canSubmit) void submitDraft(() => onSubmit({ text: text.trim() }))
+    if (canSubmit)
+      void submitDraft(async () => {
+        const notes = think.text.trim()
+        await think.submit(() =>
+          onSubmit({ text: text.trim(), readingNotes: notes || undefined })
+        )
+      })
   }
   useHotkey("mod+enter", submit, {
     id: "answer-submit",
@@ -70,6 +78,12 @@ export function TextQuestion({ pending, busy, onSubmit }: TextQuestionProps) {
         }
         data-testid={`${pending.tool}-text`}
         className="max-h-48 min-h-16"
+      />
+      <ThinkingField
+        callId={pending.callId}
+        busy={busy}
+        value={think.text}
+        onChange={think.setText}
       />
       <div className="sticky bottom-0 z-10 flex items-center justify-between gap-2 bg-card py-2">
         <p className="text-[12px] text-muted-foreground">

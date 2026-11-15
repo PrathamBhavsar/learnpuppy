@@ -33,8 +33,8 @@ impl FsJobStore {
             let path = entry.map_err(be)?.path();
             if path.extension().is_some_and(|e| e == "json") {
                 // One unreadable job must not block claiming or recovery of the rest.
-                match read_json(&path, "") {
-                    Ok(job) => jobs.push(job),
+                match read_json::<JobRecord>(&path, "") {
+                    Ok(job) => jobs.push(self.normalize(job)),
                     Err(_) => skipped.push(path.display().to_string()),
                 }
             }
@@ -45,6 +45,30 @@ impl FsJobStore {
                 .then_with(|| a.id.cmp(&b.id))
         });
         Ok((jobs, skipped))
+    }
+
+    /// Older jobs stored seconds, and an artifact path from before `learnpuppy migrate` moved the
+    /// files. A missing artifact is looked up by file name in this workspace's `artifacts/` only.
+    fn normalize(&self, mut job: JobRecord) -> JobRecord {
+        job.created_at = lp_core::ports::epoch_ms(job.created_at);
+        let stored = job
+            .result
+            .as_ref()
+            .and_then(|r| r.get("artifact"))
+            .and_then(|a| a.as_str())
+            .map(PathBuf::from);
+        if let (Some(stored), Some(ws)) = (stored, self.dir.parent()) {
+            if !stored.exists() {
+                if let Some(name) = stored.file_name() {
+                    let here = ws.join("artifacts").join(name);
+                    if here.is_file() {
+                        job.result.as_mut().unwrap()["artifact"] =
+                            serde_json::json!(here.display().to_string());
+                    }
+                }
+            }
+        }
+        job
     }
 
     fn all(&self) -> StoreResult<Vec<JobRecord>> {

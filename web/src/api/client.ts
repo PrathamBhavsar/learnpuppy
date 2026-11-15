@@ -45,6 +45,12 @@ export const api = make<paths>()
 /** Endpoints from docs/web/03 that `openapi.json` does not contain yet (see pending-types.ts). */
 export const pendingApi = make<paths>()
 
+/** Learning-method course routes (plan, step, answers, close). */
+export const methodApi = make<paths>()
+
+/** Bout clock, check-in, schedule, profile and method-settings routes. */
+export const learningApi = make<paths>()
+
 /** `POST /diagnostics` is in docs/web/03 but the server does not implement it yet; callers fall back locally. */
 export const diagnosticsApi = make<Pick<PendingPaths, "/diagnostics">>()
 

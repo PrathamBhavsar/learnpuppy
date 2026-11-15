@@ -115,6 +115,18 @@ export type ClassroomMessage = {
   createdAt?: number | null
 }
 
+/** An answered `quiz`/`probe`: the prompt, the options as shown, the pick and the right answer. */
+export type AnswerRecap = {
+  callId: string
+  question: string
+  options: { letter: string; text: string; picked: boolean; right: boolean }[]
+  picked: string[]
+  right: string[]
+  confidence?: number | null
+  multiSelect: boolean
+  freeText?: string | null
+}
+
 export type PendingQuestion = {
   callId: string
   /** A `PendingTool`; the wire types it as a plain string. */
@@ -201,6 +213,8 @@ export type ClassroomView = {
   } | null
   probeProgress: { asked: number; max: number }
   verdicts: { callId: string; correct: boolean; explanation?: string | null }[]
+  /** Answered questions, so the prompt survives the verdict (docs/web/06). */
+  answers: AnswerRecap[]
   problemResult?: ProblemResult | null
   jobs: ClassroomJob[]
   turn: {
@@ -257,6 +271,8 @@ export type ReviewCard = {
   id: string
   front: string
   options?: { key: string; text: string }[]
+  /** Absent on old payloads, which are multiple choice. */
+  answerMode?: "mcq" | "recall"
   kind: string
   sourceDecisionId?: string
   due: number
@@ -465,7 +481,11 @@ export interface PendingPaths {
   "/accounts/{id}/models": Path<
     Method<
       "patch",
-      SendOp<AccountDetail, { model: string; disabled: boolean }, { id: string }>
+      SendOp<
+        AccountDetail,
+        { model: string; disabled: boolean },
+        { id: string }
+      >
     >
   >
   "/settings/free-defaults": Path<Method<"post", BodylessOp<SettingsDoc>>>

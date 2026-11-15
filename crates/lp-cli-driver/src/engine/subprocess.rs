@@ -64,6 +64,7 @@ pub enum CliKind {
 const OPENCODE_LOCKDOWN: &str = r#"{"permission":{"*":"deny"},"autoupdate":false,"share":"disabled","mcp":{},"lsp":false,"formatter":false,"plugin":[]}"#;
 /// Kiro agent with no tools, no MCP servers and no resources; selected with `--agent lp-tutor`.
 const KIRO_AGENT: &str = r#"{"name":"lp-tutor","description":"LearnPuppy tutor: no tools","prompt":null,"mcpServers":{},"tools":[],"allowedTools":[],"toolsSettings":{},"resources":[],"includeMcpJson":false}"#;
+const KIRO_SETTINGS: &str = r#"{"chat.agentEngine":"v3"}"#;
 const KIRO_AGENT_NAME: &str = "lp-tutor";
 /// Model used when opencode is asked to run without one.
 const OPENCODE_DEFAULT_MODEL: &str = "opencode/big-pickle";
@@ -82,6 +83,9 @@ pub fn account_label(id: &str) -> String {
     });
     format!("{provider}-{:06x}", hash & 0xff_ffff)
 }
+
+/// Args, stdin, and the codex instructions file that must outlive the call.
+type TurnArgs = (Vec<String>, Option<String>, Option<tempfile::NamedTempFile>);
 
 /// Drives one agent CLI (`claude -p`, `codex exec`, `agy -p`) as a child process.
 #[derive(Debug, Clone)]
@@ -179,12 +183,7 @@ impl SubprocessEngine {
 
     /// One info line per CLI call. The prompt travels on stdin and the schema is blanked, so neither is logged.
     fn log_start(&self, args: &[String]) -> std::time::Instant {
-        let mut argv = args.to_vec();
-        for i in 1..argv.len() {
-            if argv[i - 1] == "--json-schema" {
-                argv[i] = "<redacted>".into();
-            }
-        }
+        let argv = redact_argv(args);
         let flag = |names: [&str; 2]| {
             args.windows(2)
                 .find(|w| names.contains(&w[0].as_str()))
@@ -303,8 +302,11 @@ impl SubprocessEngine {
         })
     }
 
-    fn turn_args(&self, req: &TurnRequest) -> (Vec<String>, Option<String>) {
+    /// Args and stdin for one turn, plus the codex instructions file that must outlive the call.
+    fn turn_args(&self, req: &TurnRequest) -> Result<TurnArgs, DriverError> {
         let mut a: Vec<String> = Vec::new();
+        let mut prompt = with_tools(&req.prompt, &req.tools);
+        let mut system_file = None;
         match self.kind {
             CliKind::Claude => {
                 a.extend(
@@ -320,18 +322,39 @@ impl SubprocessEngine {
                     .map(String::from),
                 );
                 a.extend(CLAUDE_ISOLATION.map(String::from));
+                if let Some(sys) = &req.system {
+                    a.extend(["--system-prompt".into(), sys.clone()]);
+                }
             }
-            CliKind::Codex => a.extend(self.codex_base()),
-            CliKind::Agy => a.extend(AGY_STREAM.map(String::from)),
-            CliKind::Opencode => a.extend(OPENCODE_BASE.map(String::from)),
-            CliKind::Kiro => a.extend(KIRO_BASE.map(String::from)),
+            CliKind::Codex => {
+                a.extend(self.codex_base());
+                if let Some(sys) = &req.system {
+                    let mut f = tempfile::Builder::new()
+                        .suffix(".md")
+                        .tempfile_in(self.sandbox())?;
+                    std::io::Write::write_all(&mut f, sys.as_bytes())?;
+                    a.extend([
+                        "-c".into(),
+                        format!("model_instructions_file=\"{}\"", f.path().display()),
+                    ]);
+                    system_file = Some(f);
+                }
+            }
+            CliKind::Agy | CliKind::Opencode | CliKind::Kiro => {
+                let base: &[&str] = match self.kind {
+                    CliKind::Agy => &AGY_STREAM,
+                    CliKind::Opencode => &OPENCODE_BASE,
+                    _ => &KIRO_BASE,
+                };
+                a.extend(base.iter().map(|s| s.to_string()));
+                // No system-prompt flag: the instructions lead the prompt so none are lost.
+                if let Some(sys) = &req.system {
+                    prompt = format!("{sys}\n\n{prompt}");
+                }
+            }
         }
-        self.finish_args(
-            a,
-            &with_tools(&req.prompt, &req.tools),
-            req.model.as_deref(),
-            req.effort.as_deref(),
-        )
+        let (a, stdin) = self.finish_args(a, &prompt, req.model.as_deref(), req.effort.as_deref());
+        Ok((a, stdin, system_file))
     }
 
     fn codex_base(&self) -> Vec<String> {
@@ -393,6 +416,17 @@ impl SubprocessEngine {
     }
 }
 
+/// Argv for the log: the schema and system text are prompt content, not log material.
+fn redact_argv(args: &[String]) -> Vec<String> {
+    let mut argv = args.to_vec();
+    for i in 1..argv.len() {
+        if matches!(argv[i - 1].as_str(), "--json-schema" | "--system-prompt") {
+            argv[i] = "<redacted>".into();
+        }
+    }
+    argv
+}
+
 /// `~/.learnpuppy/logs/raw` (or under `$LEARNPUPPY_HOME`), only when `LEARNPUPPY_DEBUG_RAW=1`.
 fn raw_dir_from_env() -> Option<PathBuf> {
     if std::env::var("LEARNPUPPY_DEBUG_RAW").as_deref() != Ok("1") {
@@ -405,7 +439,8 @@ fn raw_dir_from_env() -> Option<PathBuf> {
 }
 
 /// agy reads NDJSON messages from stdin only with a stream-json output.
-const AGY_STREAM: [&str; 5] = [
+const AGY_STREAM: [&str; 6] = [
+    "--disable-slash-commands",
     "--input-format",
     "stream-json",
     "--output-format",
@@ -415,7 +450,12 @@ const AGY_STREAM: [&str; 5] = [
 
 /// Claude: ignore the user's `~/.claude` instructions, output style and settings (issue #413); only
 /// project and local scope (the empty sandbox) load. Auth lives outside the settings sources.
-const CLAUDE_ISOLATION: [&str; 2] = ["--setting-sources", "project,local"];
+/// `--disable-slash-commands` (confirmed in `claude --help`) drops skills and commands from the prompt.
+const CLAUDE_ISOLATION: [&str; 3] = [
+    "--setting-sources",
+    "project,local",
+    "--disable-slash-commands",
+];
 
 /// Codex: no user config (MCP servers, notify hooks, project trust), no session files.
 ///
@@ -423,8 +463,14 @@ const CLAUDE_ISOLATION: [&str; 2] = ["--setting-sources", "project,local"];
 /// turn ran `ls ~/.ssh`). Codex has no flag to narrow reads and a private `HOME` hangs its auth, so
 /// this is a documented residual (docs/web/12-cli-isolation-and-failures.md); agy has the same class
 /// of exposure behind `--sandbox`. kiro and opencode are tool-less, so they read nothing.
-const CODEX_BASE: [&str; 8] = [
+/// `--disable plugins` and `--disable multi_agent` are real features in `codex features list`; the
+/// web_search and skills toggles are not listed there, so they are skipped.
+const CODEX_BASE: [&str; 12] = [
     "exec",
+    "--disable",
+    "plugins",
+    "--disable",
+    "multi_agent",
     "--json",
     "--skip-git-repo-check",
     "--ignore-user-config",
@@ -453,6 +499,11 @@ fn prepare_kiro_home(real_home: &Path, dest: &Path) -> std::io::Result<()> {
     let agents = dest.join(".kiro/agents");
     std::fs::create_dir_all(&agents)?;
     std::fs::write(agents.join(format!("{KIRO_AGENT_NAME}.json")), KIRO_AGENT)?;
+    // Without this the CLI starts its default (v2) engine, which prints `runStarted` and then never
+    // answers headless in a fresh HOME. Written, not linked: the user's MCP and survey files stay out.
+    let settings = dest.join(".kiro/settings");
+    std::fs::create_dir_all(&settings)?;
+    std::fs::write(settings.join("cli.json"), KIRO_SETTINGS)?;
     for rel in [
         "Library/Application Support/kiro-cli",
         ".local/bin",
@@ -1102,7 +1153,8 @@ impl LlmEngine for SubprocessEngine {
         event_tx: mpsc::Sender<StreamDelta>,
         cancel: CancellationToken,
     ) -> Result<TurnResponse, DriverError> {
-        let (args, stdin) = self.turn_args(&req);
+        // `_system_file` stays alive until the call (and its retry) is done.
+        let (args, stdin, _system_file) = self.turn_args(&req)?;
         let started = self.log_start(&args);
         let join = !req.tools.is_empty();
         let mut r = self
@@ -1241,6 +1293,83 @@ mod tests {
         (dir, e)
     }
 
+    fn argv_for(kind: CliKind, model: Option<&str>) -> Vec<String> {
+        let e = SubprocessEngine::new(kind).unwrap();
+        let req = TurnRequest {
+            system: None,
+            prompt: "p".into(),
+            model: model.map(String::from),
+            effort: None,
+            tools: vec![],
+        };
+        e.turn_args(&req).unwrap().0
+    }
+
+    #[test]
+    fn claude_argv_snapshot() {
+        assert_eq!(
+            argv_for(CliKind::Claude, Some("m")),
+            [
+                "-p",
+                "--output-format",
+                "stream-json",
+                "--verbose",
+                "--strict-mcp-config",
+                "--tools",
+                "",
+                "--setting-sources",
+                "project,local",
+                "--disable-slash-commands",
+                "--model",
+                "m"
+            ]
+        );
+    }
+
+    #[test]
+    fn codex_argv_snapshot() {
+        let a = argv_for(CliKind::Codex, Some("m"));
+        let sandbox = a[a.iter().position(|x| x == "-C").unwrap() + 1].clone();
+        assert_eq!(
+            a,
+            [
+                "exec",
+                "--disable",
+                "plugins",
+                "--disable",
+                "multi_agent",
+                "--json",
+                "--skip-git-repo-check",
+                "--ignore-user-config",
+                "--ephemeral",
+                "-s",
+                "read-only",
+                "-C",
+                &sandbox,
+                "-m",
+                "m",
+                "-"
+            ]
+        );
+    }
+
+    #[test]
+    fn agy_argv_snapshot() {
+        assert_eq!(
+            argv_for(CliKind::Agy, Some("m")),
+            [
+                "--disable-slash-commands",
+                "--input-format",
+                "stream-json",
+                "--output-format",
+                "stream-json",
+                "--sandbox",
+                "--model",
+                "m"
+            ]
+        );
+    }
+
     fn pid_alive(pid: &str) -> bool {
         std::process::Command::new("kill")
             .args(["-0", pid])
@@ -1296,6 +1425,7 @@ echo '{"type":"result","result":"hi there"}'"#;
         let resp = e
             .stream_turn(
                 TurnRequest {
+                    system: None,
                     prompt: "p".into(),
                     model: None,
                     effort: None,
@@ -1423,7 +1553,7 @@ esac"#;
             )
             .await
             .unwrap();
-        assert!(resp.text.contains("argc=5 "), "{}", resp.text);
+        assert!(resp.text.contains("argc=6 "), "{}", resp.text);
         assert!(resp.text.contains("shape=yes end=yes"), "{}", resp.text);
         assert!(!resp.text.contains("help you"), "{}", resp.text);
         let bytes: usize = resp.text.split("bytes=").nth(1).unwrap()[..7]
@@ -1435,7 +1565,7 @@ esac"#;
     #[test]
     fn agy_argv_never_uses_dash_p_dash() {
         let e = SubprocessEngine::new(CliKind::Agy).unwrap();
-        let (a, stdin) = e.turn_args(&TurnRequest::default());
+        let (a, stdin, _) = e.turn_args(&TurnRequest::default()).unwrap();
         assert!(
             !a.contains(&"-p".into()) && !a.contains(&"-".into()),
             "{a:?}"
@@ -1794,7 +1924,7 @@ case "$p" in *'<tool_call>'*quiz*) echo '{"type":"assistant","message":{"content
                 effort: effort.map(Into::into),
                 ..TurnRequest::default()
             };
-            let (a, _) = e.turn_args(&req);
+            let (a, _, _) = e.turn_args(&req).unwrap();
             a.join(" ")
         };
         let a = argv(CliKind::Codex, Some("gpt-6-sol"), Some("high"));
@@ -1843,7 +1973,7 @@ case "$p" in *'<tool_call>'*quiz*) echo '{"type":"assistant","message":{"content
         let mut e = SubprocessEngine::new(CliKind::Claude).unwrap();
         e.model = Some("m".into());
         e.effort = Some("low".into());
-        let (a, _) = e.turn_args(&TurnRequest::default());
+        let (a, _, _) = e.turn_args(&TurnRequest::default()).unwrap();
         assert!(a.join(" ").ends_with("--model m --effort low"));
     }
 
@@ -2139,11 +2269,75 @@ echo '{"type":"sessionUpdate","data":{"update":{"sessionUpdate":"agent_message_c
     }
 
     #[test]
+    fn system_text_reaches_every_cli_and_keeps_the_isolation_flags() {
+        let req = TurnRequest {
+            prompt: "question".into(),
+            system: Some("be terse".into()),
+            ..Default::default()
+        };
+        let run = |e: &SubprocessEngine| e.turn_args(&req).unwrap();
+        let (claude, codex) = (
+            SubprocessEngine::new(CliKind::Claude).unwrap(),
+            SubprocessEngine::new(CliKind::Codex).unwrap(),
+        );
+        let (a, stdin, file) = run(&claude);
+        let a = a.join(" ");
+        assert!(a.contains("--system-prompt be terse"), "{a}");
+        assert!(a.contains("--setting-sources project,local") && a.contains("--tools "));
+        assert_eq!(stdin.as_deref(), Some("question"));
+        assert!(file.is_none());
+
+        let (a, stdin, file) = run(&codex);
+        let a = a.join(" ");
+        let file = file.expect("codex instructions file");
+        assert!(
+            a.contains(&format!(
+                "-c model_instructions_file=\"{}\"",
+                file.path().display()
+            )),
+            "{a}"
+        );
+        assert_eq!(std::fs::read_to_string(file.path()).unwrap(), "be terse");
+        assert!(a.contains("--ignore-user-config") && a.contains("-s read-only"));
+        assert_eq!(stdin.as_deref(), Some("question"));
+
+        for k in [CliKind::Agy, CliKind::Opencode, CliKind::Kiro] {
+            let (a, stdin, file) = run(&SubprocessEngine::new(k).unwrap());
+            let stdin = stdin.unwrap();
+            assert!(
+                stdin.find("be terse") < stdin.find("question") && stdin.contains("be terse"),
+                "{k:?}: {stdin}"
+            );
+            assert!(!a.join(" ").contains("be terse") && file.is_none());
+        }
+        // No system text: nothing extra.
+        let (a, ..) = SubprocessEngine::new(CliKind::Claude)
+            .unwrap()
+            .turn_args(&TurnRequest::default())
+            .unwrap();
+        assert!(!a.contains(&"--system-prompt".to_string()));
+    }
+
+    #[test]
+    fn logged_argv_does_not_contain_the_system_text() {
+        let e = SubprocessEngine::new(CliKind::Claude).unwrap();
+        let req = TurnRequest {
+            system: Some("SECRET-SYSTEM-TEXT".into()),
+            ..Default::default()
+        };
+        let (a, ..) = e.turn_args(&req).unwrap();
+        assert!(a.iter().any(|x| x == "SECRET-SYSTEM-TEXT"));
+        let logged = format!("{:?}", redact_argv(&a));
+        assert!(!logged.contains("SECRET-SYSTEM-TEXT") && logged.contains("--system-prompt"));
+    }
+
+    #[test]
     fn isolation_args_for_every_cli() {
         let args = |k| {
             SubprocessEngine::new(k)
                 .unwrap()
                 .turn_args(&TurnRequest::default())
+                .unwrap()
                 .0
                 .join(" ")
         };
@@ -2241,6 +2435,10 @@ printf '{"type":"text","part":{"text":"home=%s cfg=%s data=%s cwd=%s dis=%s lock
         assert_eq!(agent["tools"], serde_json::json!([]));
         assert_eq!(agent["mcpServers"], serde_json::json!({}));
         assert_eq!(agent["includeMcpJson"], false);
+        // The v3 engine is what answers headless in a private HOME (v2 hung after `runStarted`).
+        let cfg = std::fs::read_to_string(dest.path().join(".kiro/settings/cli.json")).unwrap();
+        assert!(cfg.contains(r#""chat.agentEngine":"v3""#));
+        assert!(!dest.path().join(".kiro/settings/mcp.json").exists());
         let linked = |rel: &str| std::fs::symlink_metadata(dest.path().join(rel)).is_ok();
         assert!(linked("Library/Application Support/kiro-cli") && linked(".local/bin"));
         assert!(!linked(".kiro/skills") && !linked(".ssh"));

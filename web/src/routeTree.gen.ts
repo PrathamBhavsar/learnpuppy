@@ -17,12 +17,16 @@ import { Route as ShellReviewAllRouteImport } from './routes/_shell.review-all'
 import { Route as ShellSettingsRouteImport } from './routes/_shell.settings'
 import { Route as ShellTrashRouteImport } from './routes/_shell.trash'
 import { Route as ShellWWsRouteImport } from './routes/_shell.w.$ws'
+import { Route as ShellWWsCourseRouteImport } from './routes/_shell.w.$ws.course'
 import { Route as ShellWWsDigestRouteImport } from './routes/_shell.w.$ws.digest'
 import { Route as ShellWWsGraphRouteImport } from './routes/_shell.w.$ws.graph'
 import { Route as ShellWWsIngestRouteImport } from './routes/_shell.w.$ws.ingest'
 import { Route as ShellWWsLearnRouteImport } from './routes/_shell.w.$ws.learn'
+import { Route as ShellWWsProfileRouteImport } from './routes/_shell.w.$ws.profile'
 import { Route as ShellWWsReviewRouteImport } from './routes/_shell.w.$ws.review'
+import { Route as ShellWWsScheduleRouteImport } from './routes/_shell.w.$ws.schedule'
 import { Route as ShellWWsSettingsRouteImport } from './routes/_shell.w.$ws.settings'
+import { Route as ShellWWsTextbookRouteImport } from './routes/_shell.w.$ws.textbook'
 import { Route as ShellWWsLearnIndexRouteImport } from './routes/_shell.w.$ws.learn.index'
 import { Route as ShellWWsLearnChatRouteImport } from './routes/_shell.w.$ws.learn.$chat'
 
@@ -65,6 +69,11 @@ const ShellWWsRoute = ShellWWsRouteImport.update({
   path: '/w/$ws',
   getParentRoute: () => ShellRoute,
 } as any)
+const ShellWWsCourseRoute = ShellWWsCourseRouteImport.update({
+  id: '/course',
+  path: '/course',
+  getParentRoute: () => ShellWWsRoute,
+} as any)
 const ShellWWsDigestRoute = ShellWWsDigestRouteImport.update({
   id: '/digest',
   path: '/digest',
@@ -85,14 +94,29 @@ const ShellWWsLearnRoute = ShellWWsLearnRouteImport.update({
   path: '/learn',
   getParentRoute: () => ShellWWsRoute,
 } as any)
+const ShellWWsProfileRoute = ShellWWsProfileRouteImport.update({
+  id: '/profile',
+  path: '/profile',
+  getParentRoute: () => ShellWWsRoute,
+} as any)
 const ShellWWsReviewRoute = ShellWWsReviewRouteImport.update({
   id: '/review',
   path: '/review',
   getParentRoute: () => ShellWWsRoute,
 } as any)
+const ShellWWsScheduleRoute = ShellWWsScheduleRouteImport.update({
+  id: '/schedule',
+  path: '/schedule',
+  getParentRoute: () => ShellWWsRoute,
+} as any)
 const ShellWWsSettingsRoute = ShellWWsSettingsRouteImport.update({
   id: '/settings',
   path: '/settings',
+  getParentRoute: () => ShellWWsRoute,
+} as any)
+const ShellWWsTextbookRoute = ShellWWsTextbookRouteImport.update({
+  id: '/textbook',
+  path: '/textbook',
   getParentRoute: () => ShellWWsRoute,
 } as any)
 const ShellWWsLearnIndexRoute = ShellWWsLearnIndexRouteImport.update({
@@ -114,12 +138,16 @@ export interface FileRoutesByFullPath {
   '/settings': typeof ShellSettingsRoute
   '/trash': typeof ShellTrashRoute
   '/w/$ws': typeof ShellWWsRouteWithChildren
+  '/w/$ws/course': typeof ShellWWsCourseRoute
   '/w/$ws/digest': typeof ShellWWsDigestRoute
   '/w/$ws/graph': typeof ShellWWsGraphRoute
   '/w/$ws/ingest': typeof ShellWWsIngestRoute
   '/w/$ws/learn': typeof ShellWWsLearnRouteWithChildren
+  '/w/$ws/profile': typeof ShellWWsProfileRoute
   '/w/$ws/review': typeof ShellWWsReviewRoute
+  '/w/$ws/schedule': typeof ShellWWsScheduleRoute
   '/w/$ws/settings': typeof ShellWWsSettingsRoute
+  '/w/$ws/textbook': typeof ShellWWsTextbookRoute
   '/w/$ws/learn/$chat': typeof ShellWWsLearnChatRoute
   '/w/$ws/learn/': typeof ShellWWsLearnIndexRoute
 }
@@ -131,11 +159,15 @@ export interface FileRoutesByTo {
   '/settings': typeof ShellSettingsRoute
   '/trash': typeof ShellTrashRoute
   '/w/$ws': typeof ShellWWsRouteWithChildren
+  '/w/$ws/course': typeof ShellWWsCourseRoute
   '/w/$ws/digest': typeof ShellWWsDigestRoute
   '/w/$ws/graph': typeof ShellWWsGraphRoute
   '/w/$ws/ingest': typeof ShellWWsIngestRoute
+  '/w/$ws/profile': typeof ShellWWsProfileRoute
   '/w/$ws/review': typeof ShellWWsReviewRoute
+  '/w/$ws/schedule': typeof ShellWWsScheduleRoute
   '/w/$ws/settings': typeof ShellWWsSettingsRoute
+  '/w/$ws/textbook': typeof ShellWWsTextbookRoute
   '/w/$ws/learn/$chat': typeof ShellWWsLearnChatRoute
   '/w/$ws/learn': typeof ShellWWsLearnIndexRoute
 }
@@ -149,12 +181,16 @@ export interface FileRoutesById {
   '/_shell/settings': typeof ShellSettingsRoute
   '/_shell/trash': typeof ShellTrashRoute
   '/_shell/w/$ws': typeof ShellWWsRouteWithChildren
+  '/_shell/w/$ws/course': typeof ShellWWsCourseRoute
   '/_shell/w/$ws/digest': typeof ShellWWsDigestRoute
   '/_shell/w/$ws/graph': typeof ShellWWsGraphRoute
   '/_shell/w/$ws/ingest': typeof ShellWWsIngestRoute
   '/_shell/w/$ws/learn': typeof ShellWWsLearnRouteWithChildren
+  '/_shell/w/$ws/profile': typeof ShellWWsProfileRoute
   '/_shell/w/$ws/review': typeof ShellWWsReviewRoute
+  '/_shell/w/$ws/schedule': typeof ShellWWsScheduleRoute
   '/_shell/w/$ws/settings': typeof ShellWWsSettingsRoute
+  '/_shell/w/$ws/textbook': typeof ShellWWsTextbookRoute
   '/_shell/w/$ws/learn/$chat': typeof ShellWWsLearnChatRoute
   '/_shell/w/$ws/learn/': typeof ShellWWsLearnIndexRoute
 }
@@ -168,12 +204,16 @@ export interface FileRouteTypes {
     | '/settings'
     | '/trash'
     | '/w/$ws'
+    | '/w/$ws/course'
     | '/w/$ws/digest'
     | '/w/$ws/graph'
     | '/w/$ws/ingest'
     | '/w/$ws/learn'
+    | '/w/$ws/profile'
     | '/w/$ws/review'
+    | '/w/$ws/schedule'
     | '/w/$ws/settings'
+    | '/w/$ws/textbook'
     | '/w/$ws/learn/$chat'
     | '/w/$ws/learn/'
   fileRoutesByTo: FileRoutesByTo
@@ -185,11 +225,15 @@ export interface FileRouteTypes {
     | '/settings'
     | '/trash'
     | '/w/$ws'
+    | '/w/$ws/course'
     | '/w/$ws/digest'
     | '/w/$ws/graph'
     | '/w/$ws/ingest'
+    | '/w/$ws/profile'
     | '/w/$ws/review'
+    | '/w/$ws/schedule'
     | '/w/$ws/settings'
+    | '/w/$ws/textbook'
     | '/w/$ws/learn/$chat'
     | '/w/$ws/learn'
   id:
@@ -202,12 +246,16 @@ export interface FileRouteTypes {
     | '/_shell/settings'
     | '/_shell/trash'
     | '/_shell/w/$ws'
+    | '/_shell/w/$ws/course'
     | '/_shell/w/$ws/digest'
     | '/_shell/w/$ws/graph'
     | '/_shell/w/$ws/ingest'
     | '/_shell/w/$ws/learn'
+    | '/_shell/w/$ws/profile'
     | '/_shell/w/$ws/review'
+    | '/_shell/w/$ws/schedule'
     | '/_shell/w/$ws/settings'
+    | '/_shell/w/$ws/textbook'
     | '/_shell/w/$ws/learn/$chat'
     | '/_shell/w/$ws/learn/'
   fileRoutesById: FileRoutesById
@@ -275,6 +323,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ShellWWsRouteImport
       parentRoute: typeof ShellRoute
     }
+    '/_shell/w/$ws/course': {
+      id: '/_shell/w/$ws/course'
+      path: '/course'
+      fullPath: '/w/$ws/course'
+      preLoaderRoute: typeof ShellWWsCourseRouteImport
+      parentRoute: typeof ShellWWsRoute
+    }
     '/_shell/w/$ws/digest': {
       id: '/_shell/w/$ws/digest'
       path: '/digest'
@@ -303,6 +358,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ShellWWsLearnRouteImport
       parentRoute: typeof ShellWWsRoute
     }
+    '/_shell/w/$ws/profile': {
+      id: '/_shell/w/$ws/profile'
+      path: '/profile'
+      fullPath: '/w/$ws/profile'
+      preLoaderRoute: typeof ShellWWsProfileRouteImport
+      parentRoute: typeof ShellWWsRoute
+    }
     '/_shell/w/$ws/review': {
       id: '/_shell/w/$ws/review'
       path: '/review'
@@ -310,11 +372,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ShellWWsReviewRouteImport
       parentRoute: typeof ShellWWsRoute
     }
+    '/_shell/w/$ws/schedule': {
+      id: '/_shell/w/$ws/schedule'
+      path: '/schedule'
+      fullPath: '/w/$ws/schedule'
+      preLoaderRoute: typeof ShellWWsScheduleRouteImport
+      parentRoute: typeof ShellWWsRoute
+    }
     '/_shell/w/$ws/settings': {
       id: '/_shell/w/$ws/settings'
       path: '/settings'
       fullPath: '/w/$ws/settings'
       preLoaderRoute: typeof ShellWWsSettingsRouteImport
+      parentRoute: typeof ShellWWsRoute
+    }
+    '/_shell/w/$ws/textbook': {
+      id: '/_shell/w/$ws/textbook'
+      path: '/textbook'
+      fullPath: '/w/$ws/textbook'
+      preLoaderRoute: typeof ShellWWsTextbookRouteImport
       parentRoute: typeof ShellWWsRoute
     }
     '/_shell/w/$ws/learn/': {
@@ -349,21 +425,29 @@ const ShellWWsLearnRouteWithChildren = ShellWWsLearnRoute._addFileChildren(
 )
 
 interface ShellWWsRouteChildren {
+  ShellWWsCourseRoute: typeof ShellWWsCourseRoute
   ShellWWsDigestRoute: typeof ShellWWsDigestRoute
   ShellWWsGraphRoute: typeof ShellWWsGraphRoute
   ShellWWsIngestRoute: typeof ShellWWsIngestRoute
   ShellWWsLearnRoute: typeof ShellWWsLearnRouteWithChildren
+  ShellWWsProfileRoute: typeof ShellWWsProfileRoute
   ShellWWsReviewRoute: typeof ShellWWsReviewRoute
+  ShellWWsScheduleRoute: typeof ShellWWsScheduleRoute
   ShellWWsSettingsRoute: typeof ShellWWsSettingsRoute
+  ShellWWsTextbookRoute: typeof ShellWWsTextbookRoute
 }
 
 const ShellWWsRouteChildren: ShellWWsRouteChildren = {
+  ShellWWsCourseRoute: ShellWWsCourseRoute,
   ShellWWsDigestRoute: ShellWWsDigestRoute,
   ShellWWsGraphRoute: ShellWWsGraphRoute,
   ShellWWsIngestRoute: ShellWWsIngestRoute,
   ShellWWsLearnRoute: ShellWWsLearnRouteWithChildren,
+  ShellWWsProfileRoute: ShellWWsProfileRoute,
   ShellWWsReviewRoute: ShellWWsReviewRoute,
+  ShellWWsScheduleRoute: ShellWWsScheduleRoute,
   ShellWWsSettingsRoute: ShellWWsSettingsRoute,
+  ShellWWsTextbookRoute: ShellWWsTextbookRoute,
 }
 
 const ShellWWsRouteWithChildren = ShellWWsRoute._addFileChildren(

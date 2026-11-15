@@ -3,7 +3,7 @@ import { MonitorIcon, MoonIcon, SunIcon } from "lucide-react"
 import { Switch } from "@/components/ui/switch"
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
 import { useDirectionPref, useTheme } from "@/hooks/use-theme"
-import { type Density, type Theme, isTheme } from "@/lib/theme"
+import { type Density, type Theme, isReadingFont, isTheme } from "@/lib/theme"
 import { useUi } from "@/stores/ui"
 
 import { SettingRow } from "./SettingRow"
@@ -24,6 +24,10 @@ export function AppearanceCard() {
   const setReduceMotion = useUi((s) => s.setReduceMotion)
   const density = useUi((s) => s.density)
   const setDensity = useUi((s) => s.setDensity)
+  const readingFont = useUi((s) => s.readingFont)
+  const setReadingFont = useUi((s) => s.setReadingFont)
+  const legacyClassroom = useUi((s) => s.legacyClassroom)
+  const setLegacyClassroom = useUi((s) => s.setLegacyClassroom)
   const { patch } = useSettingsPatch()
 
   return (
@@ -125,6 +129,47 @@ export function AppearanceCard() {
             Compact
           </ToggleGroupItem>
         </ToggleGroup>
+      </SettingRow>
+
+      <SettingRow
+        label="Reading font"
+        description="The font for lessons, chat and the digest. Menus and code stay mono."
+      >
+        <ToggleGroup
+          type="single"
+          variant="outline"
+          size="sm"
+          spacing={0}
+          aria-label="Reading font"
+          value={readingFont}
+          onValueChange={(value) => {
+            if (!isReadingFont(value)) return
+            setReadingFont(value)
+            patch({ ui: { readingFont: value } }, "reading font")
+          }}
+        >
+          <ToggleGroupItem value="sans" data-testid="reading-font-sans">
+            Sans
+          </ToggleGroupItem>
+          <ToggleGroupItem value="serif" data-testid="reading-font-serif">
+            Serif
+          </ToggleGroupItem>
+          <ToggleGroupItem value="mono" data-testid="reading-font-mono">
+            Mono
+          </ToggleGroupItem>
+        </ToggleGroup>
+      </SettingRow>
+
+      <SettingRow
+        label="Legacy classroom"
+        description="Advanced: show the old chat-based Learn page in the sidebar and command palette. Courses are the main way to learn."
+      >
+        <Switch
+          aria-label="Legacy classroom"
+          data-testid="legacy-classroom"
+          checked={legacyClassroom}
+          onCheckedChange={setLegacyClassroom}
+        />
       </SettingRow>
     </div>
   )

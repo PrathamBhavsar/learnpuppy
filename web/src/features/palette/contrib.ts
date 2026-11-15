@@ -6,6 +6,7 @@ import {
   MonitorIcon,
   MoonIcon,
   PlayIcon,
+  UploadIcon,
   RefreshCwIcon,
   SettingsIcon,
   SunIcon,
@@ -21,6 +22,7 @@ import { useTheme } from "@/hooks/use-theme"
 import { type Command, useContributeCommands } from "@/lib/commands"
 import { SECTIONS } from "@/lib/nav"
 import { pathForWorkspace } from "@/lib/nav"
+import { useUi } from "@/stores/ui"
 import { toastError, toastSuccess } from "@/lib/toast"
 import { workspaceIcon } from "@/lib/workspace-visual"
 
@@ -39,10 +41,12 @@ export function usePaletteCommands(currentPath: string): void {
   const { theme, resolvedTheme, setTheme } = useTheme()
   const relayout = useRelayout(ws ?? "")
 
+  const legacyClassroom = useUi((s) => s.legacyClassroom)
   const commands: Command[] = []
 
   if (ws) {
     for (const { key, label, icon } of SECTIONS) {
+      if (key === "learn" && !legacyClassroom) continue
       commands.push({
         id: `go-${key}`,
         group: "Navigate",
@@ -150,6 +154,14 @@ export function usePaletteCommands(currentPath: string): void {
         keywords: ["cards", "due", "spaced repetition"],
         icon: LayersIcon,
         run: () => goto(`/w/${ws}/review`),
+      },
+      {
+        id: "action-upload-textbook",
+        group: "Actions",
+        label: "Upload a textbook",
+        keywords: ["pdf", "book", "chapter", "reading check", "textbooks"],
+        icon: UploadIcon,
+        run: () => goto(`/w/${ws}/textbook?upload=1`),
       },
       {
         id: "action-relayout",

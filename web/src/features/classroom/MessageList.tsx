@@ -6,6 +6,8 @@ import type { ClassroomView } from "@/api/pending-types"
 import { useStreamingTurn } from "@/hooks/use-streaming-turn"
 import { spring } from "@/lib/motion"
 
+import { ProbeDoneCard } from "./cards/ProbeDoneCard"
+import { QuizAskedCard } from "./cards/QuizAskedCard"
 import { COPY, toolLabel } from "./copy"
 import { Message, CallChips } from "./Message"
 import { StreamingText } from "./StreamingText"
@@ -24,6 +26,7 @@ export function MessageList({ chatId, view }: MessageListProps) {
     () => new Set(view.messages.map((message) => message.id))
   )
   const verdicts = new Map(view.verdicts.map((v) => [v.callId, v]))
+  const recaps = new Map(view.answers.map((a) => [a.callId, a]))
   const streaming = view.turn.state === "running"
   const liveText = live?.text ?? ""
   const liveThinking = live?.thinking ?? ""
@@ -61,8 +64,22 @@ export function MessageList({ chatId, view }: MessageListProps) {
                   ? verdicts.get(message.answersCallId)
                   : undefined
               }
+              recap={
+                message.answersCallId
+                  ? recaps.get(message.answersCallId)
+                  : undefined
+              }
             />
           ))}
+          {view.pending ? <QuizAskedCard question={view.pending} /> : null}
+          {!view.pending &&
+          view.probeProgress.max > 0 &&
+          view.probeProgress.asked >= view.probeProgress.max ? (
+            <ProbeDoneCard
+              asked={view.probeProgress.asked}
+              max={view.probeProgress.max}
+            />
+          ) : null}
           {streaming ? (
             <div
               data-testid="message-streaming"

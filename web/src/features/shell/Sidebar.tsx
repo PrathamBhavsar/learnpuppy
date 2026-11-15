@@ -21,6 +21,7 @@ import { dur, ease, spring } from "@/lib/motion"
 import { cn } from "@/lib/utils"
 
 import { SECTIONS, type SectionKey } from "@/lib/nav"
+import { useUi } from "@/stores/ui"
 import type { WorkspaceListItem } from "@/api/pending-types"
 import { useChats } from "@/api/queries/chats"
 import { WorkspaceChip } from "./WorkspaceChip"
@@ -127,6 +128,7 @@ export function Sidebar({
     review: workspace?.stats.dueCards,
     learn: chats.data?.filter((c) => c.pending).length,
   }
+  const legacyClassroom = useUi((s) => s.legacyClassroom)
   const reduced = useReducedMotion()
   const endSide = useEndSide()
   const pathname = useRouterState({ select: (s) => s.location.pathname })
@@ -150,31 +152,33 @@ export function Sidebar({
         aria-label="Workspace sections"
         className="flex flex-1 flex-col gap-0.5 px-2 py-1"
       >
-        {SECTIONS.map(({ key, label, icon }) => (
-          <NavItem
-            key={key}
-            label={label}
-            icon={icon}
-            collapsed={collapsed}
-            active={sectionActive(key)}
-            badge={badges[key] || undefined}
-            testId={`nav-${key}`}
-          >
-            {(content, className) => (
-              <Link
-                to={`/w/$ws/${key}`}
-                params={{ ws: workspaceId }}
-                data-testid={`nav-${key}`}
-                data-tour={`nav-${key}`}
-                aria-label={collapsed ? label : undefined}
-                aria-current={sectionActive(key) ? "page" : undefined}
-                className={className}
-              >
-                {content}
-              </Link>
-            )}
-          </NavItem>
-        ))}
+        {SECTIONS.filter(({ key }) => key !== "learn" || legacyClassroom).map(
+          ({ key, label, icon }) => (
+            <NavItem
+              key={key}
+              label={label}
+              icon={icon}
+              collapsed={collapsed}
+              active={sectionActive(key)}
+              badge={badges[key] || undefined}
+              testId={`nav-${key}`}
+            >
+              {(content, className) => (
+                <Link
+                  to={`/w/$ws/${key}`}
+                  params={{ ws: workspaceId }}
+                  data-testid={`nav-${key}`}
+                  data-tour={`nav-${key}`}
+                  aria-label={collapsed ? label : undefined}
+                  aria-current={sectionActive(key) ? "page" : undefined}
+                  className={className}
+                >
+                  {content}
+                </Link>
+              )}
+            </NavItem>
+          )
+        )}
       </nav>
       <nav
         aria-label="Global"

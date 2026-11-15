@@ -171,6 +171,7 @@ export const graphHandlers = [
       plan: null,
       probeProgress: { asked: 0, max: 8 },
       verdicts: [],
+      answers: [],
       jobs: [],
       turn: {
         state: "running",

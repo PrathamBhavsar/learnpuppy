@@ -5,7 +5,7 @@ import {
   SearchXIcon,
   TriangleAlertIcon,
 } from "lucide-react"
-import { useMemo, useState } from "react"
+import { type ReactNode, useMemo, useState } from "react"
 
 import { toApiError } from "@/api/errors"
 import type { NodeSource } from "@/api/pending-types"
@@ -42,9 +42,11 @@ type Props = {
   ws: string
   filters: DigestFilters
   onFilters: (next: Partial<DigestFilters>) => void
+  /** Rendered under the heading; the route composes other features' lines (e.g. chapters due). */
+  summary?: ReactNode
 }
 
-export function DigestScreen({ ws, filters, onFilters }: Props) {
+export function DigestScreen({ ws, filters, onFilters, summary }: Props) {
   const workspaceName = useWorkspaceName(ws)
   usePageTitle(DIGEST_COPY.title, workspaceName)
 
@@ -119,6 +121,8 @@ export function DigestScreen({ ws, filters, onFilters }: Props) {
           </>
         }
       />
+
+      {summary}
 
       <DigestControls
         range={filters.range}

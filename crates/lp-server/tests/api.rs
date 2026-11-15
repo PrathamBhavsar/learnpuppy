@@ -12,6 +12,7 @@ use axum::response::Response;
 use axum::Router;
 use http_body_util::BodyExt;
 use lp_cli_driver::accounts::DiscoverRoots;
+use lp_core::course::{Course, Item, ItemKind, Lesson};
 use lp_core::ports::{GraphStore, TrackerStore};
 use lp_server::app::{router, AppState, EngineMode, ServerConfig};
 use lp_server::assets::Assets;
@@ -1487,4 +1488,1352 @@ async fn settings_test_pings_a_profile_without_erroring_on_failure() {
         .post("/settings/test", json!({"provider": "gpt", "model": "x"}))
         .await;
     assert_eq!(unknown.status, 400);
+}
+
+// ------------------------------------------------------------------ courses
+
+fn course_lesson(id: &str) -> Value {
+    let items: Vec<Value> = (0..6)
+        .map(|i| {
+            if i < 4 {
+                json!({"type":"mcq","q":format!("Which statement about {id} number {i} holds?"),
+                    "options":["red apple","blue plum","pink pear","gray kiwi"],
+                    "answer":"red apple","why":format!("because {id} {i}"),"tests":0})
+            } else {
+                json!({"type":"recall","q":format!("State fact {i} of {id}."),
+                    "answer":format!("answer {id} {i}"),"accept":["a fact"],
+                    "why":format!("because {id} {i}"),"tests":1})
+            }
+        })
+        .collect();
+    json!({"id":id,"title":format!("Title {id}"),"objective":"obj",
+        "explain":"red apple and the fact are explained here",
+        "key_facts":["red apple","the fact"],"fixes":[],"items":items})
+}
+
+fn queue_course_models(a: &Api) {
+    let strands: Vec<Value> = (0..3)
+        .map(|si| {
+            let items: Vec<Value> = (1..=3)
+                .map(|l| {
+                    json!({"type":"mcq","q":format!("Which statement about strand {si} level {l} holds?"),
+                        "options":["red apple","blue plum","pink pear","gray kiwi"],
+                        "answer":"red apple","why":format!("placement why s{si} l{l}"),"level":l})
+                })
+                .collect();
+            json!({"name":format!("Strand {si}"),"items":items})
+        })
+        .collect();
+    a.state
+        .faux()
+        .faux_text(&json!({ "strands": strands }).to_string());
+    let lessons: Vec<Value> = (0..10).map(|i| course_lesson(&format!("b0l{i}"))).collect();
+    a.state
+        .faux()
+        .faux_text(&json!({"learner":"knows little","lessons":lessons}).to_string());
+}
+
+fn no_secret_keys(v: &Value) {
+    match v {
+        Value::Object(m) => {
+            for (k, v) in m {
+                assert!(
+                    !["answer", "accept", "why"].contains(&k.as_str()),
+                    "leaked `{k}`"
+                );
+                no_secret_keys(v);
+            }
+        }
+        Value::Array(a) => a.iter().for_each(no_secret_keys),
+        _ => {}
+    }
+}
+
+#[tokio::test]
+async fn a_course_runs_from_goal_to_feedback_and_usage() {
+    let a = api();
+    queue_course_models(&a);
+    let r = a
+        .post(
+            &ws("/courses"),
+            json!({"goal": "learn spanish", "why": "to read other code"}),
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::CREATED, "{}", r.text);
+    let created = r.json();
+    no_secret_keys(&created);
+    let id = created["id"].as_str().unwrap().to_owned();
+    let items = created["items"].as_array().unwrap();
+    // The strand probe opens with the middle level of each of the three strands.
+    assert_eq!(items.len(), 3);
+
+    // A reload before submitting: the same questions, no secrets.
+    let again = a.get(&ws(&format!("/courses/{id}/placement"))).await;
+    assert_eq!(again.status, StatusCode::OK, "{}", again.text);
+    no_secret_keys(&again.json());
+    assert_eq!(again.json()["items"], created["items"]);
+
+    // The first question wrong on purpose, so there is a miss to show; later rounds are answered
+    // with whatever comes first. The probe asks at most six questions in all.
+    let mut round = items.clone();
+    let mut graded_total = 0;
+    for turn in 0..3 {
+        let answers: Vec<Value> = round
+            .iter()
+            .enumerate()
+            .map(|(n, i)| {
+                let text = if turn == 0 && n == 0 {
+                    "definitely wrong".to_owned()
+                } else {
+                    i["options"][0].as_str().unwrap_or("x").to_owned()
+                };
+                json!({"item": i["id"], "text": text, "guessed": false})
+            })
+            .collect();
+        let r = a
+            .post(
+                &ws(&format!("/courses/{id}/placement")),
+                json!({"answers": answers}),
+            )
+            .await;
+        assert_eq!(r.status, StatusCode::OK, "{}", r.text);
+        // The graded answers are revealed; the questions still to come never carry a key.
+        no_secret_keys(&r.json()["next"]);
+        graded_total += r.json()["graded"].as_array().unwrap().len();
+        round = r.json()["next"].as_array().unwrap().clone();
+        if round.is_empty() {
+            break;
+        }
+    }
+    assert!(round.is_empty(), "the probe must end within three rounds");
+    assert!((3..=6).contains(&graded_total), "{graded_total}");
+    let after = a.get(&ws(&format!("/courses/{id}/placement"))).await.json();
+    assert_eq!(after["items"], json!([]));
+
+    let r = a.get(&ws(&format!("/courses/{id}/misses"))).await;
+    assert_eq!(r.status, StatusCode::OK, "{}", r.text);
+    assert!(!r.json()["misses"].as_array().unwrap().is_empty());
+
+    let mut state = String::new();
+    for _ in 0..200 {
+        let r = a.get(&ws(&format!("/courses/{id}/status"))).await;
+        assert_eq!(r.status, StatusCode::OK, "{}", r.text);
+        state = r.json()["state"].as_str().unwrap().to_owned();
+        if state != "writing" {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(25)).await;
+    }
+    assert_eq!(state, "ready");
+    let list = a.get(&ws("/courses")).await.json();
+    assert_eq!(list["courses"][0]["id"], id.as_str());
+
+    let step = a
+        .post_empty(&ws(&format!("/courses/{id}/next")))
+        .await
+        .json();
+    assert_eq!(step["step"], "explain", "{step}");
+    let lesson = step["lesson"]["id"].as_str().unwrap().to_owned();
+    let r = a
+        .post(
+            &ws(&format!("/courses/{id}/seen")),
+            json!({"lesson": lesson}),
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::NO_CONTENT, "{}", r.text);
+
+    let step = a
+        .post_empty(&ws(&format!("/courses/{id}/next")))
+        .await
+        .json();
+    assert_eq!(step["step"], "ask", "{step}");
+    no_secret_keys(&step);
+    let item = &step["item"];
+    let r = a
+        .post(
+            &ws(&format!("/courses/{id}/answer")),
+            json!({"item": item["id"], "text": "red apple", "confidence": 3, "ms": 1200}),
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::OK, "{}", r.text);
+    let fb = r.json();
+    assert_eq!(fb["correct"], true);
+    assert_eq!(fb["answer"], "red apple");
+
+    let r = a
+        .post(
+            &ws(&format!("/courses/{id}/flag")),
+            json!({"item": item["id"], "reason": "looks odd"}),
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::NO_CONTENT, "{}", r.text);
+    let r = a
+        .post(
+            &ws(&format!("/courses/{id}/self-grade")),
+            json!({"item": item["id"], "grade": "sideways"}),
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::BAD_REQUEST);
+    assert_eq!(r.code(), "validation");
+
+    let u = a.get(&ws(&format!("/courses/{id}/usage"))).await;
+    assert_eq!(u.status, StatusCode::OK, "{}", u.text);
+    assert!(u.json()["strongCallsThisHour"].is_number());
+}
+
+#[tokio::test]
+async fn course_calls_without_an_ai_share_the_engine_unavailable_shape() {
+    let a = api();
+    let r = a
+        .post(
+            &ws("/courses"),
+            json!({"goal": "learn spanish", "why": "to read other code"}),
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::SERVICE_UNAVAILABLE, "{}", r.text);
+    assert_eq!(r.code(), "engine_unavailable");
+    assert_eq!(r.json()["error"]["retryable"], true);
+    assert_eq!(a.get(&ws("/courses")).await.json()["courses"], json!([]));
+}
+
+#[tokio::test]
+async fn course_ids_are_scoped_to_their_workspace_and_cannot_traverse() {
+    let a = api();
+    queue_course_models(&a);
+    let id = a
+        .post(
+            &ws("/courses"),
+            json!({"goal": "learn spanish", "why": "to read other code"}),
+        )
+        .await
+        .json()["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let other = format!("/workspaces/{SECOND_WS}/courses/{id}/status");
+    let r = a.get(&other).await;
+    assert_eq!(r.status, StatusCode::NOT_FOUND, "{}", r.text);
+    for bad in ["..%2F..%2Fsettings", "%2e%2e", "UPPER", "a.b"] {
+        let r = a.get(&ws(&format!("/courses/{bad}/status"))).await;
+        assert_eq!(r.status, StatusCode::NOT_FOUND, "{bad}: {}", r.text);
+    }
+    assert_eq!(
+        a.get(&ws("/courses/nope/usage")).await.status,
+        StatusCode::NOT_FOUND
+    );
+}
+
+#[tokio::test]
+async fn course_inputs_are_length_checked_at_the_boundary() {
+    let a = api();
+    for goal in ["".to_owned(), "x".repeat(501)] {
+        let r = a
+            .post(&ws("/courses"), json!({"goal": goal, "why": "because"}))
+            .await;
+        assert_eq!(r.status, StatusCode::BAD_REQUEST, "{}", r.text);
+    }
+    // Why this matters is required, and bounded like the goal.
+    for why in ["".to_owned(), "  ".to_owned(), "x".repeat(501)] {
+        let r = a
+            .post(
+                &ws("/courses"),
+                json!({"goal": "learn spanish", "why": why}),
+            )
+            .await;
+        assert_eq!(r.status, StatusCode::BAD_REQUEST, "{}", r.text);
+    }
+    let r = a
+        .post(
+            &ws("/courses/c1/ask"),
+            json!({"question": "q".repeat(2001)}),
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::BAD_REQUEST, "{}", r.text);
+}
+
+// ------------------------------------------------------------------ learning method (M8)
+
+fn method_course(id: &str) -> Course {
+    Course {
+        id: id.into(),
+        method_version: 1,
+        lessons: vec![Lesson {
+            id: "l00".into(),
+            title: "Intro".into(),
+            key_facts: vec!["dogs bark loudly".into()],
+            items: vec![
+                Item {
+                    id: "l00-i0".into(),
+                    kind: ItemKind::Mcq,
+                    q: "q0?".into(),
+                    answer: "a".into(),
+                    options: vec!["a".into(), "b".into(), "c".into(), "d".into()],
+                    why: "because".into(),
+                    tests: Some(0),
+                    ..Item::default()
+                },
+                Item {
+                    id: "l00-i1".into(),
+                    kind: ItemKind::Recall,
+                    q: "q1?".into(),
+                    answer: "a".into(),
+                    must_name: vec!["dog".into()],
+                    tests: Some(0),
+                    ..Item::default()
+                },
+            ],
+            ..Lesson::default()
+        }],
+        ..Course::default()
+    }
+}
+
+fn gate_of(r: &Reply) -> String {
+    r.json()["error"]["details"]["gate"]
+        .as_str()
+        .unwrap_or_default()
+        .to_owned()
+}
+
+/// Opens a bout through the real ready gate and returns its id.
+async fn start_bout(a: &Api, course: &str) -> String {
+    let r = a
+        .post(
+            &ws("/learning/bout/start"),
+            json!({"course": course, "ready": {"phoneAway": true, "tabsClosed": true, "focusSeconds": 30}}),
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::OK, "{}", r.text);
+    r.json()["bout"].as_str().expect("open bout").to_owned()
+}
+
+/// Every gate rejection the HTTP contract can actually reach is `409 conflict` with a stable
+/// `details.gate` code (docs/web/03 §Conventions); F07's order gate and F20's cycle gate are
+/// each exercised at least once here.
+#[tokio::test]
+async fn method_course_runs_from_plan_to_close_with_gated_steps() {
+    let a = api();
+    let c = method_course("mc1");
+    a.stores(MAIN_WS).courses.save_course(&c).unwrap();
+
+    // F07: no teaching before the plan is confirmed.
+    let r = a
+        .post(
+            &ws("/courses/mc1/predict"),
+            json!({"lesson": "l00", "guess": "x"}),
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::CONFLICT, "{}", r.text);
+    assert_eq!(r.code(), "conflict");
+    assert_eq!(gate_of(&r), "out_of_order");
+
+    let plan = a.get(&ws("/courses/mc1/plan")).await;
+    assert_eq!(plan.status, StatusCode::OK, "{}", plan.text);
+    assert_eq!(plan.json()["confirmed"], false);
+    assert_eq!(plan.json()["lessons"][0]["id"], "l00");
+
+    assert_eq!(
+        a.post_empty(&ws("/courses/mc1/plan/confirm")).await.status,
+        StatusCode::NO_CONTENT
+    );
+    assert_eq!(
+        a.get(&ws("/courses/mc1/plan")).await.json()["confirmed"],
+        true
+    );
+
+    // F23: no step before a bout is open; the ready gate opens one.
+    let r = a.post_empty(&ws("/courses/mc1/step")).await;
+    assert_eq!(r.status, StatusCode::CONFLICT, "{}", r.text);
+    assert_eq!(gate_of(&r), "bout_required");
+    let bout = start_bout(&a, "mc1").await;
+    assert!(bout.starts_with("b_"), "{bout}");
+
+    let step = a.post_empty(&ws("/courses/mc1/step")).await.json();
+    assert_eq!(step["step"], "explain", "{step}");
+
+    // Out of order: answering before the explanation is marked seen.
+    let r = a
+        .post(
+            &ws("/courses/mc1/quiz-answer"),
+            json!({"item": "l00-i0", "lesson": "l00", "text": "a", "reasoning": "", "gap": false}),
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::CONFLICT, "{}", r.text);
+    assert_eq!(gate_of(&r), "out_of_order");
+
+    assert_eq!(
+        a.post(&ws("/courses/mc1/explain-seen"), json!({"lesson": "l00"}))
+            .await
+            .status,
+        StatusCode::NO_CONTENT
+    );
+
+    let step = a.post_empty(&ws("/courses/mc1/step")).await.json();
+    assert_eq!(step["step"], "notes", "{step}");
+
+    assert_eq!(
+        a.post(
+            &ws("/courses/mc1/note"),
+            json!({"lesson": "l00", "text": ""})
+        )
+        .await
+        .status,
+        StatusCode::NO_CONTENT
+    );
+
+    let step = a.post_empty(&ws("/courses/mc1/step")).await.json();
+    assert_eq!(step["step"], "ask", "{step}");
+    assert_eq!(step["id"], "l00-i0");
+    assert_eq!(step["kind"], "mcq");
+    assert_eq!(step["ask"], "new");
+    no_secret_keys(&step);
+
+    let r = a
+        .post(
+            &ws("/courses/mc1/quiz-answer"),
+            json!({"item": "l00-i0", "lesson": "l00", "text": "a", "reasoning": "", "gap": false}),
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::OK, "{}", r.text);
+    assert_eq!(r.json(), json!({"status": "graded", "correct": true}));
+
+    // A correct mcq only reaches mc-passed: the lesson is recapped, then its recall item is
+    // served, and only a right recall confirms the fact (R1).
+    let step = a.post_empty(&ws("/courses/mc1/step")).await.json();
+    assert_eq!(step["step"], "explain", "{step}");
+    assert_eq!(
+        a.post(&ws("/courses/mc1/explain-seen"), json!({"lesson": "l00"}))
+            .await
+            .status,
+        StatusCode::NO_CONTENT
+    );
+    let step = a.post_empty(&ws("/courses/mc1/step")).await.json();
+    assert_eq!(step["step"], "ask", "{step}");
+    assert_eq!(step["id"], "l00-i1");
+    assert_eq!(step["kind"], "recall");
+    let r = a
+        .post(
+            &ws("/courses/mc1/quiz-answer"),
+            json!({"item": "l00-i1", "lesson": "l00", "text": "the dog barks", "reasoning": "", "gap": false}),
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::OK, "{}", r.text);
+    assert_eq!(r.json(), json!({"status": "graded", "correct": true}));
+
+    // The lesson is a goal lesson, so a Feynman pass is required before Close.
+    let step = a.post_empty(&ws("/courses/mc1/step")).await.json();
+    assert_eq!(step["step"], "feynman", "{step}");
+
+    let m = a.get(&ws("/courses/mc1/mastery")).await;
+    assert_eq!(m.status, StatusCode::OK, "{}", m.text);
+    assert!(m.json()["countLine"]
+        .as_str()
+        .unwrap()
+        .starts_with("1 of 1 confirmed"));
+
+    a.state
+        .faux()
+        .faux_text(r#"{"correct":true,"note":"nice"}"#);
+    let r = a
+        .post(
+            &ws("/courses/mc1/feynman"),
+            json!({"lesson": "l00", "explanation": "it just does"}),
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::OK, "{}", r.text);
+    assert_eq!(r.json()["correct"], true);
+
+    let step = a.post_empty(&ws("/courses/mc1/step")).await.json();
+    assert_eq!(step["step"], "close", "{step}");
+
+    let r = a
+        .post(
+            &ws("/courses/mc1/braindump"),
+            json!({"text": "dogs often bark loudly at night"}),
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::OK, "{}", r.text);
+    assert_eq!(r.json()["missed"], json!([]));
+
+    let r = a.post_empty(&ws("/courses/mc1/close")).await;
+    assert_eq!(r.status, StatusCode::OK, "{}", r.text);
+    assert!(r.json()["countLine"]
+        .as_str()
+        .unwrap()
+        .contains("confirmed"));
+
+    let r = a.get(&ws("/courses/mc1/register")).await;
+    assert_eq!(r.status, StatusCode::OK, "{}", r.text);
+    assert_eq!(r.json()["rows"], json!([]));
+}
+
+/// F07: a plan that (still) has a cycle can never be confirmed.
+#[tokio::test]
+async fn plan_confirm_rejects_a_cyclic_plan() {
+    let a = api();
+    let mut c = method_course("mc2");
+    c.lessons.push(Lesson {
+        id: "l01".into(),
+        depends_on: vec!["l00".into()],
+        ..Lesson::default()
+    });
+    c.lessons[0].depends_on = vec!["l01".into()];
+    a.stores(MAIN_WS).courses.save_course(&c).unwrap();
+
+    let r = a.post_empty(&ws("/courses/mc2/plan/confirm")).await;
+    assert_eq!(r.status, StatusCode::CONFLICT, "{}", r.text);
+    assert_eq!(gate_of(&r), "plan_has_cycle");
+}
+
+/// F20: a prerequisite is rejected rather than spliced into a plan that is already cyclic.
+#[tokio::test]
+async fn insert_prereq_rejects_a_cyclic_plan() {
+    let a = api();
+    let mut c = method_course("mc3");
+    c.plan_confirmed_at = Some(1);
+    c.lessons.push(Lesson {
+        id: "l01".into(),
+        depends_on: vec!["l00".into()],
+        ..Lesson::default()
+    });
+    c.lessons[0].depends_on = vec!["l01".into()];
+    a.stores(MAIN_WS).courses.save_course(&c).unwrap();
+
+    a.state.faux().faux_text(
+        r#"{"title":"Basics","objective":"o","explain":"e","key_facts":["f"],
+           "items":[{"type":"mcq","q":"q?","options":["a","b","c","d"],"answer":"a"}]}"#,
+    );
+    let r = a
+        .post(
+            &ws("/courses/mc3/plan/prereq"),
+            json!({"before": "l00", "missing": "basics"}),
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::CONFLICT, "{}", r.text);
+    assert_eq!(gate_of(&r), "prereq_cycle");
+}
+
+/// F23: a closed bout locks teaching behind the gap, and the lock is the server's, not the UI's.
+#[tokio::test]
+async fn step_is_refused_between_bouts_and_when_the_day_is_spent() {
+    let a = api();
+    let c = method_course("lk1");
+    a.stores(MAIN_WS).courses.save_course(&c).unwrap();
+    a.post_empty(&ws("/courses/lk1/plan/confirm")).await;
+    let bout = start_bout(&a, "lk1").await;
+    // The UI reads these camelCase names; a snake_case field here once shipped unnoticed.
+    let clock = a.get(&ws("/learning/clock")).await.json();
+    assert_eq!(clock["status"]["status"], "active", "{clock}");
+    assert!(clock["status"]["activeMinutes"].is_u64(), "{clock}");
+    assert_eq!(
+        a.post_empty(&ws("/courses/lk1/step")).await.status,
+        StatusCode::OK
+    );
+
+    let r = a
+        .post(&ws("/learning/bout/end"), json!({ "bout": bout }))
+        .await;
+    assert_eq!(r.status, StatusCode::OK, "{}", r.text);
+    let r = a.post_empty(&ws("/courses/lk1/step")).await;
+    assert_eq!(r.status, StatusCode::CONFLICT, "{}", r.text);
+    assert_eq!(gate_of(&r), "gap");
+    assert!(r.json()["error"]["details"]["remainingMinutes"].is_u64());
+
+    // The logged override lifts the gap and teaching resumes after a fresh ready gate.
+    let r = a
+        .post(
+            &ws("/learning/bout/override"),
+            json!({ "reason": "exam tomorrow" }),
+        )
+        .await;
+    assert!(r.status.is_success(), "{}", r.text);
+    start_bout(&a, "lk1").await;
+    assert_eq!(
+        a.post_empty(&ws("/courses/lk1/step")).await.status,
+        StatusCode::OK
+    );
+}
+
+/// The plan ships its numbers as tunable settings; every one is listed, bounded and saved.
+#[tokio::test]
+async fn method_settings_list_validate_and_persist_per_workspace() {
+    let a = api();
+    let r = a.get(&ws("/learning/settings")).await;
+    assert_eq!(r.status, StatusCode::OK, "{}", r.text);
+    let all = r.json()["settings"].as_array().unwrap().clone();
+    assert_eq!(all.len(), lp_service::learning::SETTING_BOUNDS.len());
+    let find = |v: &serde_json::Value, n: &str| {
+        v["settings"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|s| s["name"] == n)
+            .cloned()
+            .unwrap()
+    };
+    let before = find(&r.json(), "attempts_before_parking");
+    assert_eq!(
+        (before["value"].as_u64(), before["default"].as_u64()),
+        (Some(3), Some(3))
+    );
+
+    let r = a
+        .post(
+            &ws("/learning/settings"),
+            json!({"name": "attempts_before_parking", "value": 5}),
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::OK, "{}", r.text);
+    assert_eq!(find(&r.json(), "attempts_before_parking")["value"], 5);
+    // Persisted, and the clock renders against the saved limits.
+    let again = a.get(&ws("/learning/settings")).await.json();
+    assert_eq!(find(&again, "attempts_before_parking")["value"], 5);
+    a.post(
+        &ws("/learning/settings"),
+        json!({"name": "bout_limit_minutes", "value": 45}),
+    )
+    .await;
+    assert_eq!(
+        a.get(&ws("/learning/clock")).await.json()["boutLimitMinutes"],
+        45
+    );
+
+    for bad in [
+        json!({"name": "nope", "value": 1}),
+        json!({"name": "attempts_before_parking", "value": 0}),
+        json!({"name": "bout_limit_minutes", "value": 9999}),
+        json!({"name": "error_band_high_pct", "value": 5}),
+    ] {
+        let r = a.post(&ws("/learning/settings"), bad.clone()).await;
+        assert_eq!(r.status, StatusCode::BAD_REQUEST, "{bad}: {}", r.text);
+    }
+}
+
+// ------------------------------------------------------------------ textbook mode (U7)
+
+struct TbPdf {
+    pages: Vec<String>,
+    outline: Vec<lp_core::textbook::OutlineEntry>,
+    delay: Duration,
+}
+
+impl lp_agent::workbench::Pdf for TbPdf {
+    fn pages(&self, _: &str) -> Result<Vec<String>, String> {
+        Ok(self.pages.clone())
+    }
+    fn page_count(&self, _: &str) -> Result<usize, String> {
+        Ok(self.pages.len())
+    }
+    fn page_texts(&self, _: &str, first: usize, last: usize) -> Result<Vec<String>, String> {
+        std::thread::sleep(self.delay);
+        Ok(self.pages[first - 1..last].to_vec())
+    }
+    fn outline(&self, _: &str) -> Result<Vec<lp_core::textbook::OutlineEntry>, String> {
+        Ok(self.outline.clone())
+    }
+}
+
+/// `n` one-page chapters of 400 words with an outline.
+fn tb_pdf(n: usize, delay_ms: u64) -> Arc<TbPdf> {
+    Arc::new(TbPdf {
+        pages: (1..=n)
+            .map(|i| format!("{}\n{i}", "ab ".repeat(400)))
+            .collect(),
+        outline: (1..=n)
+            .map(|i| lp_core::textbook::OutlineEntry {
+                title: format!("Chapter {i}"),
+                page: i as u32,
+                depth: 0,
+            })
+            .collect(),
+        delay: Duration::from_millis(delay_ms),
+    })
+}
+
+fn tb_api(chapters: usize, delay_ms: u64) -> Api {
+    let mut a = api();
+    a.state = a
+        .state
+        .clone()
+        .with_textbook_pdf(tb_pdf(chapters, delay_ms));
+    a
+}
+
+fn objectives_reply() -> String {
+    let objs: Vec<Value> = (1..=5)
+        .map(|i| {
+            json!({"text": format!("Explain concept {i}"), "start_page": 1, "end_page": 1,
+            "items": [
+                {"type":"mcq","q":format!("Which statement {i} about the text holds true here?"),
+                 "options":[format!("alpha {i}"),format!("bravo {i}"),format!("charlie {i}"),format!("delta {i}")],
+                 "answer":format!("alpha {i}"),"why":format!("because {i}")},
+                {"type":"recall","q":format!("Name concept {i} of the page"),
+                 "answer":format!("term {i}"),"accept":[],"why":"because","must_name":[]}]})
+        })
+        .collect();
+    json!({ "objectives": objs }).to_string()
+}
+
+fn queue_chapters(a: &Api, n: usize) {
+    for _ in 0..n {
+        a.state.faux().faux_text(&objectives_reply());
+    }
+}
+
+fn multipart(name: &str, file: &[u8], question: Option<&str>) -> (String, Vec<u8>) {
+    let b = "XBOUNDARYX";
+    let mut body = Vec::new();
+    body.extend(format!("--{b}\r\nContent-Disposition: form-data; name=\"file\"; filename=\"{name}\"\r\nContent-Type: application/pdf\r\n\r\n").into_bytes());
+    body.extend(file);
+    if let Some(q) = question {
+        body.extend(
+            format!("\r\n--{b}\r\nContent-Disposition: form-data; name=\"question\"\r\n\r\n{q}")
+                .into_bytes(),
+        );
+    }
+    body.extend(format!("\r\n--{b}--\r\n").into_bytes());
+    (format!("multipart/form-data; boundary={b}"), body)
+}
+
+impl Api {
+    async fn upload_textbook(&self, name: &str, file: &[u8], question: Option<&str>) -> Reply {
+        let (ct, body) = multipart(name, file, question);
+        let req = Request::builder()
+            .method(Method::POST)
+            .uri(format!("/api/v1{}", ws("/sources/textbook")))
+            .header(header::HOST, HOST)
+            .header(header::COOKIE, format!("lp_session={TOKEN}"))
+            .header(header::ORIGIN, ORIGIN)
+            .header("x-lp-csrf", "1")
+            .header(header::CONTENT_TYPE, ct)
+            .body(Body::from(body))
+            .unwrap();
+        let res = self.app().oneshot(req).await.unwrap();
+        let (parts, body) = res.into_parts();
+        Reply {
+            status: parts.status,
+            headers: parts.headers,
+            text: String::from_utf8(body.collect().await.unwrap().to_bytes().to_vec()).unwrap(),
+        }
+    }
+
+    /// Polls the book until its import job has ended.
+    async fn finished_book(&self, book: &str) -> Value {
+        for _ in 0..1000 {
+            let r = self.get(&ws(&format!("/textbooks/{book}"))).await;
+            let j = r.json();
+            if r.status == StatusCode::OK && j["jobId"].is_null() {
+                return j;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        panic!("import of {book} did not finish");
+    }
+
+    /// Uploads a book, then opens every chapter and waits for the import.
+    async fn imported_book(&self, tag: &str) -> String {
+        let r = self
+            .upload_textbook("b.pdf", format!("%PDF-1.4 {tag}").as_bytes(), None)
+            .await;
+        assert_eq!(r.status, StatusCode::CREATED, "{}", r.text);
+        let book = r.json()["bookId"].as_str().unwrap().to_owned();
+        self.import_chapters(&book, json!({})).await;
+        self.finished_book(&book).await;
+        book
+    }
+
+    /// `POST …/import`; returns the job id.
+    async fn import_chapters(&self, book: &str, body: Value) -> String {
+        let r = self
+            .post(&ws(&format!("/textbooks/{book}/import")), body)
+            .await;
+        assert_eq!(r.status, StatusCode::ACCEPTED, "{}", r.text);
+        r.json()["jobId"].as_str().unwrap().to_owned()
+    }
+}
+
+fn keys_of(v: &Value, out: &mut Vec<String>) {
+    match v {
+        Value::Object(m) => {
+            for (k, v) in m {
+                out.push(k.clone());
+                keys_of(v, out);
+            }
+        }
+        Value::Array(a) => a.iter().for_each(|v| keys_of(v, out)),
+        _ => {}
+    }
+}
+
+fn assert_no_answer_keys(v: &Value) {
+    let mut all = Vec::new();
+    keys_of(v, &mut all);
+    for banned in [
+        "answer",
+        "accept",
+        "why",
+        "mustName",
+        "misconceptions",
+        "correct",
+    ] {
+        assert!(!all.iter().any(|k| k == banned), "`{banned}` leaked: {v}");
+    }
+}
+
+#[tokio::test]
+async fn textbook_upload_201_maps_only_then_200_existing() {
+    let a = tb_api(3, 0);
+    queue_chapters(&a, 3);
+    let bytes = b"%PDF-1.4 one";
+    let r = a.upload_textbook("My Book.pdf", bytes, None).await;
+    assert_eq!(r.status, StatusCode::CREATED, "{}", r.text);
+    let j = r.json();
+    let book = j["bookId"].as_str().unwrap().to_owned();
+    assert!(book.starts_with("tb_") && book.len() == 19);
+    assert_eq!(j["existing"], false);
+    assert!(j.get("jobId").is_none(), "upload starts no job: {j}");
+    assert_eq!(j["bytes"], bytes.len());
+    // mapped, nothing imported, no model call, no job
+    let mapped = a.get(&ws(&format!("/textbooks/{book}"))).await.json();
+    assert_eq!(mapped["title"], "My Book");
+    assert_eq!(mapped["mapSource"], "outline");
+    assert!(mapped["jobId"].is_null());
+    assert_eq!(
+        (mapped["hourUsed"].as_u64(), mapped["hourCap"].as_u64()),
+        (Some(0), Some(8))
+    );
+    assert_eq!(
+        (
+            mapped["autoCalls"].as_u64(),
+            mapped["requestedCalls"].as_u64()
+        ),
+        (Some(0), Some(0))
+    );
+    assert!(mapped.get("callsCap").is_none());
+    assert!(mapped["chapters"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .all(|c| c["state"] == "pending" && c["canImport"] == true && c["objectives"] == 0));
+    assert!(
+        !a.get(&ws("/jobs")).await.json()["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|j| j["kind"] == "textbook"),
+        "no textbook job after upload"
+    );
+    // opening chapter 1 imports that chapter and no other
+    a.import_chapters(&book, json!({"chapters":[1]})).await;
+    let done = a.finished_book(&book).await;
+    let states: Vec<&str> = done["chapters"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|c| c["state"].as_str().unwrap())
+        .collect();
+    assert_eq!(states, ["pending", "ready", "pending"]);
+    assert_eq!(done["chapters"][1]["objectives"], 5);
+    assert_eq!(done["chapters"][1]["canImport"], false);
+    assert_eq!(done["requestedCalls"], 1);
+    assert_eq!(done["hourUsed"], 1);
+    // the same bytes again: 200, existing, nothing running, nothing new
+    let again = a.upload_textbook("renamed.pdf", bytes, None).await;
+    assert_eq!(again.status, StatusCode::OK, "{}", again.text);
+    let j = again.json();
+    assert_eq!(
+        (j["existing"].as_bool(), j["bookId"].as_str()),
+        (Some(true), Some(book.as_str()))
+    );
+    assert!(j.get("jobId").is_none());
+    let list = a.get(&ws("/textbooks")).await.json();
+    assert_eq!(list["items"].as_array().unwrap().len(), 1);
+    assert_eq!(list["items"][0]["state"], "partial");
+    let usage = a.get(&ws(&format!("/textbooks/{book}/usage"))).await.json();
+    assert_eq!(
+        (
+            usage["requestedCalls"].as_u64(),
+            usage["hourUsed"].as_u64(),
+            usage["hourCap"].as_u64()
+        ),
+        (Some(1), Some(1), Some(8))
+    );
+    assert!(usage["nextSlotAt"].is_null());
+    let detail = a.get(&ws(&format!("/textbooks/{book}/chapters/1"))).await;
+    assert_eq!(detail.status, StatusCode::OK);
+    assert_eq!(detail.json()["objectives"].as_array().unwrap().len(), 5);
+    // a ready chapter is not imported twice
+    let r = a
+        .post(
+            &ws(&format!("/textbooks/{book}/import")),
+            json!({"chapters":[1]}),
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::BAD_REQUEST, "{}", r.text);
+    assert_no_answer_keys(&detail.json());
+}
+
+#[tokio::test]
+async fn textbook_upload_rejects_non_pdf_magic_name_and_413() {
+    let a = tb_api(3, 0);
+    for (name, body, q) in [
+        ("notes.txt", b"%PDF-1.4 x".to_vec(), None),
+        ("book.pdf", b"not a pdf".to_vec(), None),
+        ("book.pdf", b"%PDF-1.4 x".to_vec(), Some("what is this?")),
+    ] {
+        let r = a.upload_textbook(name, &body, q).await;
+        assert_eq!(r.status, StatusCode::BAD_REQUEST, "{name}: {}", r.text);
+        assert_eq!(r.code(), "validation");
+    }
+    let mut big = b"%PDF-1.4 ".to_vec();
+    big.resize(52 * 1024 * 1024, 0);
+    let r = a.upload_textbook("big.pdf", &big, None).await;
+    assert_eq!(r.status, StatusCode::PAYLOAD_TOO_LARGE);
+    assert_eq!(r.json()["error"]["details"]["maxBytes"], 50 * 1024 * 1024);
+    // nothing was stored for any of them
+    assert!(a.get(&ws("/textbooks")).await.json()["items"]
+        .as_array()
+        .unwrap()
+        .is_empty());
+    // an archived workspace refuses uploads
+    let r = a
+        .upload_textbook_to(ARCHIVED_WS, "book.pdf", b"%PDF-1.4 y")
+        .await;
+    assert_eq!(r.status, StatusCode::CONFLICT, "{}", r.text);
+}
+
+impl Api {
+    async fn upload_textbook_to(&self, ws_id: &str, name: &str, file: &[u8]) -> Reply {
+        let (ct, body) = multipart(name, file, None);
+        let req = Request::builder()
+            .method(Method::POST)
+            .uri(format!("/api/v1/workspaces/{ws_id}/sources/textbook"))
+            .header(header::HOST, HOST)
+            .header(header::COOKIE, format!("lp_session={TOKEN}"))
+            .header(header::ORIGIN, ORIGIN)
+            .header("x-lp-csrf", "1")
+            .header(header::CONTENT_TYPE, ct)
+            .body(Body::from(body))
+            .unwrap();
+        let res = self.app().oneshot(req).await.unwrap();
+        let (parts, body) = res.into_parts();
+        Reply {
+            status: parts.status,
+            headers: parts.headers,
+            text: String::from_utf8(body.collect().await.unwrap().to_bytes().to_vec()).unwrap(),
+        }
+    }
+}
+
+#[tokio::test]
+async fn textbook_routes_404_on_bad_ids() {
+    let a = tb_api(3, 0);
+    queue_chapters(&a, 3);
+    let book = a.imported_book("ids").await;
+    let missing = "tb_0000000000000000";
+    for path in [
+        "/textbooks/nope".to_string(),
+        "/textbooks/TB_ABCDEF0123456789".to_string(),
+        format!("/textbooks/{missing}"),
+        format!("/textbooks/{missing}/usage"),
+        format!("/textbooks/{missing}/chapters/0"),
+        format!("/textbooks/{book}/chapters/abc"),
+        format!("/textbooks/{book}/chapters/99"),
+        format!("/textbooks/{book}/chapters/-1"),
+        format!("/textbooks/{book}/usage/x"),
+    ] {
+        let r = a.get(&ws(&path)).await;
+        assert_eq!(r.status, StatusCode::NOT_FOUND, "{path}: {}", r.text);
+    }
+    for path in [
+        format!("/textbooks/{book}/chapters/abc/check"),
+        format!("/textbooks/{book}/chapters/99/check"),
+        format!("/textbooks/{missing}/chapters/0/check"),
+    ] {
+        let r = a.post_empty(&ws(&path)).await;
+        assert_eq!(r.status, StatusCode::NOT_FOUND, "{path}: {}", r.text);
+    }
+    let answer = json!({"item":"i","text":"t"});
+    for path in [
+        format!("/textbooks/{book}/checks/rc_x/answer"),
+        format!("/textbooks/{book}/checks/rc_{}/answer", "0".repeat(32)),
+        format!("/textbooks/{missing}/checks/rc_{}/answer", "0".repeat(32)),
+    ] {
+        let r = a.post(&ws(&path), answer.clone()).await;
+        assert_eq!(r.status, StatusCode::NOT_FOUND, "{path}: {}", r.text);
+    }
+    for (path, body) in [
+        (format!("/textbooks/{missing}/import"), json!({})),
+        ("/textbooks/nope/import".to_string(), json!({})),
+    ] {
+        let r = a.post(&ws(&path), body).await;
+        assert_eq!(r.status, StatusCode::NOT_FOUND, "{path}: {}", r.text);
+    }
+    // bad import input is 400, not 404
+    let r = a
+        .post(
+            &ws(&format!("/textbooks/{book}/import")),
+            json!({"chapters":[0]}),
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::BAD_REQUEST, "{}", r.text);
+}
+
+#[tokio::test]
+async fn textbook_job_listed_and_job_updated_event_emitted() {
+    let a = tb_api(3, 0);
+    queue_chapters(&a, 3);
+    let mut sub = a.state.hub.subscribe(Some(MAIN_WS), None);
+    let r = a.upload_textbook("b.pdf", b"%PDF-1.4 ev", None).await;
+    let book = r.json()["bookId"].as_str().unwrap().to_owned();
+    let job = a.import_chapters(&book, json!({})).await;
+    a.finished_book(&book).await;
+    let mut seen = false;
+    while let Ok(Ok(ev)) = tokio::time::timeout(Duration::from_millis(500), sub.live.recv()).await {
+        let text = format!("{ev:?}");
+        if text.contains("JobUpdated") && text.contains(&job) && text.contains("textbook") {
+            seen = true;
+            break;
+        }
+    }
+    assert!(seen, "job.updated for the import job");
+    let jobs = a.get(&ws("/jobs")).await.json();
+    let item = jobs["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|j| j["id"] == job.as_str())
+        .unwrap();
+    assert_eq!(item["kind"], "textbook");
+    assert_eq!(item["chatId"], "");
+    assert_eq!(item["bookId"], book.as_str());
+    assert_eq!(item["chaptersDone"], 3);
+    assert_eq!(item["chaptersTotal"], 3);
+    assert_eq!(item["status"], "done");
+    assert_eq!(item["title"], "Import b");
+}
+
+#[tokio::test]
+async fn textbook_import_is_limited_to_8_chapters_per_hour() {
+    let a = tb_api(10, 0);
+    queue_chapters(&a, 10);
+    let r = a.upload_textbook("big.pdf", b"%PDF-1.4 big", None).await;
+    let book = r.json()["bookId"].as_str().unwrap().to_owned();
+    a.import_chapters(&book, json!({})).await;
+    let done = a.finished_book(&book).await;
+    let ready = done["chapters"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|c| c["state"] == "ready")
+        .count();
+    assert_eq!(ready, 8, "8 chapters, then the hourly limit");
+    assert_eq!(
+        (done["hourUsed"].as_u64(), done["hourCap"].as_u64()),
+        (Some(8), Some(8))
+    );
+    let usage = a.get(&ws(&format!("/textbooks/{book}/usage"))).await.json();
+    assert!(usage["nextSlotAt"].as_i64().is_some(), "{usage}");
+    let r = a
+        .post(
+            &ws(&format!("/textbooks/{book}/import")),
+            json!({"chapters":[9]}),
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::CONFLICT, "{}", r.text);
+    assert_eq!(
+        r.json()["error"]["details"]["reason"],
+        "import_rate_limited"
+    );
+}
+
+#[tokio::test]
+async fn textbook_abort_through_jobs_route() {
+    // a slow extractor keeps the job running long enough to abort it
+    let a = tb_api(100, 40);
+    let r = a.upload_textbook("slow.pdf", b"%PDF-1.4 slow", None).await;
+    let book = r.json()["bookId"].as_str().unwrap().to_owned();
+    let job = a.import_chapters(&book, json!({})).await;
+    let aborted = a.post_empty(&ws(&format!("/jobs/{job}/abort"))).await;
+    assert_eq!(aborted.status, StatusCode::OK, "{}", aborted.text);
+    assert_eq!(aborted.json()["id"], job.as_str());
+    assert_eq!(aborted.json()["kind"], "textbook");
+    let mut last = Value::Null;
+    for _ in 0..500 {
+        let jobs = a.get(&ws("/jobs")).await.json();
+        last = jobs["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|j| j["id"] == job.as_str())
+            .cloned()
+            .unwrap();
+        if last["status"] != "running" {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+    assert_eq!(last["status"], "failed", "{last}");
+    assert_eq!(last["error"], "cancelled");
+    // a finished job cannot be aborted again
+    let again = a.post_empty(&ws(&format!("/jobs/{job}/abort"))).await;
+    assert_eq!(again.status, StatusCode::CONFLICT, "{}", again.text);
+}
+
+#[tokio::test]
+async fn reading_check_dto_has_no_answer_fields() {
+    let a = tb_api(2, 0);
+    queue_chapters(&a, 2);
+    let book = a.imported_book("leak").await;
+    let r = a
+        .post_empty(&ws(&format!("/textbooks/{book}/chapters/0/check")))
+        .await;
+    assert_eq!(r.status, StatusCode::OK, "{}", r.text);
+    let j = r.json();
+    assert!(j["checkId"].as_str().unwrap().starts_with("rc_"));
+    assert!(!j["items"].as_array().unwrap().is_empty());
+    assert_no_answer_keys(&j);
+    assert_no_answer_keys(&a.get(&ws(&format!("/textbooks/{book}"))).await.json());
+}
+
+#[tokio::test]
+async fn titles_and_errors_are_served_as_plain_json_strings() {
+    let a = tb_api(3, 0);
+    let title = "<img src=x onerror=1>";
+    let r = a
+        .upload_textbook(&format!("{title}.pdf"), b"%PDF-1.4 xss", None)
+        .await;
+    assert_eq!(r.status, StatusCode::CREATED, "{}", r.text);
+    let book = r.json()["bookId"].as_str().unwrap().to_owned();
+    let got = a.get(&ws(&format!("/textbooks/{book}"))).await;
+    assert!(got.headers[header::CONTENT_TYPE]
+        .to_str()
+        .unwrap()
+        .starts_with("application/json"));
+    assert_eq!(got.json()["title"], title);
+    assert!(
+        got.text.contains(&format!("\"{title}\"")),
+        "byte-identical, never escaped or wrapped: {}",
+        got.text
+    );
+    let list = a.get(&ws("/textbooks")).await;
+    assert_eq!(list.json()["items"][0]["title"], title);
+}
+
+#[tokio::test]
+async fn jobs_list_after_restart_shows_no_running_textbook_job() {
+    use lp_core::ports::{DeliveryStatus, JobKind, JobRecord, JobStatus, JobStore};
+    let a = tb_api(3, 0);
+    // a job a previous server left running (the ledger holds no calls for it)
+    a.stores(MAIN_WS)
+        .jobs
+        .create_job(&JobRecord {
+            id: "tbj_0123456789abcdef_0".into(),
+            chat_id: "".into(),
+            kind: JobKind::Textbook,
+            status: JobStatus::Running,
+            delivery: DeliveryStatus::Claimed,
+            created_at: 1,
+            result: Some(json!({"title":"Import x","bookId":"tb_0123456789abcdef"})),
+            usage: vec![],
+        })
+        .unwrap();
+    let jobs = a.get(&ws("/jobs")).await.json();
+    let item = jobs["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|j| j["id"] == "tbj_0123456789abcdef_0")
+        .unwrap();
+    assert_ne!(item["status"], "running", "{item}");
+    assert_eq!(item["error"], "interrupted by a restart");
+    assert_eq!(item["kind"], "textbook");
+}
+
+#[tokio::test]
+async fn check_answer_idempotent_client_id() {
+    let a = tb_api(2, 0);
+    queue_chapters(&a, 2);
+    let book = a.imported_book("idem").await;
+    let check = a
+        .post_empty(&ws(&format!("/textbooks/{book}/chapters/0/check")))
+        .await
+        .json();
+    let (cid, item) = (
+        check["checkId"].as_str().unwrap().to_owned(),
+        check["items"][0]["id"].as_str().unwrap().to_owned(),
+    );
+    let path = ws(&format!("/textbooks/{book}/checks/{cid}/answer"));
+    let body = json!({"item": item, "text": "zzz", "confidence": 3, "clientId": "c1"});
+    let first = a.post(&path, body.clone()).await;
+    assert_eq!(first.status, StatusCode::OK, "{}", first.text);
+    assert_eq!(first.json()["correct"], false);
+    let replay = a.post(&path, body).await;
+    assert_eq!(replay.status, StatusCode::OK, "{}", replay.text);
+    assert_eq!(replay.json()["answer"], first.json()["answer"]);
+    let other = a.post(&path, json!({"item": item, "text": "zzz"})).await;
+    assert_eq!(other.status, StatusCode::CONFLICT, "{}", other.text);
+    assert_eq!(
+        other.json()["error"]["details"]["reason"],
+        "already_answered"
+    );
+    let bad = a
+        .post(
+            &path,
+            json!({"item": item, "text": "x", "confidence": 9, "clientId": "c2"}),
+        )
+        .await;
+    assert_eq!(bad.status, StatusCode::BAD_REQUEST);
+    // the chapter now reads as checked
+    let book_json = a.get(&ws(&format!("/textbooks/{book}"))).await.json();
+    assert_eq!(book_json["chapters"][0]["status"], "checked");
+    // a recall item awaits the learner's own grade
+    let recall = check["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|i| i["kind"] == "recall" && i["id"] != item.as_str());
+    if let Some(recall) = recall {
+        let id = recall["id"].as_str().unwrap();
+        let r = a.post(&path, json!({"item": id, "text": "no idea"})).await;
+        assert_eq!(r.status, StatusCode::OK, "{}", r.text);
+        let g = a
+            .post(
+                &ws(&format!("/textbooks/{book}/checks/{cid}/self-grade")),
+                json!({"item": id, "grade": "good"}),
+            )
+            .await;
+        assert_eq!(g.status, StatusCode::NO_CONTENT, "{}", g.text);
+    }
+}
+
+#[tokio::test]
+async fn chapter_not_ready_is_409_with_reason() {
+    // no scripted replies: the engine fails twice in a row, so the import stops early
+    let a = tb_api(4, 0);
+    let book = a.imported_book("unready").await;
+    let b = a.get(&ws(&format!("/textbooks/{book}"))).await.json();
+    assert_eq!(b["chapters"][0]["state"], "failed");
+    assert_eq!(b["chapters"][3]["state"], "pending");
+    for n in [0, 3] {
+        let r = a
+            .post_empty(&ws(&format!("/textbooks/{book}/chapters/{n}/check")))
+            .await;
+        assert_eq!(r.status, StatusCode::CONFLICT, "{}", r.text);
+        assert_eq!(r.json()["error"]["code"], "conflict");
+        assert_eq!(r.json()["error"]["details"]["reason"], "chapter_not_ready");
+    }
+    // nothing is running, so a second import may start; with the engine still empty it fails again
+    queue_chapters(&a, 4);
+    let started = a
+        .post(&ws(&format!("/textbooks/{book}/import")), json!({}))
+        .await;
+    assert_eq!(started.status, StatusCode::ACCEPTED, "{}", started.text);
+    assert!(started.json()["jobId"]
+        .as_str()
+        .unwrap()
+        .starts_with("tbj_"));
+    let done = a.finished_book(&book).await;
+    assert!(done["requestedCalls"].as_u64().unwrap() > 0);
+    let r = a
+        .post_empty(&ws(&format!("/textbooks/{book}/chapters/3/check")))
+        .await;
+    assert_eq!(r.status, StatusCode::OK, "{}", r.text);
+}
+
+/// A minimal PDF of `count` text pages; Poppler rebuilds the missing xref table.
+fn synthetic_pdf(count: usize) -> Vec<u8> {
+    let kids = (0..count)
+        .map(|i| format!("{} 0 R", i + 3))
+        .collect::<Vec<_>>()
+        .join(" ");
+    let mut objs = vec![
+        "<< /Type /Catalog /Pages 2 0 R >>".to_owned(),
+        format!("<< /Type /Pages /Kids [{kids}] /Count {count} >>"),
+    ];
+    for i in 0..count {
+        objs.push(format!(
+            "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 200 200] /Contents {} 0 R /Resources << /Font << /F1 {} 0 R >> >> >>",
+            count + 3 + i,
+            count * 2 + 3
+        ));
+    }
+    for i in 0..count {
+        let s = format!(
+            "BT /F1 12 Tf 20 100 Td (page{} {}) Tj ET",
+            i + 1,
+            "word ".repeat(40)
+        );
+        objs.push(format!("<< /Length {} >>\nstream\n{s}\nendstream", s.len()));
+    }
+    objs.push("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>".into());
+    let mut pdf = String::from("%PDF-1.4\n");
+    for (i, o) in objs.iter().enumerate() {
+        pdf.push_str(&format!("{} 0 obj\n{o}\nendobj\n", i + 1));
+    }
+    pdf.push_str(&format!(
+        "trailer\n<< /Root 1 0 R /Size {} >>\n%%EOF\n",
+        count * 2 + 4
+    ));
+    pdf.into_bytes()
+}
+
+#[tokio::test]
+async fn health_under_200ms_during_400_page_import() {
+    if std::process::Command::new("pdftotext")
+        .arg("-v")
+        .output()
+        .is_err()
+    {
+        eprintln!("skipped: Poppler is missing");
+        return;
+    }
+    // the real extractor on a synthetic 400-page book: upload maps it (outline, 60 sample pages and
+    // a TOC call), then opening the chapters reads only their pages
+    let a = api();
+    queue_chapters(&a, 8);
+    let uploaded = std::sync::atomic::AtomicBool::new(false);
+    let (r, mut worst) = tokio::join!(
+        async {
+            let r = a
+                .upload_textbook("big.pdf", &synthetic_pdf(400), None)
+                .await;
+            uploaded.store(true, std::sync::atomic::Ordering::SeqCst);
+            r
+        },
+        async {
+            let mut worst = Duration::ZERO;
+            while !uploaded.load(std::sync::atomic::Ordering::SeqCst) {
+                let t = std::time::Instant::now();
+                let h = a.get("/health").await;
+                worst = worst.max(t.elapsed());
+                assert_eq!(h.status, StatusCode::OK);
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+            worst
+        }
+    );
+    assert_eq!(r.status, StatusCode::CREATED, "{}", r.text);
+    let book = r.json()["bookId"].as_str().unwrap().to_owned();
+    let job = a.import_chapters(&book, json!({})).await;
+    let mut polls = 0;
+    let mut running = true;
+    while running {
+        let t = std::time::Instant::now();
+        let h = a.get("/health").await;
+        worst = worst.max(t.elapsed());
+        assert_eq!(h.status, StatusCode::OK);
+        polls += 1;
+        let jobs = a.get(&ws("/jobs")).await.json();
+        running = jobs["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|j| j["id"] == job.as_str() && j["status"] == "running");
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+    assert!(polls >= 3, "the import ran long enough to poll ({polls})");
+    assert!(worst < Duration::from_millis(200), "health took {worst:?}");
+    let b = a.get(&ws(&format!("/textbooks/{book}"))).await.json();
+    assert_eq!(b["totalPages"], 400);
 }

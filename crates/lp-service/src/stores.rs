@@ -3,13 +3,18 @@
 use std::path::Path;
 use std::sync::Arc;
 
-use lp_store::{FsChatStore, FsGraphStore, FsJobStore, SqliteTrackerStore};
+use lp_store::{
+    FsChatStore, FsCourseStore, FsGraphStore, FsJobStore, FsTextbookStore, SqliteTrackerStore,
+};
 
+#[derive(Clone)]
 pub struct Stores {
     pub graph: Arc<FsGraphStore>,
     pub chats: Arc<FsChatStore>,
     pub tracker: Arc<SqliteTrackerStore>,
     pub jobs: Arc<FsJobStore>,
+    pub courses: Arc<FsCourseStore>,
+    pub textbooks: Arc<FsTextbookStore>,
 }
 
 impl Stores {
@@ -20,6 +25,8 @@ impl Stores {
             chats: Arc::new(FsChatStore::open(root.join("chats"))?),
             tracker: Arc::new(SqliteTrackerStore::open(root.join("tracker"))?),
             jobs: Arc::new(FsJobStore::open(root.join("jobs"))?),
+            courses: Arc::new(FsCourseStore::new(root)),
+            textbooks: Arc::new(FsTextbookStore::new(root)),
         })
     }
 }

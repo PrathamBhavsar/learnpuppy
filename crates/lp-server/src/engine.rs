@@ -45,4 +45,11 @@ impl LlmEngine for RoleEngine {
             RoleEngine::Real(e) => e.complete_structured(req, cancel).await,
         }
     }
+
+    fn usage(&self) -> (u64, u64) {
+        match self {
+            RoleEngine::Faux(e) => e.usage(),
+            RoleEngine::Real(e) => e.usage(),
+        }
+    }
 }

@@ -18,6 +18,15 @@ pub type StoreResult<T> = Result<T, StoreError>;
 
 // ---------------------------------------------------------------- chats
 
+/// Older records stored epoch seconds; anything below 1e11 (before 1973 in ms) is seconds.
+pub fn epoch_ms(t: i64) -> i64 {
+    if t != 0 && t.abs() < 100_000_000_000 {
+        t * 1000
+    } else {
+        t
+    }
+}
+
 /// `chats/<chat_id>.json`. `turns`/`extractions` are append-only usage logs, separate from `body`.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct ChatRecord {
@@ -83,6 +92,8 @@ pub enum JobKind {
     Pdf,
     Visual,
     Demo,
+    /// Textbook import (U7): run by `TextbookService`, never by the chat-bound workbench.
+    Textbook,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -178,7 +189,18 @@ pub struct BookChunk {
     pub text: String,
 }
 
-/// Four-option multiple-choice card plus its FSRS scheduling state.
+/// How a card is answered. Cards stored before this field existed are `Mcq`.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CardKind {
+    #[default]
+    Mcq,
+    /// Free recall: typed, graded by the `must_name` rubric or the exact answer, in code.
+    Recall,
+}
+
+/// A card plus its FSRS scheduling state. `Mcq` cards use the four options; `Recall` cards are
+/// typed and only keep the options (the answer is at `correct_index`) for old readers.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct FlashCard {
     pub id: SmolStr,
@@ -186,6 +208,11 @@ pub struct FlashCard {
     pub options: [String; 4],
     pub correct_index: u8,
     pub rationale: String,
+    #[serde(default)]
+    pub kind: CardKind,
+    /// Rubric terms a recall answer must name; empty means only the exact answer passes.
+    #[serde(default)]
+    pub must_name: Vec<String>,
     pub card: Card,
 }
 

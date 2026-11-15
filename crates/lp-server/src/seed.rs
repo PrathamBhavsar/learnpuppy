@@ -702,6 +702,8 @@ fn write_cards(
             options,
             correct_index,
             rationale: format!("{good} — it follows from the decision's rationale."),
+            kind: Default::default(),
+            must_name: Vec::new(),
             card,
         };
         t.upsert_card(&fc)?;

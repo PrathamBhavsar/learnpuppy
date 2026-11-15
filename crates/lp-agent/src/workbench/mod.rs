@@ -27,7 +27,7 @@ use crate::loops::{run_turn, Session, TurnError, TurnOutcome};
 
 pub use adapters::{HttpWeb, PdftotextPdf};
 pub use agent::{run_submit_agent, AgentError, NoTools, Run, Tools};
-pub use jobs::{readable, Hit, Pdf, Slider, TuiDemoSpec, Web};
+pub use jobs::{readable, Hit, Pdf, Slider, TuiDemoSpec, Web, MAX_PDF_PAGES_PER_READ};
 pub use tools::{
     exec, job_id, GraphHandle, JobRequest, DEMO, LIST_PROPOSITIONS, LIST_SESSIONS, PDF, RESEARCH,
     VISUAL,
@@ -130,7 +130,19 @@ impl<E: LlmEngine + 'static, J: JobStore + 'static> Workbench<E, J> {
             JobKind::Pdf => "pdf",
             JobKind::Visual => "visual",
             JobKind::Demo => "demo",
+            JobKind::Textbook => "textbook",
         };
+        if rec.kind == JobKind::Textbook {
+            // Chat-less jobs belong to TextbookService; refuse rather than index a missing engine.
+            rec.status = JobStatus::Failed;
+            rec.delivery = DeliveryStatus::Claimed;
+            rec.result = Some(json!({ "error": "textbook jobs run in TextbookService" }));
+            if let Err(e) = self.jobs.update_job(&rec) {
+                tracing::warn!("job {} result not stored: {e}", rec.id);
+            }
+            self.running.lock().remove(rec.id.as_str());
+            return;
+        }
         let run = Run {
             engine: self.engines[role].as_ref(),
             bg_llm: &self.bg_llm,
@@ -159,6 +171,7 @@ impl<E: LlmEngine + 'static, J: JobStore + 'static> Workbench<E, J> {
             }
             JobKind::Visual => jobs::visual(&run, &args).await,
             JobKind::Demo => jobs::demo(&run, &args).await,
+            JobKind::Textbook => Err("textbook jobs run in TextbookService".into()),
         };
         let result = match done {
             Ok(d) => self.write_artifact(&rec.id, d).await,
@@ -190,7 +203,14 @@ impl<E: LlmEngine + 'static, J: JobStore + 'static> Workbench<E, J> {
 
     /// Crash recovery: jobs left `Running` by a dead process become delivered errors.
     pub fn recover(&self) -> StoreResult<usize> {
-        let jobs = self.jobs.interrupted_jobs()?;
+        // Textbook jobs have no chat; `TextbookService::recover` owns them.
+        let not_textbook = |r: &JobRecord| r.kind != JobKind::Textbook;
+        let jobs: Vec<JobRecord> = self
+            .jobs
+            .interrupted_jobs()?
+            .into_iter()
+            .filter(not_textbook)
+            .collect();
         for mut rec in jobs.iter().cloned() {
             rec.status = JobStatus::Done;
             rec.delivery = DeliveryStatus::Pending;
@@ -198,7 +218,12 @@ impl<E: LlmEngine + 'static, J: JobStore + 'static> Workbench<E, J> {
             self.jobs.update_job(&rec)?;
         }
         // Claimed but possibly never saved into a transcript: re-offer; `deliver` skips ones already there.
-        let claimed = self.jobs.claimed_jobs()?;
+        let claimed: Vec<JobRecord> = self
+            .jobs
+            .claimed_jobs()?
+            .into_iter()
+            .filter(not_textbook)
+            .collect();
         for mut rec in claimed.iter().cloned() {
             rec.delivery = DeliveryStatus::Pending;
             self.jobs.update_job(&rec)?;

@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it } from "vitest"
 
 import { usePalette } from "@/stores/palette"
 import { state } from "@/test/msw/db"
+import { useUi } from "@/stores/ui"
 import { renderApp, resetUi } from "@/test/render"
 
 const RUST = "ws_rustasync"
@@ -59,6 +60,7 @@ describe("command palette", () => {
 
   it("moves with the arrow keys", async () => {
     const user = userEvent.setup()
+    useUi.setState({ legacyClassroom: true })
     const { router } = await openShell()
     await pressModK()
     await screen.findByTestId("palette-input")
@@ -68,6 +70,14 @@ describe("command palette", () => {
     await waitFor(() =>
       expect(router.state.location.pathname).toBe(`/w/${RUST}/review`)
     )
+  })
+
+  it("hides Go to Learn unless the legacy classroom is on", async () => {
+    await openShell()
+    await pressModK()
+    await screen.findByTestId("palette-input")
+    expect(screen.getByTestId("palette-cmd-go-graph")).toBeInTheDocument()
+    expect(screen.queryByTestId("palette-cmd-go-learn")).not.toBeInTheDocument()
   })
 
   it("remembers recents and shows them first on the next open", async () => {

@@ -5,6 +5,7 @@
 
 pub mod accounts;
 pub mod chat;
+pub mod course;
 pub mod digest;
 pub mod engine;
 pub mod events;
@@ -13,10 +14,12 @@ pub mod graph;
 pub mod graph_mut;
 pub mod ingest;
 pub mod ingest_svc;
+pub mod learning;
 pub mod paths;
 pub mod review;
 pub mod settings;
 pub mod stores;
+pub mod textbook;
 pub mod workspace;
 
 /// Server-authoritative wall clock in epoch milliseconds.

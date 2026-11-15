@@ -17,3 +17,6 @@ pnpm-lock.yaml
 
 .coord/
 BOARD.md
+scratchpad/
+__pycache__/
+web/e2e/.shots/

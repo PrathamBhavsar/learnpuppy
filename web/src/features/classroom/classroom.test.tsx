@@ -101,6 +101,7 @@ describe("Classroom states", () => {
       plan: null,
       probeProgress: { asked: 0, max: 8 },
       verdicts: [],
+      answers: [],
       jobs: [],
       turn: { state: "idle" },
     })
@@ -121,6 +122,22 @@ describe("MessageList", () => {
     const verdict = within(list).getByTestId("verdict-call_quiz_1")
     expect(verdict).toHaveAttribute("data-correct", "true")
     expect(verdict).toHaveTextContent("Right: futures are lazy.")
+    // The answered question stays: prompt, the pick and the right option, not just the verdict.
+    const recap = within(list).getByTestId("recap-call_quiz_1")
+    expect(recap).toHaveTextContent("Is a future eager or lazy?")
+    expect(within(recap).getByTestId("recap-option-A")).toHaveAttribute(
+      "data-right",
+      "false"
+    )
+    expect(within(recap).getByTestId("recap-option-B")).toHaveAttribute(
+      "data-picked",
+      "true"
+    )
+    expect(within(recap).getByTestId("recap-option-B")).toHaveAttribute(
+      "data-right",
+      "true"
+    )
+    expect(recap).toHaveTextContent("Confidence 5/5")
     expect(screen.getByTestId("question-dock")).toHaveAttribute(
       "data-tool",
       "quiz"
@@ -423,6 +440,14 @@ describe("turn status", () => {
     await user.click(screen.getByTestId("turn-retry"))
     await waitFor(() => expect(bodies).toHaveLength(1))
     expect(bodies[0]).toEqual({ type: "resume", clientId: "client_err_1" })
+  })
+
+  it("does not claim other AIs were tried when one is rate limited", async () => {
+    await open("c_limited")
+    const card = await screen.findByTestId("turn-error")
+    expect(card).toHaveTextContent("Your AI is limited")
+    expect(card).toHaveTextContent("pick another AI in Role slots")
+    expect(card).not.toHaveTextContent("already tried")
   })
 
   it("offers Resume after a restart interrupted the turn", async () => {

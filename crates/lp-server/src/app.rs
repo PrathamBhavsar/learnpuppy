@@ -1,17 +1,23 @@
 //! Shared server state and the router: `/api/v1` (route files under `routes/`), the SPA
 //! fallback, and the middleware stack (request id → compression → Host/token/CSRF guard).
 
+use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
 use axum::Router;
+use lp_agent::workbench::{Pdf, PdftotextPdf};
 use lp_cli_driver::accounts::AccountPool;
 use lp_cli_driver::engine::FauxEngine;
+use lp_service::chat::runtime::Engines;
 use lp_service::chat::{ChatRuntime, RuntimeConfig};
+use lp_service::course::CourseService;
 use lp_service::engine::CliPoolEngine;
-use lp_service::events::{DeltaPump, EventHub};
+use lp_service::events::{DeltaPump, Event, EventHub, Scope};
 use lp_service::settings::Settings;
+use lp_service::textbook::TextbookService;
+use lp_service::workspace::WorkspaceHandle;
 use tokio_util::sync::CancellationToken;
 use tower_http::compression::CompressionLayer;
 
@@ -58,6 +64,13 @@ pub struct AppState {
     pub shutdown: CancellationToken,
     /// Chat turns, the CLI semaphore and workbench jobs (docs/web/03 §Turn state machine).
     pub chats: Arc<ChatRuntime<RoleEngine>>,
+    /// One course service per workspace, shared by every request: it holds the session state and
+    /// locks. Built on first access (which also runs its restart recovery for stuck courses).
+    courses: Arc<parking_lot::Mutex<HashMap<String, CourseService<RoleEngine>>>>,
+    /// One textbook service per workspace (U7), built on first use; it recovers once per workspace.
+    textbooks: Arc<parking_lot::Mutex<HashMap<String, TextbookService<RoleEngine>>>>,
+    textbook_recovered: Arc<parking_lot::Mutex<HashSet<String>>>,
+    textbook_pdf: Arc<dyn Pdf>,
     faux: Arc<FauxEngine>,
 }
 
@@ -90,6 +103,10 @@ impl AppState {
             device_id: device_id.into(),
             shutdown: CancellationToken::new(),
             chats,
+            courses: Arc::default(),
+            textbooks: Arc::default(),
+            textbook_recovered: Arc::default(),
+            textbook_pdf: Arc::new(PdftotextPdf),
             faux: Arc::new(FauxEngine::new()),
         }
     }
@@ -112,6 +129,113 @@ impl AppState {
                 settings.pin(role),
             )),
         }
+    }
+
+    /// Role engines for the services: every call reads the current settings, so a profile change
+    /// applies to the next call.
+    fn role_engines(&self) -> Engines<RoleEngine> {
+        let (mode, faux, pool, data) = (
+            self.config.engine,
+            self.faux.clone(),
+            self.pool.clone(),
+            self.config.data_root.clone(),
+        );
+        Arc::new(move |role: &str| {
+            let settings = Settings::load(&data).unwrap_or_else(|_| {
+                let mut s = Settings::default();
+                s.fill_course_roles();
+                s
+            });
+            Arc::new(match mode {
+                EngineMode::Faux => RoleEngine::Faux(faux.clone()),
+                EngineMode::Real => RoleEngine::Real(CliPoolEngine::for_role(
+                    pool.clone(),
+                    &settings,
+                    role,
+                    settings.pin(role),
+                )),
+            })
+        })
+    }
+
+    /// Tests swap in a fake PDF extractor for textbook imports.
+    pub fn with_textbook_pdf(mut self, pdf: Arc<dyn Pdf>) -> Self {
+        self.textbook_pdf = pdf;
+        self
+    }
+
+    /// The shared textbook service of workspace `ws`, built on first use. Blocking: opens files.
+    /// Job updates go out as `job.updated` events of the workspace.
+    pub fn textbook_service(
+        &self,
+        ws: &str,
+        stores: &lp_service::stores::Stores,
+        root: &std::path::Path,
+    ) -> TextbookService<RoleEngine> {
+        let mut map = self.textbooks.lock();
+        if let Some(s) = map.get(ws) {
+            return s.clone();
+        }
+        let (hub, scope_ws) = (self.hub.clone(), ws.to_owned());
+        let notify = Arc::new(move |rec: lp_core::ports::JobRecord| {
+            hub.publish(
+                Scope::Workspace(scope_ws.clone()),
+                Event::JobUpdated {
+                    job: lp_service::chat::job_info(&rec),
+                },
+            );
+        });
+        let s = TextbookService::new(
+            root.to_path_buf(),
+            Arc::new(stores.clone()),
+            self.role_engines(),
+            self.textbook_pdf.clone(),
+            self.device_id.to_string(),
+            notify,
+        );
+        map.insert(ws.to_owned(), s.clone());
+        s
+    }
+
+    /// [`Self::textbook_service`] for an open workspace; the first call for a workspace also runs
+    /// the service's restart recovery, so a stale `Running` import never shows in the job list.
+    pub async fn textbook(
+        &self,
+        h: &Arc<WorkspaceHandle>,
+    ) -> Result<TextbookService<RoleEngine>, crate::error::ApiError> {
+        let (st, h2) = (self.clone(), h.clone());
+        let svc = crate::routes::common::blocking(move || {
+            Ok(st.textbook_service(h2.id(), h2.stores(), h2.root()))
+        })
+        .await?;
+        if self.textbook_recovered.lock().insert(h.id().to_owned()) {
+            if let Err(e) = svc.recover().await {
+                tracing::warn!(workspace = h.id(), error = %e, "textbook recovery failed");
+            }
+        }
+        Ok(svc)
+    }
+
+    /// The shared course service of workspace `ws`, built on first use. Blocking: opens files.
+    pub fn course_service(
+        &self,
+        ws: &str,
+        stores: &lp_service::stores::Stores,
+        root: &std::path::Path,
+    ) -> CourseService<RoleEngine> {
+        let mut map = self.courses.lock();
+        if let Some(s) = map.get(ws) {
+            return s.clone();
+        }
+        let engines = self.role_engines();
+        let s = CourseService::new(
+            root.to_path_buf(),
+            Arc::new(stores.clone()),
+            engines,
+            self.device_id.to_string(),
+        );
+        map.insert(ws.to_owned(), s.clone());
+        s
     }
 
     /// The scripted engine used in faux mode (tests queue responses on it).
