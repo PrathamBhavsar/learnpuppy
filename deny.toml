@@ -1,5 +1,10 @@
 [advisories]
 version = 2
+ignore = [
+    # chrono: unmaintained notice only (no vulnerability); used for timestamps in 4 crates.
+    # Revisit: migrate to jiff or time before v0.1.0 final.
+    "RUSTSEC-2026-0543",
+]
 
 [licenses]
 version = 2
