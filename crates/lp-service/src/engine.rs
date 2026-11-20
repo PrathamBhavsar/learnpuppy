@@ -38,8 +38,8 @@ const OFFLINE_RETRIES: u32 = 4;
 /// What one attempt has produced so far.
 #[derive(Default)]
 struct Seen {
-    /// Model text the learner has already been shown (a retry would repeat it). Never evidence of a
-    /// failure: only the CLI's own error, stderr and exit status are.
+    /// Model text the learner has already been shown (a retry would repeat it), capped to a tail so a
+    /// short one-line CLI notice printed on stdout can still be classified. Never a lesson's prose.
     shown: Mutex<String>,
     cancel: CancellationToken,
 }
@@ -243,7 +243,7 @@ impl CliPoolEngine {
                 }
                 Err(e) => e,
             };
-            let (text, kind) = failure_of(&err);
+            let (text, kind) = failure_of(&err, &seen.shown.lock());
             if matches!(kind, FailureKind::TimedOut | FailureKind::Other(_)) {
                 // A killed run reports no usage but may have spent quota: leave a non-zero mark so
                 // the course budget charges the attempt. A rate-limited call spent nothing.
@@ -363,15 +363,26 @@ impl CliPoolEngine {
     }
 }
 
-/// The text a failure is classified on and its class: the CLI's own error (stderr, exit status or
-/// error event) only. Model output is what the learner was just shown, never a failure signal.
-fn failure_of(err: &DriverError) -> (String, FailureKind) {
+/// Longest model-text tail that can still be the CLI's own notice rather than lesson prose.
+const NOTICE_MAX: usize = 200;
+
+/// The text a failure is classified on and its class. The CLI's own error (stderr, exit status or
+/// error event) decides; only when that says nothing (`Other`) may a short one-line tail be the CLI's
+/// limit notice printed on stdout (opencode's free preset, claude's `usage limit reached|<ts>`).
+/// Longer or multi-line model output is what the learner was just shown, never a failure signal.
+fn failure_of(err: &DriverError, tail: &str) -> (String, FailureKind) {
     let msg = match err {
         DriverError::Exit { stderr, .. } => stderr.clone(),
         DriverError::Failed(m) | DriverError::Cli { message: m } => m.clone(),
         _ => return (err.to_string(), err.failure(now_ms())),
     };
     let kind = classify(&msg, now_ms());
+    let notice = !tail.is_empty() && !tail.contains('\n') && tail.chars().count() <= NOTICE_MAX;
+    if matches!(kind, FailureKind::Other(_)) && notice {
+        let text = format!("{msg}\n{tail}");
+        let kind = classify(&text, now_ms());
+        return (text, kind);
+    }
     (msg, kind)
 }
 
@@ -846,15 +857,18 @@ mod tests {
 
     #[tokio::test]
     async fn model_prose_that_mentions_a_limit_never_cools_the_account() {
-        // A CLI that streamed lesson prose about limits and then died with a plain exit: what the
-        // learner was shown is never evidence of a rate limit.
+        // A CLI that streamed a whole lesson paragraph mentioning limits, then died with a plain
+        // exit: prose that long is never the CLI's own notice, so it is not a rate limit.
+        const PROSE: &str = "Rate limits and quotas sound technical, but both are just ways a service \
+            rations usage: a rate limit caps how often you may call per minute, while a quota caps a \
+            total over a longer window. Neither says anything about whether the machine itself is \
+            healthy, or whether your session was dropped by a crash, a timeout or a network reset.";
+        assert!(PROSE.chars().count() > 200);
         let e = engine("claude:auto");
         let seen = Seen::default();
         let out = e
             .with_account(&seen, |_| {
-                seen.shown
-                    .lock()
-                    .push_str("A quota and a rate limit both ration usage.");
+                seen.shown.lock().push_str(PROSE);
                 async { Err::<(), _>(exit("exit status 1")) }
             })
             .await;
@@ -862,6 +876,28 @@ mod tests {
         let st = e.pool.statuses(Instant::now(), now_ms());
         assert!(
             st.iter().all(|r| r.status == AccountStatus::Ready),
+            "{st:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_short_cli_limit_notice_on_stdout_still_cools_the_account() {
+        // Claude reports a limit as one short line on stdout and exits non-zero with no useful
+        // stderr; that notice must still bench the account.
+        let e = engine("claude:auto");
+        let seen = Seen::default();
+        let out = e
+            .with_account(&seen, |_| {
+                seen.shown
+                    .lock()
+                    .push_str("Claude AI usage limit reached|1800000500");
+                async { Err::<(), _>(exit("exit status 1")) }
+            })
+            .await;
+        assert!(out.is_err());
+        let st = e.pool.statuses(Instant::now(), now_ms());
+        assert!(
+            matches!(st[0].status, AccountStatus::CoolingDown { .. }),
             "{st:?}"
         );
     }
