@@ -21,7 +21,7 @@ pub use ai::{AiCode, AiFailure};
 
 use crate::accounts::{how_to_connect, provider_name};
 use crate::settings::{LearningStyle, Profile, Settings};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::Ordering;
 
 use parking_lot::Mutex;
 use tokio::sync::mpsc;
@@ -38,8 +38,9 @@ const OFFLINE_RETRIES: u32 = 4;
 /// What one attempt has produced so far.
 #[derive(Default)]
 struct Seen {
-    stdout: Mutex<String>,
-    emitted: AtomicBool,
+    /// Model text the learner has already been shown (a retry would repeat it), capped to a tail so a
+    /// short one-line CLI notice printed on stdout can still be classified. Never a lesson's prose.
+    shown: Mutex<String>,
     cancel: CancellationToken,
 }
 
@@ -154,11 +155,13 @@ impl CliPoolEngine {
     /// The account (and model, on multi-model CLIs) to run on next.
     fn pick(&self) -> Option<Pick> {
         let snap = self.pool.snapshot();
+        let now = Instant::now();
         let pinned = snap.iter().find(|a| {
             a.id.0 == self.pin
                 && a.health == AccountHealth::Healthy
                 && !a.disabled
                 && !a.missing
+                && !a.no_model_benched(now)
                 && a.models.is_empty()
         });
         if let Some(a) = pinned {
@@ -225,8 +228,7 @@ impl CliPoolEngine {
             if let Some(p) = profile {
                 engine.effort = p.effort.clone();
             }
-            seen.stdout.lock().clear();
-            seen.emitted.store(false, Ordering::Relaxed);
+            seen.shown.lock().clear();
             let result = call(engine).await;
             let (i, o) = (
                 usage[0].load(Ordering::Relaxed),
@@ -241,7 +243,7 @@ impl CliPoolEngine {
                 }
                 Err(e) => e,
             };
-            let (text, kind) = failure_of(&err, &seen.stdout.lock());
+            let (text, kind) = failure_of(&err, &seen.shown.lock());
             if matches!(kind, FailureKind::TimedOut | FailureKind::Other(_)) {
                 // A killed run reports no usage but may have spent quota: leave a non-zero mark so
                 // the course budget charges the attempt. A rate-limited call spent nothing.
@@ -259,7 +261,7 @@ impl CliPoolEngine {
                 now_ms(),
             );
             // Text already reached the learner; a retry would repeat it.
-            if seen.emitted.load(Ordering::Relaxed) {
+            if !seen.shown.lock().is_empty() {
                 return Err(err);
             }
             last = Some((acct.provider, pick.model, kind));
@@ -361,20 +363,27 @@ impl CliPoolEngine {
     }
 }
 
-/// The text a failure is classified on (error text plus the stdout tail) and its class.
+/// Longest model-text tail that can still be the CLI's own notice rather than lesson prose.
+const NOTICE_MAX: usize = 200;
+
+/// The text a failure is classified on and its class. The CLI's own error (stderr, exit status or
+/// error event) decides; only when that says nothing (`Other`) may a short one-line tail be the CLI's
+/// limit notice printed on stdout (opencode's free preset, claude's `usage limit reached|<ts>`).
+/// Longer or multi-line model output is what the learner was just shown, never a failure signal.
 fn failure_of(err: &DriverError, tail: &str) -> (String, FailureKind) {
     let msg = match err {
         DriverError::Exit { stderr, .. } => stderr.clone(),
         DriverError::Failed(m) | DriverError::Cli { message: m } => m.clone(),
         _ => return (err.to_string(), err.failure(now_ms())),
     };
-    let text = if tail.is_empty() {
-        msg
-    } else {
-        format!("{msg}\n{tail}")
-    };
-    let kind = classify(&text, now_ms());
-    (text, kind)
+    let kind = classify(&msg, now_ms());
+    let notice = !tail.is_empty() && !tail.contains('\n') && tail.chars().count() <= NOTICE_MAX;
+    if matches!(kind, FailureKind::Other(_)) && notice {
+        let text = format!("{msg}\n{tail}");
+        let kind = classify(&text, now_ms());
+        return (text, kind);
+    }
+    (msg, kind)
 }
 
 /// Outcome of a role-slot test ping.
@@ -455,12 +464,11 @@ impl LlmEngine for CliPoolEngine {
                 let tee = async {
                     while let Some(d) = rx.recv().await {
                         if let StreamDelta::Text(t) = &d {
-                            seen.emitted.store(true, Ordering::Relaxed);
-                            let mut o = seen.stdout.lock();
-                            o.push_str(t);
-                            let cut = o.len().saturating_sub(TAIL);
-                            let cut = (cut..).find(|i| o.is_char_boundary(*i)).unwrap_or(0);
-                            o.drain(..cut);
+                            let mut shown = seen.shown.lock();
+                            shown.push_str(t);
+                            let cut = shown.len().saturating_sub(TAIL);
+                            let cut = (cut..).find(|i| shown.is_char_boundary(*i)).unwrap_or(0);
+                            shown.drain(..cut);
                         }
                         let _ = fwd.send(d).await;
                     }
@@ -672,7 +680,7 @@ mod tests {
         let r = e
             .with_account(&seen, |_| {
                 *n.lock() += 1;
-                seen.emitted.store(true, Ordering::Relaxed);
+                seen.shown.lock().push_str("the learner saw this");
                 async { Err::<(), _>(exit("rate limit")) }
             })
             .await;
@@ -845,6 +853,90 @@ mod tests {
             at > now_ms() + 90 * 60_000 && at < now_ms() + 150 * 60_000,
             "{at}"
         );
+    }
+
+    #[tokio::test]
+    async fn model_prose_that_mentions_a_limit_never_cools_the_account() {
+        // A CLI that streamed a whole lesson paragraph mentioning limits, then died with a plain
+        // exit: prose that long is never the CLI's own notice, so it is not a rate limit.
+        const PROSE: &str = "Rate limits and quotas sound technical, but both are just ways a service \
+            rations usage: a rate limit caps how often you may call per minute, while a quota caps a \
+            total over a longer window. Neither says anything about whether the machine itself is \
+            healthy, or whether your session was dropped by a crash, a timeout or a network reset.";
+        assert!(PROSE.chars().count() > 200);
+        let e = engine("claude:auto");
+        let seen = Seen::default();
+        let out = e
+            .with_account(&seen, |_| {
+                seen.shown.lock().push_str(PROSE);
+                async { Err::<(), _>(exit("exit status 1")) }
+            })
+            .await;
+        assert!(out.is_err());
+        let st = e.pool.statuses(Instant::now(), now_ms());
+        assert!(
+            st.iter().all(|r| r.status == AccountStatus::Ready),
+            "{st:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_short_cli_limit_notice_on_stdout_still_cools_the_account() {
+        // Claude reports a limit as one short line on stdout and exits non-zero with no useful
+        // stderr; that notice must still bench the account.
+        let e = engine("claude:auto");
+        let seen = Seen::default();
+        let out = e
+            .with_account(&seen, |_| {
+                seen.shown
+                    .lock()
+                    .push_str("Claude AI usage limit reached|1800000500");
+                async { Err::<(), _>(exit("exit status 1")) }
+            })
+            .await;
+        assert!(out.is_err());
+        let st = e.pool.statuses(Instant::now(), now_ms());
+        assert!(
+            matches!(st[0].status, AccountStatus::CoolingDown { .. }),
+            "{st:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_real_stderr_rate_limit_still_cools_the_account() {
+        let e = engine("claude:auto");
+        let (out, calls) = run_script(
+            &e,
+            vec![
+                Err(exit(
+                    "Error: 429 rate limit reached, try again in 20 minutes",
+                )),
+                Ok("done"),
+            ],
+        )
+        .await;
+        assert_eq!(out.unwrap(), "done");
+        assert_eq!(calls.len(), 2);
+        let st = e.pool.statuses(Instant::now(), now_ms());
+        assert!(
+            matches!(st[0].status, AccountStatus::CoolingDown { .. }),
+            "{st:?}"
+        );
+    }
+
+    #[test]
+    fn a_pinned_no_model_account_is_skipped_for_the_next_one() {
+        let e = engine("claude:b");
+        assert_eq!(e.pick().unwrap().account.0, "claude:b");
+        e.pool.report_failure(
+            &AccountId("claude:b".into()),
+            None,
+            &FailureKind::NoModel,
+            "no models available",
+            Instant::now(),
+            now_ms(),
+        );
+        assert_eq!(e.pick().unwrap().account.0, "claude:a");
     }
 
     #[tokio::test]
