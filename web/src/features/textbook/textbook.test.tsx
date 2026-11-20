@@ -3,11 +3,14 @@ import userEvent from "@testing-library/user-event"
 import { HttpResponse, delay, http } from "msw"
 import { beforeEach, describe, expect, it } from "vitest"
 
+import type { components } from "@/api/schema"
 import { state } from "@/test/msw/db"
 import { READY_CHAPTERS, newBook, summary } from "@/test/msw/fixtures/textbooks"
 import { apiError } from "@/test/msw/respond"
 import { server } from "@/test/msw/server"
 import { renderApp, resetUi } from "@/test/render"
+
+type Dto = components["schemas"]
 
 const WS = "ws_rustasync"
 const API = "*/api/v1/workspaces/:ws"
@@ -340,6 +343,53 @@ describe("Reading check", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent(
       "Chapter is not imported yet"
     )
+  })
+
+  it("retries a lost answer with the same clientId and shows the stored feedback", async () => {
+    seed()
+    const seen: (string | null | undefined)[] = []
+    const stored = new Map<string, Dto["CheckFeedbackDto"]>()
+    server.use(
+      http.post(
+        `${API}/textbooks/:book/checks/:check/answer`,
+        async ({ request }) => {
+          const body = (await request.json()) as Dto["CheckAnswerRequest"]
+          seen.push(body.clientId)
+          const key = body.clientId ?? ""
+          const replay = stored.get(key)
+          if (replay) return HttpResponse.json(replay)
+          // A different (or missing) id for an item the server already holds is a 409.
+          if (stored.size > 0 || seen.length > 2)
+            return apiError("conflict", "Already answered", {
+              details: { reason: "already_answered" },
+            })
+          stored.set(key, {
+            correct: true,
+            close: false,
+            answer: "Nothing",
+            why: "futures are inert",
+            due: state.db.now + 86_400_000,
+          })
+          // The server took the answer, but the response never arrives.
+          return HttpResponse.error()
+        }
+      )
+    )
+    const user = userEvent.setup()
+    renderApp(`/w/${WS}/textbook?book=bk1`)
+    await user.click(await screen.findByTestId("chapter-2-check"))
+    await user.click(await screen.findByTestId("reading-check-start"))
+    await user.click(await screen.findByRole("radio", { name: "Nothing" }))
+    await user.click(screen.getByTestId("reading-check-answer"))
+    await waitFor(() => expect(seen).toHaveLength(1))
+    expect(screen.queryByTestId("reading-check-feedback")).toBeNull()
+    await user.click(await screen.findByTestId("reading-check-answer"))
+    expect(await screen.findByTestId("reading-check-feedback")).toHaveAttribute(
+      "data-correct",
+      "true"
+    )
+    expect(typeof seen[0]).toBe("string")
+    expect(seen[1]).toBe(seen[0])
   })
 })
 

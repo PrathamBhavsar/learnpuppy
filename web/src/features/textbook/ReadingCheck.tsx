@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react"
 
+import { newClientId } from "@/api/client"
 import { toApiError } from "@/api/errors"
 import { Choice } from "@/components/app/choice"
 import { ErrorState } from "@/components/app/error-state"
@@ -39,6 +40,10 @@ export function ReadingCheck({
   const [feedback, setFeedback] = useState<Feedback | null>(null)
   const [graded, setGraded] = useState(false)
   const [correct, setCorrect] = useState(0)
+
+  // One id per question attempt: if the response is lost and the learner answers again, the
+  // server replays the stored feedback instead of answering 409.
+  const attempt = useRef<{ key: string; clientId: string } | null>(null)
 
   const heading = useRef<HTMLElement>(null)
   const nextButton = useRef<HTMLButtonElement>(null)
@@ -126,7 +131,11 @@ export function ReadingCheck({
 
   if (!item) return null
 
-  const submit = (gap: boolean) =>
+  const submit = (gap: boolean) => {
+    const key = `${check.checkId}:${item.id}`
+    if (attempt.current?.key !== key)
+      attempt.current = { key, clientId: newClientId() }
+    const { clientId } = attempt.current
     actions.answer.mutate(
       {
         check: check.checkId,
@@ -134,10 +143,12 @@ export function ReadingCheck({
           item: item.id,
           text: gap ? "" : text.trim(),
           ms: Date.now() - shownAt,
+          clientId,
         },
       },
       {
         onSuccess: (f) => {
+          attempt.current = null
           setFeedback(f)
           setGraded(false)
           if (f.correct) setCorrect((n) => n + 1)
@@ -145,6 +156,7 @@ export function ReadingCheck({
         onError: (e) => toastError(e, "Could not check your answer"),
       }
     )
+  }
 
   const next = () => {
     setAt((n) => n + 1)
