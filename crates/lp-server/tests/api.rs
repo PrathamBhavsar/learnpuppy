@@ -12,7 +12,7 @@ use axum::response::Response;
 use axum::Router;
 use http_body_util::BodyExt;
 use lp_cli_driver::accounts::DiscoverRoots;
-use lp_core::course::{Course, Item, ItemKind, Lesson};
+use lp_core::course::{Course, Item, ItemKind, Lesson, Prediction};
 use lp_core::ports::{GraphStore, TrackerStore};
 use lp_server::app::{router, AppState, EngineMode, ServerConfig};
 use lp_server::assets::Assets;
@@ -1817,6 +1817,13 @@ async fn method_course_runs_from_plan_to_close_with_gated_steps() {
     let c = method_course("mc1");
     a.stores(MAIN_WS).courses.save_course(&c).unwrap();
 
+    // F23: no step before a bout is open; the ready gate opens one.
+    let r = a.post_empty(&ws("/courses/mc1/step")).await;
+    assert_eq!(r.status, StatusCode::CONFLICT, "{}", r.text);
+    assert_eq!(gate_of(&r), "bout_required");
+    let bout = start_bout(&a, "mc1").await;
+    assert!(bout.starts_with("b_"), "{bout}");
+
     // F07: no teaching before the plan is confirmed.
     let r = a
         .post(
@@ -1841,13 +1848,6 @@ async fn method_course_runs_from_plan_to_close_with_gated_steps() {
         a.get(&ws("/courses/mc1/plan")).await.json()["confirmed"],
         true
     );
-
-    // F23: no step before a bout is open; the ready gate opens one.
-    let r = a.post_empty(&ws("/courses/mc1/step")).await;
-    assert_eq!(r.status, StatusCode::CONFLICT, "{}", r.text);
-    assert_eq!(gate_of(&r), "bout_required");
-    let bout = start_bout(&a, "mc1").await;
-    assert!(bout.starts_with("b_"), "{bout}");
 
     let step = a.post_empty(&ws("/courses/mc1/step")).await.json();
     assert_eq!(step["step"], "explain", "{step}");
@@ -2053,6 +2053,280 @@ async fn step_is_refused_between_bouts_and_when_the_day_is_spent() {
         a.post_empty(&ws("/courses/lk1/step")).await.status,
         StatusCode::OK
     );
+}
+
+fn push_bout_past_limit(a: &Api, bout: &str) {
+    let store = lp_store::FsLearningStore::new(paths::workspace_dir(&a.root, MAIN_WS));
+    let now = lp_service::now_ms();
+    for m in 1..=95 {
+        store
+            .append_bout(&lp_store::BoutEvent::Heartbeat {
+                ts: now + m * 60_000,
+                bout: bout.to_string(),
+            })
+            .unwrap();
+    }
+}
+
+#[tokio::test]
+async fn predict_enforces_bout_limits() {
+    let a = api();
+    let mut c = method_course("c_pred");
+    c.lessons[0].predict = Some(Prediction {
+        q: "What happens next?".into(),
+        options: vec!["A".into(), "B".into()],
+    });
+    a.stores(MAIN_WS).courses.save_course(&c).unwrap();
+    a.post_empty(&ws("/courses/c_pred/plan/confirm")).await;
+
+    // 1. No open bout -> rejected
+    let r = a
+        .post(
+            &ws("/courses/c_pred/predict"),
+            json!({"lesson": "l00", "guess": "A"}),
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::CONFLICT, "{}", r.text);
+    assert_eq!(gate_of(&r), "bout_required");
+
+    // Start a bout
+    let bout = start_bout(&a, "c_pred").await;
+
+    // 2. Past bout limit -> rejected
+    push_bout_past_limit(&a, &bout);
+    let r = a
+        .post(
+            &ws("/courses/c_pred/predict"),
+            json!({"lesson": "l00", "guess": "A"}),
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::CONFLICT, "{}", r.text);
+    assert_eq!(gate_of(&r), "bout_limit");
+
+    // 3. Normal with active bout -> ok
+    let a2 = api();
+    let mut c2 = method_course("c_pred2");
+    c2.lessons[0].predict = Some(Prediction {
+        q: "What happens next?".into(),
+        options: vec!["A".into(), "B".into()],
+    });
+    a2.stores(MAIN_WS).courses.save_course(&c2).unwrap();
+    a2.post_empty(&ws("/courses/c_pred2/plan/confirm")).await;
+    start_bout(&a2, "c_pred2").await;
+
+    let r = a2
+        .post(
+            &ws("/courses/c_pred2/predict"),
+            json!({"lesson": "l00", "guess": "A"}),
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::NO_CONTENT, "{}", r.text);
+}
+
+#[tokio::test]
+async fn note_enforces_bout_limits() {
+    let a = api();
+    let c = method_course("c_note");
+    a.stores(MAIN_WS).courses.save_course(&c).unwrap();
+    a.post_empty(&ws("/courses/c_note/plan/confirm")).await;
+
+    // 1. No open bout -> rejected
+    let r = a
+        .post(
+            &ws("/courses/c_note/note"),
+            json!({"lesson": "l00", "text": "my note"}),
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::CONFLICT, "{}", r.text);
+    assert_eq!(gate_of(&r), "bout_required");
+
+    // Start a bout and advance to note step
+    let bout = start_bout(&a, "c_note").await;
+    a.post(
+        &ws("/courses/c_note/explain-seen"),
+        json!({"lesson": "l00"}),
+    )
+    .await;
+
+    // 2. Past bout limit -> rejected
+    push_bout_past_limit(&a, &bout);
+    let r = a
+        .post(
+            &ws("/courses/c_note/note"),
+            json!({"lesson": "l00", "text": "my note"}),
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::CONFLICT, "{}", r.text);
+    assert_eq!(gate_of(&r), "bout_limit");
+
+    // 3. Normal with active bout -> ok
+    let a2 = api();
+    let c2 = method_course("c_note2");
+    a2.stores(MAIN_WS).courses.save_course(&c2).unwrap();
+    a2.post_empty(&ws("/courses/c_note2/plan/confirm")).await;
+    start_bout(&a2, "c_note2").await;
+    a2.post(
+        &ws("/courses/c_note2/explain-seen"),
+        json!({"lesson": "l00"}),
+    )
+    .await;
+
+    let r = a2
+        .post(
+            &ws("/courses/c_note2/note"),
+            json!({"lesson": "l00", "text": "my note"}),
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::NO_CONTENT, "{}", r.text);
+}
+
+#[tokio::test]
+async fn quiz_answer_enforces_bout_limits() {
+    let a = api();
+    let c = method_course("c_qa");
+    a.stores(MAIN_WS).courses.save_course(&c).unwrap();
+    a.post_empty(&ws("/courses/c_qa/plan/confirm")).await;
+
+    // 1. No open bout -> rejected
+    let r = a
+        .post(
+            &ws("/courses/c_qa/quiz-answer"),
+            json!({"item": "l00-i0", "lesson": "l00", "text": "a", "reasoning": "", "gap": false}),
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::CONFLICT, "{}", r.text);
+    assert_eq!(gate_of(&r), "bout_required");
+
+    // Start a bout and advance to quiz step
+    let bout = start_bout(&a, "c_qa").await;
+    a.post(&ws("/courses/c_qa/explain-seen"), json!({"lesson": "l00"}))
+        .await;
+    a.post(
+        &ws("/courses/c_qa/note"),
+        json!({"lesson": "l00", "text": ""}),
+    )
+    .await;
+
+    // 2. Past bout limit -> rejected
+    push_bout_past_limit(&a, &bout);
+    let r = a
+        .post(
+            &ws("/courses/c_qa/quiz-answer"),
+            json!({"item": "l00-i0", "lesson": "l00", "text": "a", "reasoning": "", "gap": false}),
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::CONFLICT, "{}", r.text);
+    assert_eq!(gate_of(&r), "bout_limit");
+
+    // 3. Normal with active bout -> ok
+    let a2 = api();
+    let c2 = method_course("c_qa2");
+    a2.stores(MAIN_WS).courses.save_course(&c2).unwrap();
+    a2.post_empty(&ws("/courses/c_qa2/plan/confirm")).await;
+    start_bout(&a2, "c_qa2").await;
+    a2.post(&ws("/courses/c_qa2/explain-seen"), json!({"lesson": "l00"}))
+        .await;
+    a2.post(
+        &ws("/courses/c_qa2/note"),
+        json!({"lesson": "l00", "text": ""}),
+    )
+    .await;
+
+    let r = a2
+        .post(
+            &ws("/courses/c_qa2/quiz-answer"),
+            json!({"item": "l00-i0", "lesson": "l00", "text": "a", "reasoning": "", "gap": false}),
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::OK, "{}", r.text);
+    assert_eq!(r.json()["status"], "graded");
+}
+
+#[tokio::test]
+async fn feynman_enforces_bout_limits() {
+    let a = api();
+    let c = method_course("c_fey");
+    a.stores(MAIN_WS).courses.save_course(&c).unwrap();
+    a.post_empty(&ws("/courses/c_fey/plan/confirm")).await;
+
+    // 1. No open bout -> rejected
+    let r = a
+        .post(
+            &ws("/courses/c_fey/feynman"),
+            json!({"lesson": "l00", "explanation": "it just works"}),
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::CONFLICT, "{}", r.text);
+    assert_eq!(gate_of(&r), "bout_required");
+
+    // Start a bout and advance to feynman step
+    let bout = start_bout(&a, "c_fey").await;
+    a.post(&ws("/courses/c_fey/explain-seen"), json!({"lesson": "l00"}))
+        .await;
+    a.post(
+        &ws("/courses/c_fey/note"),
+        json!({"lesson": "l00", "text": ""}),
+    )
+    .await;
+    a.post(
+        &ws("/courses/c_fey/quiz-answer"),
+        json!({"item": "l00-i0", "lesson": "l00", "text": "a", "reasoning": "", "gap": false}),
+    )
+    .await;
+    a.post(&ws("/courses/c_fey/explain-seen"), json!({"lesson": "l00"}))
+        .await;
+    a.post(&ws("/courses/c_fey/quiz-answer"), json!({"item": "l00-i1", "lesson": "l00", "text": "the dog barks", "reasoning": "", "gap": false})).await;
+
+    // 2. Past bout limit -> rejected
+    push_bout_past_limit(&a, &bout);
+    let r = a
+        .post(
+            &ws("/courses/c_fey/feynman"),
+            json!({"lesson": "l00", "explanation": "it just works"}),
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::CONFLICT, "{}", r.text);
+    assert_eq!(gate_of(&r), "bout_limit");
+
+    // 3. Normal with active bout -> ok
+    let a2 = api();
+    let c2 = method_course("c_fey2");
+    a2.stores(MAIN_WS).courses.save_course(&c2).unwrap();
+    a2.post_empty(&ws("/courses/c_fey2/plan/confirm")).await;
+    start_bout(&a2, "c_fey2").await;
+    a2.post(
+        &ws("/courses/c_fey2/explain-seen"),
+        json!({"lesson": "l00"}),
+    )
+    .await;
+    a2.post(
+        &ws("/courses/c_fey2/note"),
+        json!({"lesson": "l00", "text": ""}),
+    )
+    .await;
+    a2.post(
+        &ws("/courses/c_fey2/quiz-answer"),
+        json!({"item": "l00-i0", "lesson": "l00", "text": "a", "reasoning": "", "gap": false}),
+    )
+    .await;
+    a2.post(
+        &ws("/courses/c_fey2/explain-seen"),
+        json!({"lesson": "l00"}),
+    )
+    .await;
+    a2.post(&ws("/courses/c_fey2/quiz-answer"), json!({"item": "l00-i1", "lesson": "l00", "text": "the dog barks", "reasoning": "", "gap": false})).await;
+
+    a2.state
+        .faux()
+        .faux_text(r#"{"correct":true,"note":"nice"}"#);
+    let r = a2
+        .post(
+            &ws("/courses/c_fey2/feynman"),
+            json!({"lesson": "l00", "explanation": "it just works"}),
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::OK, "{}", r.text);
+    assert_eq!(r.json()["correct"], true);
 }
 
 /// The plan ships its numbers as tunable settings; every one is listed, bounded and saved.
