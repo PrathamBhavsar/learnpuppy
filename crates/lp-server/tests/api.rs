@@ -2124,6 +2124,30 @@ async fn predict_enforces_bout_limits() {
 }
 
 #[tokio::test]
+async fn explain_seen_enforces_bout_limits() {
+    let a = api();
+    a.stores(MAIN_WS)
+        .courses
+        .save_course(&method_course("c_exp"))
+        .unwrap();
+    a.post_empty(&ws("/courses/c_exp/plan/confirm")).await;
+    let seen = || json!({"lesson": "l00"});
+
+    let r = a.post(&ws("/courses/c_exp/explain-seen"), seen()).await;
+    assert_eq!(r.status, StatusCode::CONFLICT, "{}", r.text);
+    assert_eq!(gate_of(&r), "bout_required");
+
+    let bout = start_bout(&a, "c_exp").await;
+    let r = a.post(&ws("/courses/c_exp/explain-seen"), seen()).await;
+    assert_eq!(r.status, StatusCode::NO_CONTENT, "{}", r.text);
+
+    push_bout_past_limit(&a, &bout);
+    let r = a.post(&ws("/courses/c_exp/explain-seen"), seen()).await;
+    assert_eq!(r.status, StatusCode::CONFLICT, "{}", r.text);
+    assert_eq!(gate_of(&r), "bout_limit");
+}
+
+#[tokio::test]
 async fn note_enforces_bout_limits() {
     let a = api();
     let c = method_course("c_note");

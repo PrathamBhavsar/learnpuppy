@@ -526,6 +526,7 @@ pub async fn explain_seen(
     let h = open(&st, &ws, true).await?;
     let now = lp_service::now_ms();
     blocking(move || {
+        ensure_active_bout(&h, now)?;
         let settings = ws_settings(&h)?;
         let due = plan::due_items(&*h.stores().tracker, &id, now)?;
         let action = Action::Explain {
