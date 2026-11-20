@@ -2688,7 +2688,7 @@ async fn check_answer_idempotent_client_id() {
     // the chapter now reads as checked
     let book_json = a.get(&ws(&format!("/textbooks/{book}"))).await.json();
     assert_eq!(book_json["chapters"][0]["status"], "checked");
-    // a recall item awaits the learner's own grade
+    // a plain miss on a recall item is rated Again at once: nothing is left to self-grade
     let recall = check["items"]
         .as_array()
         .unwrap()
@@ -2704,7 +2704,8 @@ async fn check_answer_idempotent_client_id() {
                 json!({"item": id, "grade": "good"}),
             )
             .await;
-        assert_eq!(g.status, StatusCode::NO_CONTENT, "{}", g.text);
+        assert_eq!(g.status, StatusCode::CONFLICT, "{}", g.text);
+        assert_eq!(g.json()["error"]["details"]["reason"], "already_answered");
     }
 }
 

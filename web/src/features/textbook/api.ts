@@ -166,7 +166,7 @@ export function useCheckActions(ws: string, book: string) {
             "/workspaces/{ws}/textbooks/{book}/checks/{check}/answer",
             {
               params: { path: { ...path, check: v.check } },
-              body: { clientId: newClientId(), ...v.body },
+              body: { ...v.body, clientId: v.body.clientId ?? newClientId() },
             }
           )
         ),

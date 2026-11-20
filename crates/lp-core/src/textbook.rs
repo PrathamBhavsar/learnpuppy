@@ -368,8 +368,9 @@ fn finish_chapters(mut starts: Vec<(String, u32)>, total: u32) -> Vec<Chapter> {
             _ => merged.push((vec![title], page)),
         }
     }
-    merged.truncate(MAX_CHAPTERS);
-    let n = merged.len();
+    let n = merged.len().min(MAX_CHAPTERS);
+    // End pages come from the full list; truncating first would let the last kept
+    // chapter run to the end of the PDF.
     (0..n)
         .map(|i| {
             let (titles, start) = &merged[i];
@@ -1387,9 +1388,28 @@ mod tests {
                 assert!(ch.pages.end < n.pages.start);
             }
         }
-        if let Some(l) = c.last() {
-            assert_eq!(l.pages.end, total);
+        // A truncated list (MAX_CHAPTERS) deliberately stops before the end of the book.
+        if c.len() < MAX_CHAPTERS {
+            if let Some(l) = c.last() {
+                assert_eq!(l.pages.end, total);
+            }
         }
+    }
+
+    #[test]
+    fn truncated_chapters_do_not_swallow_the_rest_of_the_book() {
+        // 250 one-page-apart chapters in a 500-page book: the 200th kept chapter must end
+        // where chapter 201 would have started, not at the end of the PDF.
+        let total = 500;
+        let starts: Vec<(String, u32)> = (0..250u32)
+            .map(|i| (format!("Chapter {i}"), i * 2 + 1))
+            .collect();
+        let c = finish_chapters(starts, total);
+        assert_eq!(c.len(), MAX_CHAPTERS);
+        let last = c.last().unwrap();
+        assert_eq!(last.pages.start, 199 * 2 + 1);
+        assert_eq!(last.pages.end, 200 * 2); // next (dropped) chapter starts at page 401
+        assert_invariants(&c, total);
     }
 
     proptest! {
