@@ -388,6 +388,31 @@ pub async fn plan_prereq(
     Ok(Json(CoursePlanDto::from(&course)))
 }
 
+/// F23: teaching needs an open bout. Returns the clock if a bout is open, or a gate error if
+/// no bout is open or the clock is locked.
+fn check_open_bout(h: &WorkspaceHandle, now: i64) -> Result<SvcClock, ApiError> {
+    let clock = learning(h).clock(now)?;
+    if clock.bout.is_none() && !matches!(clock.status, BoutStatus::Active { .. }) {
+        return Err(locked_gate(clock.status));
+    }
+    if clock.bout.is_none() {
+        return Err(ApiError::gate(
+            "bout_required",
+            "start a bout (the ready gate) before studying",
+        ));
+    }
+    Ok(clock)
+}
+
+/// Enforces that a bout is open and active (not past bout limit, daily limit, or in a gap).
+fn ensure_active_bout(h: &WorkspaceHandle, now: i64) -> Result<(), ApiError> {
+    let clock = check_open_bout(h, now)?;
+    match clock.status {
+        BoutStatus::Active { .. } => Ok(()),
+        other => Err(locked_gate(other)),
+    }
+}
+
 /// What's next, due reviews served first (F05). Read-only: `Shown`, `Predicted` and the rest are
 /// logged only when the learner acts on the step through its own endpoint, never here.
 #[utoipa::path(
@@ -406,16 +431,7 @@ pub async fn step(
     let now = lp_service::now_ms();
     let (course, st_) = blocking(move || {
         // F23: teaching needs an open bout, and a locked clock hands out nothing but Close.
-        let clock = learning(&h).clock(now)?;
-        if clock.bout.is_none() && !matches!(clock.status, BoutStatus::Active { .. }) {
-            return Err(locked_gate(clock.status));
-        }
-        if clock.bout.is_none() {
-            return Err(ApiError::gate(
-                "bout_required",
-                "start a bout (the ready gate) before studying",
-            ));
-        }
+        let clock = check_open_bout(&h, now)?;
         let (course, st_) = plan::step(
             &h.stores().courses,
             &*h.stores().tracker,
@@ -461,6 +477,7 @@ pub async fn predict(
     let h = open(&st, &ws, true).await?;
     let now = lp_service::now_ms();
     blocking(move || {
+        ensure_active_bout(&h, now)?;
         let settings = ws_settings(&h)?;
         let due = plan::due_items(&*h.stores().tracker, &id, now)?;
         let action = Action::Predict {
@@ -509,6 +526,7 @@ pub async fn explain_seen(
     let h = open(&st, &ws, true).await?;
     let now = lp_service::now_ms();
     blocking(move || {
+        ensure_active_bout(&h, now)?;
         let settings = ws_settings(&h)?;
         let due = plan::due_items(&*h.stores().tracker, &id, now)?;
         let action = Action::Explain {
@@ -557,6 +575,7 @@ pub async fn note(
     let h = open(&st, &ws, true).await?;
     let now = lp_service::now_ms();
     blocking(move || {
+        ensure_active_bout(&h, now)?;
         let settings = ws_settings(&h)?;
         let due = plan::due_items(&*h.stores().tracker, &id, now)?;
         let action = Action::WriteNote {
@@ -621,6 +640,7 @@ pub async fn quiz_answer(
         gap: req.gap,
     };
     let out = blocking(move || {
+        ensure_active_bout(&h, now)?;
         let settings = ws_settings(&h)?;
         Ok(plan::quiz_answer(
             &h.stores().courses,
@@ -661,7 +681,11 @@ pub async fn feynman(
     let h = open(&st, &ws, true).await?;
 
     let (hb, idb, lessonb) = (h.clone(), id.clone(), req.lesson.clone());
-    let lesson = blocking(move || Ok(plan::lesson(&hb.stores().courses, &idb, &lessonb)?)).await?;
+    let lesson = blocking(move || {
+        ensure_active_bout(&hb, lp_service::now_ms())?;
+        Ok(plan::lesson(&hb.stores().courses, &idb, &lessonb)?)
+    })
+    .await?;
 
     let settings = Settings::load(&st.config.data_root).unwrap_or_default();
     let engine = st.engine_for(&settings, "follow_up");
@@ -675,6 +699,7 @@ pub async fn feynman(
         check.correct,
     );
     blocking(move || {
+        ensure_active_bout(&h, now)?;
         let method_settings = ws_settings(&h)?;
         let due = plan::due_items(&*h.stores().tracker, &idc, now)?;
         Ok(plan::commit_feynman(

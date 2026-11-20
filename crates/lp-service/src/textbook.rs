@@ -229,6 +229,22 @@ struct Running {
     ending: bool,
 }
 
+/// Drops the `running` entry of one job, but never a newer job's entry for the same book.
+struct RunningGuard<E> {
+    me: Arc<Inner<E>>,
+    book: String,
+    job: String,
+}
+
+impl<E> Drop for RunningGuard<E> {
+    fn drop(&mut self) {
+        let mut running = self.me.running.lock();
+        if running.get(&self.book).is_some_and(|r| r.job == self.job) {
+            running.remove(&self.book);
+        }
+    }
+}
+
 struct Inner<E> {
     stores: Arc<Stores>,
     engines: Engines<E>,
@@ -239,6 +255,8 @@ struct Inner<E> {
     /// Books with a job in flight.
     running: Mutex<HashMap<String, Running>>,
     locks: Mutex<HashMap<String, Arc<Mutex<()>>>>,
+    /// One whole upload (store, count, map) per book at a time, held across the mapping awaits.
+    uploads: Mutex<HashMap<String, Arc<tokio::sync::Mutex<()>>>>,
 }
 
 pub struct TextbookService<E> {
@@ -394,6 +412,7 @@ impl<E: LlmEngine + 'static> TextbookService<E> {
                 clock: Arc::new(crate::now_ms),
                 running: Mutex::default(),
                 locks: Mutex::default(),
+                uploads: Mutex::default(),
             }),
         }
     }
@@ -433,6 +452,17 @@ impl<E: LlmEngine + 'static> TextbookService<E> {
             total_pages: 0,
             page_offset: None,
         };
+        // The whole upload of these bytes is serialized, mapping included: a second identical
+        // upload waits, then finds a fully mapped book (or retries if the first one failed and
+        // removed what it had created), never a half-made one the first may still delete.
+        let upload_lock = self
+            .inner
+            .uploads
+            .lock()
+            .entry(book.clone())
+            .or_default()
+            .clone();
+        let _one_at_a_time = upload_lock.lock().await;
         let me = self.inner.clone();
         let b = book.clone();
         let fresh = blk(move || {
@@ -690,11 +720,14 @@ impl<E: LlmEngine + 'static> TextbookService<E> {
                 },
             );
         }
+        // Removes the entry on every exit, a failed `create_job` and a panicking job included.
+        let running_guard = RunningGuard {
+            me: me.clone(),
+            book: book.to_string(),
+            job: id.clone(),
+        };
         let (m3, r3) = (me.clone(), rec.clone());
-        if let Err(e) = blk(move || Ok(m3.stores.jobs.create_job(&r3)?)).await {
-            me.running.lock().remove(book);
-            return Err(e);
-        }
+        blk(move || Ok(m3.stores.jobs.create_job(&r3)?)).await?;
         (me.notify)(rec.clone());
         let job = Job {
             me: me.clone(),
@@ -708,6 +741,7 @@ impl<E: LlmEngine + 'static> TextbookService<E> {
         };
         tokio::spawn(async move {
             let _busy = busy;
+            let _running = running_guard;
             job.run().await;
         });
         Ok(id)
@@ -1026,8 +1060,9 @@ impl<E: LlmEngine + 'static> TextbookService<E> {
                 return Err(TextbookError::Conflict(conflict::ALREADY_ANSWERED.into()));
             }
             let (correct, close) = grade_answer(it, &text);
-            // A typed answer that is not an exact hit waits for the learner's own grade.
-            let rating = (it.kind == ItemKind::Mcq || correct)
+            // Only a close typed answer waits for the learner's own grade; a plain miss (or "I
+            // don't know") is rated at once, or the card would stay parked and never come back.
+            let rating = (it.kind == ItemKind::Mcq || correct || !close)
                 .then(|| lp_core::course::rating_for(correct, confidence));
             me.stores.textbooks.append_event(
                 &b,
@@ -1049,7 +1084,7 @@ impl<E: LlmEngine + 'static> TextbookService<E> {
         .await
     }
 
-    /// The learner's own grade for a typed answer that was close or wrong.
+    /// The learner's own grade for a typed answer that was close.
     pub async fn self_grade(&self, book: &str, check: &str, item: &str, grade: &str) -> Res<()> {
         let rating = lp_core::course::rating_from_grade(grade)
             .ok_or_else(|| TextbookError::Invalid("grade is again, hard, good or easy".into()))?;
@@ -2239,6 +2274,78 @@ mod tests {
         assert_eq!(r.state(&a.book).chapters.len(), 3);
     }
 
+    /// A PDF whose outline read is slow, so a second upload can arrive while the first maps.
+    struct SlowOutline(FakePdf);
+
+    impl Pdf for SlowOutline {
+        fn pages(&self, p: &str) -> Result<Vec<String>, String> {
+            self.0.pages(p)
+        }
+        fn page_count(&self, p: &str) -> Result<usize, String> {
+            self.0.page_count(p)
+        }
+        fn page_texts(&self, p: &str, first: usize, last: usize) -> Result<Vec<String>, String> {
+            self.0.page_texts(p, first, last)
+        }
+        fn outline(&self, p: &str) -> Result<Vec<OutlineEntry>, String> {
+            std::thread::sleep(Duration::from_millis(150));
+            self.0.outline(p)
+        }
+    }
+
+    #[tokio::test]
+    async fn concurrent_uploads_of_an_unmappable_book_both_fail_cleanly() {
+        // No outline and no text: mapping fails after the book is already on disk.
+        let pdf = FakePdf {
+            pages: vec![String::new(); 4],
+            outline: vec![],
+            fail_from: None,
+            reads: Mutex::default(),
+        };
+        let r = rig_with(Arc::new(SlowOutline(pdf)), Box::new(|_, p| Ok(good(p))));
+        let bytes = r.bytes();
+        let (a, b) = tokio::join!(
+            r.svc.upload("s.pdf", bytes.clone(), r.guard()),
+            r.svc.upload("s.pdf", bytes.clone(), r.guard())
+        );
+        // The second upload must not report a half-made book as existing: it waits for the
+        // first, then fails the same way.
+        assert_eq!(a.unwrap_err(), TextbookError::Invalid(NO_TEXT.into()));
+        assert_eq!(b.unwrap_err(), TextbookError::Invalid(NO_TEXT.into()));
+        assert!(r.svc.list().await.unwrap().is_empty(), "nothing is kept");
+        assert_eq!(r.engine.n(), 0);
+    }
+
+    #[tokio::test]
+    async fn a_panicking_import_does_not_block_the_next_one() {
+        let boom = Arc::new(AtomicBool::new(true));
+        let b2 = boom.clone();
+        let r = rig_with(
+            Arc::new(book(2, 400)),
+            Box::new(move |_, p| {
+                if b2.swap(false, Ordering::SeqCst) {
+                    panic!("engine blew up");
+                }
+                Ok(good(p))
+            }),
+        );
+        let up = r.upload().await;
+        r.svc.import(&up.book, None, r.guard()).await.unwrap();
+        for _ in 0..500 {
+            if r.engine.n() >= 1 && r.svc.inner.running.lock().is_empty() {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        assert!(
+            r.svc.inner.running.lock().is_empty(),
+            "a panicked job leaves no running entry"
+        );
+        let job = r.svc.import(&up.book, None, r.guard()).await.unwrap();
+        r.wait(&job).await;
+        assert_eq!(r.ready(&up.book), 2);
+    }
+
     #[tokio::test]
     async fn cancel_marks_failed_and_keeps_ready_chapters() {
         let r = rig(book(4, 400));
@@ -2672,7 +2779,7 @@ mod tests {
                 .answer(&book, &check.check, &it.id, "x", AnswerMeta::default())
                 .await
                 .unwrap();
-            if it.kind == ItemKind::Recall {
+            if it.kind == ItemKind::Recall && fb.close {
                 r.svc
                     .self_grade(&book, &check.check, &it.id, "good")
                     .await
@@ -2800,6 +2907,44 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn wrong_recall_is_rated_again_and_comes_back() {
+        let r = rig(book(2, 400));
+        let (book, _) = r.imported().await;
+        for gap in [false, true] {
+            let check = r.svc.start_check(&book, 0).await.unwrap();
+            let Some(item) = check.items.iter().find(|i| i.kind == ItemKind::Recall) else {
+                continue;
+            };
+            let card = card_id(&book, &item.id);
+            // a plain miss, or "I don't know" (the UI sends an empty answer)
+            let text = if gap { "" } else { "zzz nonsense" };
+            let fb = r
+                .svc
+                .answer(&book, &check.check, &item.id, text, AnswerMeta::default())
+                .await
+                .unwrap();
+            assert!(!fb.correct && !fb.close);
+            let hist = review::history(&*r.stores.tracker, &card).unwrap();
+            assert_eq!(hist.len(), 1, "a wrong answer is rated at once");
+            assert_ne!(
+                r.stores.tracker.card(&card).unwrap().unwrap().card.due,
+                crate::course::PARKED_DUE,
+                "the card is scheduled, so it returns"
+            );
+            assert!(fb.due.is_some_and(|d| d != crate::course::PARKED_DUE));
+            // nothing left to grade by hand
+            assert!(matches!(
+                r.svc
+                    .self_grade(&book, &check.check, &item.id, "good")
+                    .await,
+                Err(TextbookError::Conflict(_))
+            ));
+            return;
+        }
+        panic!("no recall item in any check");
+    }
+
+    #[tokio::test]
     async fn close_recall_needs_self_grade() {
         let r = rig(book(2, 400));
         let (book, _) = r.imported().await;
@@ -2811,18 +2956,25 @@ mod tests {
             };
             seen_recall = true;
             let card = card_id(&book, &item.id);
+            // One typo away from the stored answer: close, not exact.
+            let stored = r.state(&book).chapters[0]
+                .objectives
+                .iter()
+                .flat_map(|o| &o.items)
+                .find(|i| i.id == item.id)
+                .unwrap()
+                .answer
+                .clone();
+            let typo = stored.replacen('m', "n", 1);
             let fb = r
                 .svc
-                .answer(
-                    &book,
-                    &check.check,
-                    &item.id,
-                    "zzz nonsense",
-                    AnswerMeta::default(),
-                )
+                .answer(&book, &check.check, &item.id, &typo, AnswerMeta::default())
                 .await
                 .unwrap();
-            assert!(!fb.correct);
+            assert!(
+                !fb.correct && fb.close,
+                "a typo is close: {typo:?} vs {stored:?}"
+            );
             assert!(
                 review::history(&*r.stores.tracker, &card)
                     .unwrap()

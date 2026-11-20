@@ -1,6 +1,8 @@
 //! Plan DAG Mermaid parser, 3-phase fold, question_core, Fisher-Yates shuffle, argument healing, and PracticeGate (T11).
 use std::collections::{HashMap, HashSet};
 
+use std::sync::LazyLock;
+
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -323,9 +325,13 @@ pub fn ask_option_problems(options: &[QuizOption]) -> Vec<String> {
 /// `D. ` label, …). Options are shuffled before the learner sees them, so a stored explanation
 /// naming a letter would point at the wrong option once rendered.
 pub fn cites_option_letters(text: &str) -> bool {
-    Regex::new(r"(?i)\b(?:option|opci[oó]n)\s+[a-d]\b|\([A-Da-d]\)|(?:^|\s)[A-Da-d]\.(?:\s|$)")
-        .expect("static pattern")
-        .is_match(text)
+    // Letters in prose ("Plan B.", "(a) first case" mid-sentence) are legitimate; only an
+    // explicit `option X`, an uppercase `(X)`, or a bare label opening the text counts.
+    static RE: LazyLock<Regex> = LazyLock::new(|| {
+        Regex::new(r"(?i:\b(?:option|opci[oó]n)\s+[a-d]\b)|\([A-D]\)|^\s*(?:\([A-Da-d]\)|[A-Da-d]\.)(?:\s|$)")
+            .expect("static pattern")
+    });
+    RE.is_match(text)
 }
 
 /// Authoring validation. Pass `tree` for `quiz`/`explain` (requires `type` + `nodeId`); `None` for `probe`.
@@ -765,6 +771,13 @@ mod tests {
             "B. La fotosíntesis es el proceso mediante el cual las plantas convierten la luz solar.",
         ] {
             assert!(cites_option_letters(bad), "{bad}");
+        }
+        for ok in [
+            "Plan B. is the fallback",
+            "Use (a) first case, then (b) the rest",
+            "Take route A. Then stop",
+        ] {
+            assert!(!cites_option_letters(ok), "{ok}");
         }
         let t = parse_plan(PLAN, 1).unwrap();
         let mut q = quiz();
