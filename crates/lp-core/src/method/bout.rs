@@ -13,16 +13,17 @@ const MS_PER_MINUTE: i64 = 60_000;
 /// "idle over 10 minutes moves the clock back 10 minutes"). `idle_rewind_minutes == 0` disables
 /// idle detection: every gap counts as active time.
 pub fn active_minutes(heartbeats_ms: &[i64], idle_rewind_minutes: u32) -> u32 {
-    let mut active: i64 = 0;
+    let mut active_ms: i64 = 0;
+    let idle_rewind_ms = idle_rewind_minutes as i64 * MS_PER_MINUTE;
     for pair in heartbeats_ms.windows(2) {
-        let delta_minutes = (pair[1] - pair[0]).max(0) / MS_PER_MINUTE;
-        if idle_rewind_minutes > 0 && delta_minutes >= idle_rewind_minutes as i64 {
-            active = (active - idle_rewind_minutes as i64).max(0);
+        let delta_ms = (pair[1] - pair[0]).max(0);
+        if idle_rewind_minutes > 0 && delta_ms >= idle_rewind_ms {
+            active_ms = (active_ms - idle_rewind_ms).max(0);
         } else {
-            active += delta_minutes;
+            active_ms += delta_ms;
         }
     }
-    active.max(0) as u32
+    (active_ms.max(0) / MS_PER_MINUTE) as u32
 }
 
 /// F23: what the bout clock says right now.
@@ -136,6 +137,16 @@ mod tests {
         let settings = Settings::default();
         let status = bout_status(0, &[], 300, Some(-60 * MS_PER_MINUTE), true, &settings);
         assert_eq!(status, BoutStatus::Active { active_minutes: 0 });
+    }
+
+    #[test]
+    fn sub_minute_heartbeats_accumulate_to_reach_limit() {
+        let settings = Settings::default();
+        // 181 heartbeats spaced 30 seconds apart = 180 * 30s = 90 minutes.
+        let hb: Vec<i64> = (0..=180).map(|i| i * 30 * 1000).collect();
+        assert_eq!(active_minutes(&hb, settings.idle_rewind_minutes), 90);
+        let status = bout_status(90 * MS_PER_MINUTE, &hb, 0, None, false, &settings);
+        assert_eq!(status, BoutStatus::BoutLimitReached);
     }
 
     proptest! {
