@@ -110,8 +110,9 @@ pub struct AccountState {
     pub resets_at_ms: Option<u64>,
     /// The CLI binary disappeared.
     pub missing: bool,
-    /// The account's model list came back empty or every model is unavailable.
-    pub no_model: bool,
+    /// The account's model list came back empty or every model is unavailable; not picked before
+    /// this instant (a refresh or a success clears it sooner).
+    no_model_until: Option<Instant>,
 }
 
 impl AccountState {
@@ -137,8 +138,13 @@ impl AccountState {
             models: d.models.into_iter().map(ModelState::new).collect(),
             resets_at_ms: None,
             missing: false,
-            no_model: false,
+            no_model_until: None,
         }
+    }
+
+    /// The CLI said this account has no usable model and the bench has not lapsed by `now`.
+    pub fn no_model_benched(&self, now: Instant) -> bool {
+        self.no_model_until.is_some_and(|u| u > now)
     }
 
     /// Cooldowns that elapsed by `now` are cleared.
@@ -149,6 +155,9 @@ impl AccountState {
             self.window_requests = 0;
             self.window_input_tokens = 0;
             self.window_output_tokens = 0;
+        }
+        if self.no_model_until.is_some_and(|u| u <= now) {
+            self.no_model_until = None;
         }
         for m in &mut self.models {
             if m.until.is_some_and(|u| u <= now) {
@@ -273,6 +282,7 @@ impl AccountPool {
                     && !a.disabled
                     && !a.missing
                     && a.health == AccountHealth::Healthy
+                    && !a.no_model_benched(now)
                     && a.has_usable_model()
             });
             let picked = match self.strategy {
@@ -378,15 +388,14 @@ impl AccountPool {
                 Duration::ZERO
             }
             FailureKind::NoModel => {
-                match model.and_then(|m| a.models.iter_mut().find(|s| s.info.id == m)) {
-                    Some(m) => {
-                        m.unavailable = true;
-                        m.until = None;
-                    }
-                    None => a.no_model = true,
+                if let Some(m) = model.and_then(|m| a.models.iter_mut().find(|s| s.info.id == m)) {
+                    m.unavailable = true;
+                    m.until = None;
                 }
-                a.no_model = a.models.iter().all(|m| m.unavailable) && !a.models.is_empty()
-                    || a.models.is_empty();
+                // Nothing left to run on this account: bench the account itself, so the next
+                // acquire fails over instead of spawning the same broken CLI again.
+                let gone = a.models.is_empty() || a.models.iter().all(|m| m.unavailable);
+                a.no_model_until = gone.then(|| now.checked_add(NO_MODEL_BENCH)).flatten();
                 NO_MODEL_BENCH
             }
             FailureKind::RateLimited { resets_at } => {
@@ -436,6 +445,7 @@ impl AccountPool {
         let mut accounts = self.accounts.lock();
         if let Some(a) = accounts.iter_mut().find(|a| a.id == *id) {
             a.strikes = 0;
+            a.no_model_until = None;
             a.window_input_tokens += input_tokens;
             a.window_output_tokens += output_tokens;
         }
@@ -472,7 +482,7 @@ impl AccountPool {
                         .into_iter()
                         .map(|info| ModelState::refreshed(&old, info))
                         .collect();
-                    a.no_model = false;
+                    a.no_model_until = None;
                     match (&a.health, d.auth_expired) {
                         (AccountHealth::Healthy, true) => a.health = AccountHealth::AuthExpired,
                         (AccountHealth::AuthExpired, false) => a.health = AccountHealth::Healthy,
@@ -533,7 +543,7 @@ impl AccountPool {
                                 .unwrap_or_else(|| ms_until(*until, now, now_ms)),
                         }
                     }
-                    _ if a.no_model => AccountStatus::NoModel,
+                    _ if a.no_model_benched(now) => AccountStatus::NoModel,
                     _ if !a.models.is_empty()
                         && model_rows
                             .iter()
@@ -632,7 +642,7 @@ impl AccountPool {
                 .into_iter()
                 .map(|info| ModelState::refreshed(&old, info))
                 .collect();
-            a.no_model = false;
+            a.no_model_until = None;
         }
     }
 
@@ -1178,6 +1188,47 @@ mod tests {
             panic!()
         };
         assert_eq!(pool.statuses(t0, 1_800_000_000_000)[0].resets_at, Some(r));
+    }
+
+    #[test]
+    fn a_no_model_account_is_not_picked_again_and_recovers() {
+        let home = fixture();
+        let pool = AccountPool::new(discover(&roots(home.path())), Strategy::Priority);
+        let (t0, a, b) = (
+            Instant::now(),
+            AccountId("claude:a@x.com".into()),
+            AccountId("claude:b@x.com".into()),
+        );
+        assert_eq!(pool.acquire(&[ProviderKind::ClaudeCli], t0).unwrap(), a);
+        // Claude exposes no model list: "no model" benches the account, not one model of it.
+        pool.report_failure(
+            &a,
+            None,
+            &FailureKind::NoModel,
+            "no models available",
+            t0,
+            NOW_MS,
+        );
+        assert_eq!(pool.acquire(&[ProviderKind::ClaudeCli], t0).unwrap(), b);
+        pool.report_failure(
+            &b,
+            None,
+            &FailureKind::NoModel,
+            "no models available",
+            t0,
+            NOW_MS,
+        );
+        // claude:c@x.com is signed out, so the provider is exhausted rather than handed out again.
+        assert!(pool.acquire(&[ProviderKind::ClaudeCli], t0).is_none());
+        assert_eq!(pool.statuses(t0, NOW_MS)[0].status, AccountStatus::NoModel);
+        // A success clears the bench.
+        pool.report_success(&a, 0, 0);
+        assert_eq!(pool.acquire(&[ProviderKind::ClaudeCli], t0).unwrap(), a);
+        // So does its expiry.
+        pool.report_failure(&a, None, &FailureKind::NoModel, "", t0, NOW_MS);
+        assert!(pool.acquire(&[ProviderKind::ClaudeCli], t0).is_none());
+        let later = t0 + NO_MODEL_BENCH + Duration::from_secs(1);
+        assert_eq!(pool.acquire(&[ProviderKind::ClaudeCli], later).unwrap(), a);
     }
 
     #[test]
