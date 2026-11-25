@@ -1,7 +1,7 @@
 name: site
 on:
   push:
-    branches: [main]
+    branches: [prod]
     paths: ["site/**", ".github/workflows/site.yml"]
   pull_request:
     paths: ["site/**", ".github/workflows/site.yml"]
@@ -38,7 +38,7 @@ jobs:
         with:
           path: site/dist
   deploy:
-    if: github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch'
+    if: github.ref == 'refs/heads/prod' || github.event_name == 'workflow_dispatch'
     needs: build
     runs-on: ubuntu-latest
     environment:
